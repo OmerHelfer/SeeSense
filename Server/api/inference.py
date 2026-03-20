@@ -3,6 +3,7 @@ import logging
 
 from services.vision_service import process_image
 from services.logic_service import assess_danger
+from services.motion_tracker import get_tracker as get_motion_tracker
 from ml_engine.model_loader import run_inference
 from schemas.payload import AnalyzeFrameResponse
 from core.config import HIGH_RISK_CLASSES, ALL_CLASSES
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Track paused users (in-memory for POC (replace with DB later))
+# Track paused users (in-memory for POC)
 _paused_users = set()
 
 
@@ -45,18 +46,22 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), user_id:
         model = request.app.state.model
         detections = run_inference(model, img_tensor)
 
-        # 4. Get user's custom high risk classes
+        # 4. Motion tracking — enrich detections with movement data
+        motion_tracker = get_motion_tracker(user_id)
+        detections_with_motion = motion_tracker.update(detections)
+
+        # 5. Get user's custom high risk classes
         settings = user_settings.get(user_id, DEFAULT_SETTINGS)
         user_classes = set(settings.get("high_risk_classes", []))
 
-        # 5. Danger assessment logic with user's classes
-        result = assess_danger(detections, high_risk_classes=user_classes)
+        # 6. Danger assessment logic with user's classes + motion data
+        result = assess_danger(detections_with_motion, high_risk_classes=user_classes)
 
-        # 6. Track success
+        # 7. Track success
         latency = tracker.end_timer(start, success=True)
         logger.info(f"Request completed in {latency:.1f}ms")
 
-        # 7. Return structured response
+        # 8. Return structured response
         return AnalyzeFrameResponse(
             status="success",
             filename=file.filename,
