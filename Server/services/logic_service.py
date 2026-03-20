@@ -47,7 +47,7 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None) -> dict
         distance = _classify_distance(area_ratio)
         alert_level = _classify_alert(class_name, distance, high_risk_classes)
 
-        processed_objects.append({
+        processed_objects.append({  
             "class_name": class_name,
             "confidence": round(confidence, 3),
             "bbox": bbox,
@@ -78,7 +78,7 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None) -> dict
 
 
 def _calc_bbox_area(bbox: list) -> float:
-    x1, y1, x2, y2 = bbox
+    x1, y1, x2, y2 = bbox   
     return max(0, x2 - x1) * max(0, y2 - y1)
 
 
