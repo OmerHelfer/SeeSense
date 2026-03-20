@@ -67,7 +67,7 @@ class ObjectTracker:
         # Compare bbox areas
         prev_area = _bbox_area(match["bbox"])
         curr_area = _bbox_area(current_det["bbox"])
-
+    
         if prev_area == 0:
             return default_motion
 

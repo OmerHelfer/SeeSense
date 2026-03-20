@@ -58,6 +58,21 @@ async def update_settings(user_id: str = "default", settings: dict = {}):
             if invalid:
                 raise HTTPException(status_code=400, detail=f"Invalid classes: {invalid}. Choose from: {sorted(ALL_CLASSES)}")
 
+        # Validate detection_sensitivity
+        if key == "detection_sensitivity":
+            if value not in ("low", "medium", "high"):
+                raise HTTPException(status_code=400, detail=f"Invalid sensitivity: {value}. Choose from: low, medium, high")
+
+        # Validate alert_type
+        if key == "alert_type":
+            if value not in ("audio", "haptic", "both"):
+                raise HTTPException(status_code=400, detail=f"Invalid alert_type: {value}. Choose from: audio, haptic, both")
+
+        # Validate intensity values
+        if key in ("volume_intensity", "vibration_intensity"):
+            if not isinstance(value, (int, float)) or not (0.0 <= value <= 1.0):
+                raise HTTPException(status_code=400, detail=f"{key} must be a number between 0.0 and 1.0")
+
         user_settings[user_id][key] = value
 
     logger.info(f"Updated settings for user: {user_id} → {settings}")
