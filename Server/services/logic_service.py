@@ -45,15 +45,17 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None) -> dict
         bbox_area = _calc_bbox_area(bbox)
         area_ratio = bbox_area / FRAME_AREA
         distance = _classify_distance(area_ratio)
-        alert_level = _classify_alert(class_name, distance, high_risk_classes)
+        motion = det.get("motion", {})
+        alert_level = _classify_alert(class_name, distance, high_risk_classes, motion)
 
-        processed_objects.append({  
+        processed_objects.append({
             "class_name": class_name,
             "confidence": round(confidence, 3),
             "bbox": bbox,
             "area_ratio": round(area_ratio, 4),
             "distance": distance,
-            "alert_level": alert_level
+            "alert_level": alert_level,
+            "motion": motion
         })
 
         if _alert_priority(alert_level) > _alert_priority(highest_alert):
@@ -78,7 +80,7 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None) -> dict
 
 
 def _calc_bbox_area(bbox: list) -> float:
-    x1, y1, x2, y2 = bbox   
+    x1, y1, x2, y2 = bbox
     return max(0, x2 - x1) * max(0, y2 - y1)
 
 
@@ -90,13 +92,33 @@ def _classify_distance(area_ratio: float) -> str:
     return "Far"
 
 
-def _classify_alert(class_name: str, distance: str, high_risk_classes: set) -> str:
-    if class_name in high_risk_classes and distance == "Close":
+def _classify_alert(class_name: str, distance: str, high_risk_classes: set, motion: dict = None) -> str:
+    is_high_risk = class_name in high_risk_classes
+    approaching = motion.get("approaching", False) if motion else False
+    speed = motion.get("speed", "unknown") if motion else "unknown"
+
+    # Fast approaching high-risk object → always high, even if medium distance
+    if is_high_risk and approaching and speed == "fast":
         return "high"
-    if class_name in high_risk_classes and distance == "Medium":
+
+    # Standard rules
+    if is_high_risk and distance == "Close":
+        return "high"
+
+    # Approaching high-risk at medium distance → escalate to high
+    if is_high_risk and distance == "Medium" and approaching:
+        return "high"
+
+    if is_high_risk and distance == "Medium":
         return "low"
+
+    # Non-high-risk but approaching and close
+    if distance == "Close" and approaching:
+        return "high"
+
     if distance == "Close":
         return "low"
+
     return "none"
 
 
