@@ -47,34 +47,29 @@ class ObjectTracker:
         Compare current detection to previous frames.
         Looks for same class in recent history and compares bbox size/position.
         """
+        default_motion = {
+            "direction": "unknown",
+            "approaching": False,
+            "speed": "unknown",
+            "area_change": 1.0  
+        }
+        
         if len(self.frames) == 0:
-            return {
-                "direction": "unknown",
-                "approaching": False,
-                "speed": "unknown"
-            }
+            return default_motion
 
         # Find matching object in previous frame (same class, closest position)
         prev_frame = self.frames[-1]["detections"]
         match = self._find_match(current_det, prev_frame)
 
         if not match:
-            return {
-                "direction": "unknown",
-                "approaching": False,
-                "speed": "unknown"
-            }
+            return default_motion
 
         # Compare bbox areas
         prev_area = _bbox_area(match["bbox"])
         curr_area = _bbox_area(current_det["bbox"])
 
         if prev_area == 0:
-            return {
-                "direction": "unknown",
-                "approaching": False,
-                "speed": "unknown"
-            }
+            return default_motion
 
         area_ratio = curr_area / prev_area
 
