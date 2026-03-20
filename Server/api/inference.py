@@ -14,8 +14,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Track paused users (in-memory for POC(later replace wit DB))
+# Track paused users (in-memory for POC (Later replace with DB))
 _paused_users = set()
+
+# Track previous danger state per user (for "danger cleared" notifications)
+_previous_danger_state = {}  # user_id → bool
 
 
 @router.post("/analyze_frame", response_model=AnalyzeFrameResponse)
@@ -58,15 +61,28 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), user_id:
         # 6. Danger assessment logic with user's classes + motion + sensitivity
         result = assess_danger(detections_with_motion, high_risk_classes=user_classes, sensitivity=sensitivity)
 
-        # 7. Track success
+        # 7. Check if danger just cleared (was dangerous → now safe)
+        was_danger = _previous_danger_state.get(user_id, False)
+        is_danger = result["danger"]
+        danger_cleared = was_danger and not is_danger
+        _previous_danger_state[user_id] = is_danger
+
+        clearance_message = None
+        if danger_cleared:
+            clearance_message = "Path Clear"
+            logger.info(f"Danger cleared for user: {user_id}")
+
+        # 8. Track success
         latency = tracker.end_timer(start, success=True)
         logger.info(f"Request completed in {latency:.1f}ms")
 
-        # 8. Return structured response
+        # 9. Return structured response
         return AnalyzeFrameResponse(
             status="success",
             filename=file.filename,
-            danger=result["danger"],
+            danger=is_danger,
+            danger_cleared=danger_cleared,
+            clearance_message=clearance_message,
             alert_level=result["alert_level"],
             distance=result["distance"],
             objects=result["objects"]
