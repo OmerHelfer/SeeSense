@@ -1,3 +1,9 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
 # ==================== Model ====================
 MODEL_PATH = "ml_engine/weights/best.pt"
 
@@ -55,6 +61,6 @@ CORS_ORIGINS = [
 ]
 
 # ==================== JWT Authentication ====================
-JWT_SECRET_KEY = "seesense-poc-secret-key-change-in-production"
+JWT_SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-for-dev-only")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24

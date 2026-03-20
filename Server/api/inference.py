@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Track paused users (in-memory for POC)
+# Track paused users (in-memory for POC(later replace wit DB))
 _paused_users = set()
 
 
