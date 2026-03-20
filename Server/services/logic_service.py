@@ -11,25 +11,17 @@ from core.config import (
 logger = logging.getLogger(__name__)
 
 
-def assess_danger(detections: list[dict]) -> dict:
+def assess_danger(detections: list[dict], high_risk_classes: set = None) -> dict:
     """
     Takes standardized detections and returns danger assessment.
-
-    Each detection dict expected format:
-    {
-        "class_name": str,
-        "confidence": float,
-        "bbox": [x1, y1, x2, y2]
-    }
-
-    Returns:
-    {
-        "danger": bool,
-        "alert_level": "none" | "low" | "high",
-        "distance": "Far" | "Medium" | "Close",
-        "objects": [...]
-    }
+    
+    Args:
+        detections: list of detection dicts
+        high_risk_classes: optional custom set of classes the user considers dangerous.
+                          Falls back to config default if not provided.
     """
+    if high_risk_classes is None:
+        high_risk_classes = HIGH_RISK_CLASSES
     if not detections:
         return {
             "danger": False,
@@ -53,7 +45,7 @@ def assess_danger(detections: list[dict]) -> dict:
         bbox_area = _calc_bbox_area(bbox)
         area_ratio = bbox_area / FRAME_AREA
         distance = _classify_distance(area_ratio)
-        alert_level = _classify_alert(class_name, distance)
+        alert_level = _classify_alert(class_name, distance, high_risk_classes)
 
         processed_objects.append({
             "class_name": class_name,
@@ -98,10 +90,10 @@ def _classify_distance(area_ratio: float) -> str:
     return "Far"
 
 
-def _classify_alert(class_name: str, distance: str) -> str:
-    if class_name in HIGH_RISK_CLASSES and distance == "Close":
+def _classify_alert(class_name: str, distance: str, high_risk_classes: set) -> str:
+    if class_name in high_risk_classes and distance == "Close":
         return "high"
-    if class_name in HIGH_RISK_CLASSES and distance == "Medium":
+    if class_name in high_risk_classes and distance == "Medium":
         return "low"
     if distance == "Close":
         return "low"
