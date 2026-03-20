@@ -8,3 +8,4 @@ pydantic[email]
 PyJWT
 bcrypt
 torchvision
+python-dotenv
