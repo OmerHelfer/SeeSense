@@ -53,9 +53,10 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), user_id:
         # 5. Get user's custom high risk classes
         settings = user_settings.get(user_id, DEFAULT_SETTINGS)
         user_classes = set(settings.get("high_risk_classes", []))
+        sensitivity = settings.get("detection_sensitivity", "medium")
 
-        # 6. Danger assessment logic with user's classes + motion data
-        result = assess_danger(detections_with_motion, high_risk_classes=user_classes)
+        # 6. Danger assessment logic with user's classes + motion + sensitivity
+        result = assess_danger(detections_with_motion, high_risk_classes=user_classes, sensitivity=sensitivity)
 
         # 7. Track success
         latency = tracker.end_timer(start, success=True)
