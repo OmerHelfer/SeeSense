@@ -9,9 +9,6 @@ from api.users import router as users_router
 from ml_engine.model_loader import load_model
 from core.config import MODEL_PATH
 from utils.metrics import tracker
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 logging.basicConfig(level=logging.INFO)
