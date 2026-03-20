@@ -5,31 +5,34 @@ from services.vision_service import process_image
 from services.logic_service import assess_danger
 from ml_engine.model_loader import run_inference
 from schemas.payload import AnalyzeFrameResponse
-from core.config import HIGH_RISK_CLASSES
+from core.config import HIGH_RISK_CLASSES, ALL_CLASSES
+from api.settings import user_settings, DEFAULT_SETTINGS
 from utils.metrics import tracker
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Track paused users - In-memory storage for POC (replace with DB later)
-_paused_users = set() 
+# Track paused users (in-memory for POC (replace with DB later))
+_paused_users = set()
 
 
 @router.post("/analyze_frame", response_model=AnalyzeFrameResponse)
-async def analyze_frame(request: Request, file: UploadFile = File(...)):
-    user_id = request.state.user_id
-    if user_id in _paused_users:
-        logger.info(f"User {user_id} is paused. Skipping AI inference.")
-        return AnalyzeFrameResponse(
-            status="skipped", 
-            danger=False, 
-            alert_level="none",
-            objects=[]
-        )
-
+async def analyze_frame(request: Request, file: UploadFile = File(...), user_id: str = "default"):
     start = tracker.start_timer()
     try:
+        # 0. Check if user is paused
+        if user_id in _paused_users:
+            tracker.end_timer(start, success=True)
+            return AnalyzeFrameResponse(
+                status="paused",
+                filename=file.filename,
+                danger=False,
+                alert_level="none",
+                distance="Far",
+                objects=[]
+            )
+
         # 1. Receive image
         image_bytes = await file.read()
         logger.info(f"Received image: {file.filename} ({len(image_bytes)} bytes)")
@@ -42,14 +45,18 @@ async def analyze_frame(request: Request, file: UploadFile = File(...)):
         model = request.app.state.model
         detections = run_inference(model, img_tensor)
 
-        # 4. Danger assessment logic
-        result = assess_danger(detections)
+        # 4. Get user's custom high risk classes
+        settings = user_settings.get(user_id, DEFAULT_SETTINGS)
+        user_classes = set(settings.get("high_risk_classes", []))
 
-        # 5. Track success
+        # 5. Danger assessment logic with user's classes
+        result = assess_danger(detections, high_risk_classes=user_classes)
+
+        # 6. Track success
         latency = tracker.end_timer(start, success=True)
         logger.info(f"Request completed in {latency:.1f}ms")
 
-        # 6. Return structured response
+        # 7. Return structured response
         return AnalyzeFrameResponse(
             status="success",
             filename=file.filename,
@@ -74,7 +81,7 @@ async def get_supported_objects():
     """Lists all object classes the system can detect."""
     return {
         "status": "success",
-        "classes": sorted(list(HIGH_RISK_CLASSES))
+        "classes": sorted(list(ALL_CLASSES))
     }
 
 
