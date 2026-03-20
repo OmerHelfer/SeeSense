@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Track paused users (in-memory for POC)
-_paused_users = set()
+# Track paused users - In-memory storage for POC (replace with DB later)
+_paused_users = set() 
 
 
 @router.post("/analyze_frame", response_model=AnalyzeFrameResponse)
