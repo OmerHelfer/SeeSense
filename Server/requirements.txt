@@ -7,3 +7,4 @@ torch
 pydantic[email]
 PyJWT
 bcrypt
+torchvision

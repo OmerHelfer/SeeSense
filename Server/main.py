@@ -9,6 +9,9 @@ from api.users import router as users_router
 from ml_engine.model_loader import load_model
 from core.config import MODEL_PATH
 from utils.metrics import tracker
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 logging.basicConfig(level=logging.INFO)
@@ -18,8 +21,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("SeeSense server starting up...")
+    logger.info("Server is running...")
+    logger.info(f"Loading model from {MODEL_PATH}")
     app.state.model = load_model(MODEL_PATH)
-    logger.info("Model loaded, server ready")
+    logger.info("Model loaded successfully.")
+    logger.info("Server is ready to accept requests.")
     yield
     logger.info("SeeSense server shutting down...")
 

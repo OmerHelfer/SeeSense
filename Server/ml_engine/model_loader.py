@@ -1,3 +1,4 @@
+
 import torch
 import numpy as np
 import logging
@@ -6,17 +7,31 @@ from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
+class MockModel:
+    def __init__(self):
+        logger.info("Initializing Mock Model (Dummy mode active)")
+
+    def predict(self, img_tensor):
+        logger.info(f"Mock model received image tensor with shape: {img_tensor.shape}")
+        
+        return []
+
 
 def load_model(model_path: str):
-    """
-    Load trained YOLO model from .pt file.
-    Called once on server startup via lifespan.
-    """
-    logger.info(f"Loading model from {model_path}...")
-    model = torch.load(model_path, map_location="cpu")
-    model.eval()
-    logger.info("Model loaded successfully")
-    return model
+    logger.warning("Real model loading is DISABLED. Using MockModel for POC testing.")
+    return MockModel()
+
+
+# def load_model(model_path: str):
+#     """
+#     Load trained YOLO model from .pt file.
+#     Called once on server startup via lifespan.
+#     """
+#     logger.info(f"Loading model from {model_path}...")
+#     model = torch.load(model_path, map_location="cpu")
+#     model.eval()
+#     logger.info("Model loaded successfully")
+#     return model
 
 
 def run_inference(model, img_tensor: np.ndarray) -> list[dict]:
