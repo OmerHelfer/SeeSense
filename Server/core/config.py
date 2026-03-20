@@ -1,8 +1,3 @@
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
 # ==================== Model ====================
 MODEL_PATH = "ml_engine/weights/best.pt"
 
@@ -17,6 +12,25 @@ NMS_IOU_THRESHOLD = 0.45
 FRAME_AREA = TARGET_SIZE * TARGET_SIZE
 BBOX_AREA_CLOSE_RATIO = 0.30
 BBOX_AREA_MEDIUM_RATIO = 0.15
+
+# Sensitivity profiles — affects confidence and bbox thresholds
+SENSITIVITY_PROFILES = {
+    "low": {
+        "confidence_threshold": 0.85,
+        "bbox_close_ratio": 0.40,
+        "bbox_medium_ratio": 0.25,
+    },
+    "medium": {
+        "confidence_threshold": 0.70,
+        "bbox_close_ratio": 0.30,
+        "bbox_medium_ratio": 0.15,
+    },
+    "high": {
+        "confidence_threshold": 0.50,
+        "bbox_close_ratio": 0.20,
+        "bbox_medium_ratio": 0.10,
+    }
+}
 
 # All classes the model can detect (the menu shown to users)
 ALL_CLASSES = {"person", "car", "bus", "truck", "motorcycle", "bicycle", "stairs", "pole", "crosswalk"}
@@ -41,6 +55,6 @@ CORS_ORIGINS = [
 ]
 
 # ==================== JWT Authentication ====================
-JWT_SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-for-dev-only")
+JWT_SECRET_KEY = "seesense-poc-secret-key-change-in-production"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
