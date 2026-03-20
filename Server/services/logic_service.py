@@ -6,22 +6,30 @@ from core.config import (
     BBOX_AREA_CLOSE_RATIO,
     BBOX_AREA_MEDIUM_RATIO,
     HIGH_RISK_CLASSES,
+    SENSITIVITY_PROFILES,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def assess_danger(detections: list[dict], high_risk_classes: set = None) -> dict:
+def assess_danger(detections: list[dict], high_risk_classes: set = None, sensitivity: str = "medium") -> dict:
     """
     Takes standardized detections and returns danger assessment.
     
     Args:
         detections: list of detection dicts
-        high_risk_classes: optional custom set of classes the user considers dangerous.
-                          Falls back to config default if not provided.
+        high_risk_classes: custom set of classes the user considers dangerous.
+        sensitivity: "low" | "medium" | "high" — adjusts thresholds.
     """
     if high_risk_classes is None:
         high_risk_classes = HIGH_RISK_CLASSES
+
+    # Get thresholds based on user's sensitivity setting
+    profile = SENSITIVITY_PROFILES.get(sensitivity, SENSITIVITY_PROFILES["medium"])
+    conf_threshold = profile["confidence_threshold"]
+    close_ratio = profile["bbox_close_ratio"]
+    medium_ratio = profile["bbox_medium_ratio"]
+
     if not detections:
         return {
             "danger": False,
@@ -39,12 +47,12 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None) -> dict
         confidence = det.get("confidence", 0.0)
         bbox = det.get("bbox", [0, 0, 0, 0])
 
-        if confidence < CONFIDENCE_THRESHOLD:
+        if confidence < conf_threshold:
             continue
 
         bbox_area = _calc_bbox_area(bbox)
         area_ratio = bbox_area / FRAME_AREA
-        distance = _classify_distance(area_ratio)
+        distance = _classify_distance(area_ratio, close_ratio, medium_ratio)
         motion = det.get("motion", {})
         alert_level = _classify_alert(class_name, distance, high_risk_classes, motion)
 
@@ -84,10 +92,10 @@ def _calc_bbox_area(bbox: list) -> float:
     return max(0, x2 - x1) * max(0, y2 - y1)
 
 
-def _classify_distance(area_ratio: float) -> str:
-    if area_ratio >= BBOX_AREA_CLOSE_RATIO:
+def _classify_distance(area_ratio: float, close_ratio: float, medium_ratio: float) -> str:
+    if area_ratio >= close_ratio:
         return "Close"
-    elif area_ratio >= BBOX_AREA_MEDIUM_RATIO:
+    elif area_ratio >= medium_ratio:
         return "Medium"
     return "Far"
 
