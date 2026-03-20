@@ -18,6 +18,16 @@ _paused_users = set()
 
 @router.post("/analyze_frame", response_model=AnalyzeFrameResponse)
 async def analyze_frame(request: Request, file: UploadFile = File(...)):
+    user_id = request.state.user_id
+    if user_id in _paused_users:
+        logger.info(f"User {user_id} is paused. Skipping AI inference.")
+        return AnalyzeFrameResponse(
+            status="skipped", 
+            danger=False, 
+            alert_level="none",
+            objects=[]
+        )
+
     start = tracker.start_timer()
     try:
         # 1. Receive image

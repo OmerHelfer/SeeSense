@@ -13,6 +13,10 @@ FRAME_AREA = TARGET_SIZE * TARGET_SIZE
 BBOX_AREA_CLOSE_RATIO = 0.30
 BBOX_AREA_MEDIUM_RATIO = 0.15
 
+# All classes the model can detect (the menu shown to users)
+ALL_CLASSES = {"person", "car", "bus", "truck", "motorcycle", "bicycle", "stairs", "pole", "crosswalk"}
+
+# Default high risk classes (used when user hasn't customized)
 HIGH_RISK_CLASSES = {"car", "bus", "truck", "motorcycle", "bicycle", "person", "stairs"}
 
 # ==================== Edge Cases ====================
