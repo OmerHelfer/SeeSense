@@ -23,6 +23,8 @@ class AnalyzeFrameResponse(BaseModel):
     status: str
     filename: str
     danger: bool
+    danger_cleared: bool = False  # True when danger just transitioned from True → False
+    clearance_message: Optional[str] = None  # "Path Clear" / None
     alert_level: str    # "high" | "low" | "none"
     distance: str       # "Close" | "Medium" | "Far"
     objects: list[DetectedObject]
