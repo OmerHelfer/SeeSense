@@ -9,3 +9,4 @@ PyJWT
 bcrypt
 torchvision
 python-dotenv
+ultralytics
