@@ -35,6 +35,7 @@ def create_user(data: dict) -> dict:
         "email": data["email"],
         "phone": data["phone"],
         "password_hash": _hash_password(data["password"]),
+        "country": data.get("country"),
         "date_of_birth": data.get("date_of_birth"),
         "height_cm": data.get("height_cm"),
         "weight_kg": data.get("weight_kg"),

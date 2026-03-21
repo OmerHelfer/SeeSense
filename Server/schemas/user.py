@@ -14,6 +14,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     phone: str
     password: str
+    country: Optional[str] = None
     date_of_birth: Optional[str] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
@@ -25,6 +26,7 @@ class UserProfile(BaseModel):
     name: str
     email: EmailStr
     phone: str
+    country: Optional[str] = None
     date_of_birth: Optional[str] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
