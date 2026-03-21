@@ -104,6 +104,7 @@ def parse_ultralytics_results(results) -> list[dict]:
 
         # Use the model's own class mapping — works for both COCO and custom
         class_name = model_names.get(class_id, "unknown")
+        class_name = class_name.replace(" ", "_")
 
         # Filter — only keep classes our system recognizes
         if class_name not in CLASS_NAMES.values():
