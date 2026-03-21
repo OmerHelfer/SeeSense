@@ -1,73 +1,144 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogIn, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Scan } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const MeshBackground = () => (
+  <div className="mesh-background" aria-hidden="true">
+    <div className="mesh-blob blob-1" />
+    <div className="mesh-blob blob-2" />
+    <div className="mesh-blob blob-3" />
+  </div>
+);
+
+const cardVariants = {
+  hidden:  { opacity: 0, y: 40, scale: 0.97 },
+  visible: { opacity: 1, y: 0,  scale: 1,
+    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } },
+  exit:    { opacity: 0, y: -24, scale: 0.97,
+    transition: { duration: 0.25, ease: 'easeIn' } },
+};
 
 const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail]             = useState('');
+  const [password, setPassword]       = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { login } = useAuth();
-  const navigate = useNavigate();
+  const [error, setError]             = useState('');
+  const [loading, setLoading]         = useState(false);
+  const { login }  = useAuth();
+  const navigate   = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Simulate API login
-    login({ email, id: '123' });
-    navigate('/');
+    setError('');
+    setLoading(true);
+    try {
+      // TODO: replace with → POST /users/login
+      login({ email, id: '123' });
+      navigate('/');
+    } catch {
+      setError('האימייל או הסיסמה שגויים. נסה שוב.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="auth-page">
-      <header className="auth-header">
-        <h1>SeeSense</h1>
-        <p>מערכת עזר חכמה לניידות</p>
-      </header>
+      <MeshBackground />
 
-      <form onSubmit={handleSubmit} className="auth-form">
-        <div className="input-group">
-          <label htmlFor="email">אימייל</label>
-          <input 
-            id="email"
-            type="email" 
-            inputMode="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="your@email.com"
-            required 
-          />
-        </div>
-
-        <div className="input-group">
-          <label htmlFor="password">סיסמה</label>
-          <div className="password-wrapper">
-            <input 
-              id="password"
-              type={showPassword ? "text" : "password"} 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="הכנס סיסמה"
-              required 
-            />
-            <button 
-              type="button" 
-              className="toggle-password"
-              onClick={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? <EyeOff size={24} /> : <Eye size={24} />}
-            </button>
+      <motion.div
+        className="auth-card"
+        variants={cardVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+      >
+        {/* Logo */}
+        <div className="auth-logo">
+          <div className="auth-logo-mark">
+            <Scan size={28} strokeWidth={2.5} />
+          </div>
+          <div>
+            <h1 className="auth-logo-name">SEE<span>SENSE</span></h1>
+            <p className="auth-logo-tagline">ניווט חכם לעצמאות מלאה</p>
           </div>
         </div>
 
-        <button type="submit" className="main-trigger">
-          <LogIn size={24} />
-          התחברות
-        </button>
-      </form>
+        <form onSubmit={handleSubmit} noValidate>
+          <p className="auth-heading">התחברות</p>
 
-      <footer className="auth-footer">
-        <p>עוד לא רשום? <Link to="/register">צור חשבון חדש</Link></p>
-      </footer>
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                className="error-banner"
+                initial={{ opacity: 0, y: -8, height: 0 }}
+                animate={{ opacity: 1, y: 0,  height: 'auto' }}
+                exit={{    opacity: 0, y: -8, height: 0 }}
+                transition={{ duration: 0.2 }}
+                role="alert"
+              >
+                {error}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="input-group">
+            <label className="input-label" htmlFor="login-email">אימייל</label>
+            <input
+              id="login-email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              className={`input-field${error ? ' has-error' : ''}`}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+
+          <div className="input-group">
+            <label className="input-label" htmlFor="login-password">סיסמה</label>
+            <div className="input-password-wrap">
+              <input
+                id="login-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                className={`input-field${error ? ' has-error' : ''}`}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'הסתר סיסמה' : 'הצג סיסמה'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          <motion.button
+            type="submit"
+            className="auth-btn"
+            disabled={loading || !email || !password}
+            whileTap={{ scale: 0.97 }}
+            aria-label="התחבר לחשבון"
+          >
+            <LogIn size={20} />
+            {loading ? 'מתחבר...' : 'התחבר'}
+          </motion.button>
+        </form>
+
+        <p className="auth-footer">
+          עוד לא רשום?&nbsp;<Link to="/register">צור חשבון חדש</Link>
+        </p>
+      </motion.div>
     </div>
   );
 };
