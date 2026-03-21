@@ -7,6 +7,26 @@ from core.config import TARGET_SIZE, DARK_IMAGE_THRESHOLD, MIN_IMAGE_BYTES
 logger = logging.getLogger(__name__)
 
 
+def decode_image(image_bytes: bytes) -> np.ndarray:
+    """
+    Decode and validate image only — no preprocessing.
+    Used when passing image to ultralytics (it does its own preprocessing).
+    """
+    if len(image_bytes) < MIN_IMAGE_BYTES:
+        raise ValueError(f"Image too small ({len(image_bytes)} bytes). File may be empty or corrupted.")
+
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if img is None:
+        raise ValueError("Failed to decode image. The file might be corrupted or not a valid image format.")
+
+    if is_dark_image(img):
+        raise ValueError("Image is too dark. The camera may be covered or lighting is insufficient.")
+
+    return img
+
+
 def process_image(image_bytes: bytes) -> np.ndarray:
     """
     Full preprocessing pipeline:

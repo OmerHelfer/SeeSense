@@ -1,7 +1,7 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException, Request
 import logging
 
-from services.vision_service import process_image
+from services.vision_service import decode_image
 from services.logic_service import assess_danger
 from services.motion_tracker import get_tracker as get_motion_tracker
 from ml_engine.model_loader import run_inference
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Track paused users (in-memory for POC (Later replace with DB))
+# Track paused users (in-memory for POC)
 _paused_users = set()
 
 # Track previous danger state per user (for "danger cleared" notifications)
@@ -41,13 +41,13 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), user_id:
         image_bytes = await file.read()
         logger.info(f"Received image: {file.filename} ({len(image_bytes)} bytes)")
 
-        # 2. Preprocess → tensor (1, 3, 640, 640)
-        img_tensor = process_image(image_bytes)
-        logger.info(f"Preprocessed tensor shape: {img_tensor.shape}")
+        # 2. Decode and validate image
+        img = decode_image(image_bytes)
+        logger.info(f"Decoded image shape: {img.shape}")
 
         # 3. Run model inference → list of detections
         model = request.app.state.model
-        detections = run_inference(model, img_tensor)
+        detections = run_inference(model, img)
 
         # 4. Motion tracking — enrich detections with movement data
         motion_tracker = get_motion_tracker(user_id)
