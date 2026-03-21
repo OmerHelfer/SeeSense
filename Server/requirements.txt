@@ -10,3 +10,7 @@ bcrypt
 torchvision
 python-dotenv
 ultralytics
+scipy
+pymongo[srv]
+motor
+pycountry

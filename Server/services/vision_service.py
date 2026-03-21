@@ -6,36 +6,18 @@ from core.config import TARGET_SIZE, DARK_IMAGE_THRESHOLD, MIN_IMAGE_BYTES
 
 logger = logging.getLogger(__name__)
 
+# ==================== Edge Case Thresholds ====================
+BLUR_THRESHOLD = 50.0          # Laplacian variance below this = blurry
+OVEREXPOSED_THRESHOLD = 240    # Mean intensity above this = overexposed
+UNIFORM_STD_THRESHOLD = 10     # Std deviation below this = camera covered (solid color)
+MIN_RESOLUTION = 640            # Minimum width or height in pixels
+
 
 def decode_image(image_bytes: bytes) -> np.ndarray:
     """
-    Decode and validate image only.
+    Decode and validate image with full edge case handling.
     No resizing — ultralytics handles its own preprocessing.
     For custom PyTorch mode, process_image() handles preprocessing separately.
-    """
-    if len(image_bytes) < MIN_IMAGE_BYTES:
-        raise ValueError(f"Image too small ({len(image_bytes)} bytes). File may be empty or corrupted.")
-
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-    if img is None:
-        raise ValueError("Failed to decode image. The file might be corrupted or not a valid image format.")
-
-    if is_dark_image(img):
-        raise ValueError("Image is too dark. The camera may be covered or lighting is insufficient.")
-
-    return img
-
-
-def process_image(image_bytes: bytes) -> np.ndarray:
-    """
-    Full preprocessing pipeline:
-    1. Validate image bytes
-    2. Decode
-    3. Edge case checks (dark/black image)
-    4. Letterbox resize
-    5. BGR → RGB → CHW → Normalize → Batch
     """
     # Edge case: empty or too small file
     if len(image_bytes) < MIN_IMAGE_BYTES:
@@ -48,9 +30,79 @@ def process_image(image_bytes: bytes) -> np.ndarray:
     if img is None:
         raise ValueError("Failed to decode image. The file might be corrupted or not a valid image format.")
 
-    # Edge case: dark/black image (low light conditions)
-    if is_dark_image(img):
-        raise ValueError("Image is too dark. The camera may be covered or lighting is insufficient.")
+    # Run all quality checks
+    validate_image_quality(img)
+
+    return img
+
+
+def validate_image_quality(img: np.ndarray):
+    """
+    Run all image quality checks. Raises ValueError with descriptive message.
+    Each check returns early with a specific error for the client to handle.
+    """
+    h, w = img.shape[:2]
+
+    # Check 1: Resolution too low
+    if w < MIN_RESOLUTION or h < MIN_RESOLUTION:
+        raise ValueError(
+            f"Image resolution too low ({w}x{h}). Minimum is {MIN_RESOLUTION}x{MIN_RESOLUTION}."
+        )
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    mean_intensity = float(np.mean(gray))
+    std_intensity = float(np.std(gray))
+
+    # Check 2: Camera covered (uniform solid color — black, white, or any color)
+    if std_intensity < UNIFORM_STD_THRESHOLD:
+        raise ValueError(
+            "Camera appears to be covered or blocked. Image is a uniform color."
+        )
+
+    # Check 3: Too dark (night without light, pocket, etc.)
+    if mean_intensity < DARK_IMAGE_THRESHOLD:
+        raise ValueError(
+            "Image is too dark. Lighting is insufficient or camera is obstructed."
+        )
+
+    # Check 4: Overexposed (direct sunlight into lens, white wall too close)
+    if mean_intensity > OVEREXPOSED_THRESHOLD:
+        raise ValueError(
+            "Image is overexposed. Too much light or camera is facing a bright surface."
+        )
+
+    # Check 5: Blurry (out of focus, motion blur, shaking)
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    if laplacian_var < BLUR_THRESHOLD:
+        raise ValueError(
+            "Image is too blurry. Camera may be out of focus or moving too fast."
+        )
+
+    logger.debug(
+        f"Image quality OK — mean={mean_intensity:.1f}, std={std_intensity:.1f}, "
+        f"blur={laplacian_var:.1f}, resolution={w}x{h}"
+    )
+
+
+def process_image(image_bytes: bytes) -> np.ndarray:
+    """
+    Full preprocessing pipeline for custom PyTorch models:
+    1. Validate image bytes
+    2. Decode
+    3. Edge case checks
+    4. Letterbox resize
+    5. BGR → RGB → CHW → Normalize → Batch
+    """
+    if len(image_bytes) < MIN_IMAGE_BYTES:
+        raise ValueError(f"Image too small ({len(image_bytes)} bytes). File may be empty or corrupted.")
+
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if img is None:
+        raise ValueError("Failed to decode image. The file might be corrupted or not a valid image format.")
+
+    validate_image_quality(img)
 
     # 1. Letterbox resize (aspect ratio preserved)
     img_resized = letterbox_resize(img, TARGET_SIZE)
