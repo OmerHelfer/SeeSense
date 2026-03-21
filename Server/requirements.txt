@@ -11,3 +11,4 @@ torchvision
 python-dotenv
 ultralytics
 scipy
+pymongo[srv]
