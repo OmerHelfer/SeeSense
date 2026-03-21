@@ -83,6 +83,35 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
     return None
 
 
+def get_user_by_email(email: str) -> Optional[dict]:
+    """Fetch user profile by email."""
+    profile = _users().find_one({"email": email})
+    if not profile:
+        return None
+    return _safe_profile(profile)
+
+
+def change_password(user_id: str, old_password: str, new_password: str, force: bool = False) -> bool:
+    """
+    Change user password.
+    If force=True, skip old password check (for password reset).
+    Returns True if successful.
+    """
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        return False
+
+    # Verify old password unless forced (reset flow)
+    if not force:
+        if not _verify_password(old_password, profile["password_hash"]):
+            return False
+
+    new_hash = _hash_password(new_password)
+    _users().update_one({"user_id": user_id}, {"$set": {"password_hash": new_hash}})
+    logger.info(f"Password changed for user: {user_id}")
+    return True
+
+
 # ==================== Detection History ====================
 
 def add_detection_record(user_id: str, record: dict):

@@ -3,9 +3,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+print("EMAIL_ADDRESS:", os.getenv("EMAIL_ADDRESS"))
+print("EMAIL_PASSWORD:", os.getenv("EMAIL_PASSWORD"))
+
 # ==================== Model ====================
 MODEL_PATH = "ml_engine/weights/best.pt"
-MODEL_MODE = "mock"  # "mock" | "pretrained" | "custom"
+MODEL_MODE = "pretrained"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
 TARGET_SIZE = 640
@@ -78,3 +81,7 @@ JWT_EXPIRATION_HOURS = 24
 # ==================== MongoDB ====================
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 MONGODB_DB_NAME = "seesense"
+
+# ==================== Email ====================
+EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")

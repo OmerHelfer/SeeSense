@@ -2,9 +2,6 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
 
-class LoginRequest(BaseModel):
-    email: str
-    password: str
 
 class EmergencyContact(BaseModel):
     name: str
@@ -54,3 +51,23 @@ class EmergencyAlertRequest(BaseModel):
     gps_lat: float
     gps_lon: float
     message: Optional[str] = "Emergency alert triggered"
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
