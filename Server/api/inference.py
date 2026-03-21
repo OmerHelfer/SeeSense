@@ -59,7 +59,8 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), user_id:
         sensitivity = settings.get("detection_sensitivity", "medium")
 
         # 6. Danger assessment logic with user's classes + motion + sensitivity
-        result = assess_danger(detections_with_motion, high_risk_classes=user_classes, sensitivity=sensitivity)
+        image_height, image_width = img.shape[:2]
+        result = assess_danger(detections_with_motion, high_risk_classes=user_classes, sensitivity=sensitivity, image_width=image_width, image_height=image_height)
 
         # 7. Check if danger just cleared (was dangerous → now safe)
         was_danger = _previous_danger_state.get(user_id, False)

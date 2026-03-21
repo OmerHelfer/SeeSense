@@ -12,7 +12,7 @@ from core.config import (
 logger = logging.getLogger(__name__)
 
 
-def assess_danger(detections: list[dict], high_risk_classes: set = None, sensitivity: str = "medium") -> dict:
+def assess_danger(detections: list[dict], high_risk_classes: set = None, sensitivity: str = "medium", image_width: int = 640, image_height: int = 640) -> dict:
     """
     Takes standardized detections and returns danger assessment.
     
@@ -20,6 +20,8 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
         detections: list of detection dicts
         high_risk_classes: custom set of classes the user considers dangerous.
         sensitivity: "low" | "medium" | "high" — adjusts thresholds.
+        image_width: actual image width for position and area calculations.
+        image_height: actual image height for area calculations.
     """
     if high_risk_classes is None:
         high_risk_classes = HIGH_RISK_CLASSES
@@ -29,6 +31,9 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
     conf_threshold = profile["confidence_threshold"]
     close_ratio = profile["bbox_close_ratio"]
     medium_ratio = profile["bbox_medium_ratio"]
+
+    # Use actual image area, not fixed 640x640
+    frame_area = image_width * image_height
 
     if not detections:
         return {
@@ -51,10 +56,12 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
             continue
 
         bbox_area = _calc_bbox_area(bbox)
-        area_ratio = bbox_area / FRAME_AREA
+        area_ratio = bbox_area / frame_area
         distance = _classify_distance(area_ratio, close_ratio, medium_ratio)
+        position = _classify_position(bbox, image_width)
         motion = det.get("motion", {})
         alert_level = _classify_alert(class_name, distance, high_risk_classes, motion)
+        alert_message = _build_alert_message(class_name, distance, position, motion)
 
         processed_objects.append({
             "class_name": class_name,
@@ -62,7 +69,9 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
             "bbox": bbox,
             "area_ratio": round(area_ratio, 4),
             "distance": distance,
+            "position": position,
             "alert_level": alert_level,
+            "alert_message": alert_message,
             "motion": motion
         })
 
@@ -98,6 +107,51 @@ def _classify_distance(area_ratio: float, close_ratio: float, medium_ratio: floa
     elif area_ratio >= medium_ratio:
         return "Medium"
     return "Far"
+
+
+def _classify_position(bbox: list, image_width: int = 640) -> str:
+    """
+    Determine where the object is in the frame based on bbox center.
+    Splits the frame into three zones: left, center, right.
+    """
+    x1, y1, x2, y2 = bbox
+    center_x = (x1 + x2) / 2
+
+    third = image_width / 3
+
+    if center_x < third:
+        return "left"
+    elif center_x < third * 2:
+        return "center"
+    return "right"
+
+
+def _build_alert_message(class_name: str, distance: str, position: str, motion: dict = None) -> str:
+    """
+    Build a human-readable alert message for text-to-speech.
+    Example: "Car approaching from the right" or "Person nearby on your left"
+    """
+    approaching = motion.get("approaching", False) if motion else False
+    speed = motion.get("speed", "unknown") if motion else "unknown"
+
+    # Position text
+    if position == "left":
+        pos_text = "on your left"
+    elif position == "right":
+        pos_text = "on your right"
+    else:
+        pos_text = "ahead"
+
+    # Build message based on motion and distance
+    if approaching and speed == "fast":
+        return f"{class_name} approaching fast {pos_text}"
+    elif approaching:
+        return f"{class_name} approaching {pos_text}"
+    elif distance == "Close":
+        return f"{class_name} nearby {pos_text}"
+    elif distance == "Medium":
+        return f"{class_name} detected {pos_text}"
+    return ""
 
 
 def _classify_alert(class_name: str, distance: str, high_risk_classes: set, motion: dict = None) -> str:

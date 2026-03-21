@@ -15,7 +15,9 @@ class DetectedObject(BaseModel):
     bbox: list[float]
     area_ratio: float
     distance: str       # "Close" | "Medium" | "Far"
+    position: str = "center"  # "left" | "center" | "right"
     alert_level: str    # "high" | "low" | "none"
+    alert_message: str = ""   # Human-readable message for TTS
     motion: Optional[MotionData] = None
 
 

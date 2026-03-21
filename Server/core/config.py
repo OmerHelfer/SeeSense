@@ -12,7 +12,7 @@ MODEL_MODE = "pretrained"  # "mock" | "pretrained" | "custom"
 TARGET_SIZE = 640
 
 # ==================== Inference ====================
-CONFIDENCE_THRESHOLD = 0.7
+CONFIDENCE_THRESHOLD = 0.3
 NMS_IOU_THRESHOLD = 0.45
 
 # ==================== Danger Logic ====================
