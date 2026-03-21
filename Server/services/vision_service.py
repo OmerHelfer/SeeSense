@@ -8,10 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 def decode_image(image_bytes: bytes) -> np.ndarray:
-    """
-    Decode and validate image only — no preprocessing.
-    Used when passing image to ultralytics (it does its own preprocessing).
-    """
     if len(image_bytes) < MIN_IMAGE_BYTES:
         raise ValueError(f"Image too small ({len(image_bytes)} bytes). File may be empty or corrupted.")
 

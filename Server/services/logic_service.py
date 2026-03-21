@@ -12,7 +12,7 @@ from core.config import (
 logger = logging.getLogger(__name__)
 
 
-def assess_danger(detections: list[dict], high_risk_classes: set = None, sensitivity: str = "medium", image_width: int = 640, image_height: int = 640) -> dict:
+def assess_danger(detections, high_risk_classes=None, sensitivity="medium", image_width=640, image_height=640):
     """
     Takes standardized detections and returns danger assessment.
     
@@ -20,8 +20,6 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
         detections: list of detection dicts
         high_risk_classes: custom set of classes the user considers dangerous.
         sensitivity: "low" | "medium" | "high" — adjusts thresholds.
-        image_width: actual image width for position and area calculations.
-        image_height: actual image height for area calculations.
     """
     if high_risk_classes is None:
         high_risk_classes = HIGH_RISK_CLASSES
@@ -31,9 +29,8 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
     conf_threshold = profile["confidence_threshold"]
     close_ratio = profile["bbox_close_ratio"]
     medium_ratio = profile["bbox_medium_ratio"]
-
-    # Use actual image area, not fixed 640x640
     frame_area = image_width * image_height
+
 
     if not detections:
         return {
@@ -109,22 +106,15 @@ def _classify_distance(area_ratio: float, close_ratio: float, medium_ratio: floa
     return "Far"
 
 
-def _classify_position(bbox: list, image_width: int = 640) -> str:
-    """
-    Determine where the object is in the frame based on bbox center.
-    Splits the frame into three zones: left, center, right.
-    """
+def _classify_position(bbox, image_width=640):
     x1, y1, x2, y2 = bbox
     center_x = (x1 + x2) / 2
-
     third = image_width / 3
-
     if center_x < third:
         return "left"
     elif center_x < third * 2:
         return "center"
     return "right"
-
 
 def _build_alert_message(class_name: str, distance: str, position: str, motion: dict = None) -> str:
     """

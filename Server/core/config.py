@@ -23,19 +23,19 @@ BBOX_AREA_MEDIUM_RATIO = 0.15
 # Sensitivity profiles — affects confidence and bbox thresholds
 SENSITIVITY_PROFILES = {
     "low": {
-        "confidence_threshold": 0.85,
+        "confidence_threshold": 0.70,
         "bbox_close_ratio": 0.40,
         "bbox_medium_ratio": 0.25,
     },
     "medium": {
-        "confidence_threshold": 0.70,
-        "bbox_close_ratio": 0.30,
-        "bbox_medium_ratio": 0.15,
+        "confidence_threshold": 0.50,
+        "bbox_close_ratio": 0.15,
+        "bbox_medium_ratio": 0.05,
     },
     "high": {
-        "confidence_threshold": 0.50,
-        "bbox_close_ratio": 0.20,
-        "bbox_medium_ratio": 0.10,
+        "confidence_threshold": 0.35,
+        "bbox_close_ratio": 0.08,
+        "bbox_medium_ratio": 0.03,
     }
 }
 
@@ -44,20 +44,20 @@ SENSITIVITY_PROFILES = {
 CLASS_NAMES = {
     0: "person",
     1: "car",
-    2: "bus",
-    3: "truck",
-    4: "motorcycle",
-    5: "bicycle",
-    6: "stairs",
-    7: "pole",
-    8: "crosswalk",
-    9: "pothole"
+    2: "bicycle",
+    3: "motorcycle",
+    4: "bench",
+    5: "fire_hydrant",
+    6: "traffic_light",
+    7: "stairs",
+    8: "pole",
+    9: "dog"
 }
 
 ALL_CLASSES = set(CLASS_NAMES.values())
 
 # Default high risk classes (used when user hasn't customized)
-HIGH_RISK_CLASSES = {"car", "bus", "truck", "motorcycle", "bicycle", "person", "stairs"}
+HIGH_RISK_CLASSES = {"car", "motorcycle", "bicycle", "person", "stairs", "dog"}
 
 # ==================== Edge Cases ====================
 # Dark/black image detection — if mean pixel value is below this, reject the frame
