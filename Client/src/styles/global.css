@@ -1,11 +1,13 @@
 :root {
-  --bg-primary: #000000;
-  --text-primary: #FFFFFF;
-  --accent-color: #FFFF00;
-  --error-color: #FF3B30;
-  
-  --touch-target-size: 64px;
-  --border-radius: 12px;
+  --bg-dark: #000000;
+  --bg-card: #121212;
+  --primary-yellow: #FFFF00;
+  --danger-red: #FF3B30;
+  --text-main: #FFFFFF;
+  --text-muted: #A0A0A0;
+  --safe-area-bottom: env(safe-area-inset-bottom);
+  --border-radius-lg: 30px;
+  --border-radius-md: 16px;
 }
 
 * {
@@ -14,9 +16,239 @@
 }
 
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   margin: 0;
   user-select: none;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-container {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-dark);
+}
+
+/* Authentication Pages */
+.auth-page {
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 50px;
+}
+
+.auth-header h1 {
+  color: var(--primary-yellow);
+  font-size: 4rem;
+  font-weight: 900;
+  margin: 0;
+  letter-spacing: -2px;
+}
+
+.auth-header p {
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  margin-top: 8px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.input-group label {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  padding-right: 4px;
+}
+
+.input-group input {
+  padding: 20px;
+  border-radius: var(--border-radius-md);
+  border: 2px solid #333;
+  background: var(--bg-card);
+  color: #fff;
+  font-size: 1.2rem;
+  transition: border-color 0.2s;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: var(--primary-yellow);
+}
+
+.password-wrapper {
+  position: relative;
+  display: flex;
+}
+
+.toggle-password {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+/* Dashboard & Camera */
+.dashboard-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 16px;
+  gap: 16px;
+}
+
+.top-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 60px;
+}
+
+.app-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--primary-yellow);
+  margin: 0;
+}
+
+.icon-button-large {
+  background: var(--bg-card);
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 12px;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.main-viewer {
+  flex: 1;
+  position: relative;
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  background: #111;
+  border: 2px solid #222;
+}
+
+.camera-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.video-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* UI Overlays */
+.camera-status-overlay {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 16px;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status-dot.active {
+  background-color: #4ade80;
+  box-shadow: 0 0 10px #4ade80;
+}
+
+.status-dot.idle {
+  background-color: var(--text-muted);
+}
+
+.alignment-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Control Elements */
+.controls-area {
+  padding-bottom: var(--safe-area-bottom);
+}
+
+.main-trigger {
+  height: 110px;
+  width: 100%;
+  border-radius: 24px;
+  border: none;
+  font-size: 2rem;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--primary-yellow);
+  color: black;
+  transition: transform 0.1s;
+}
+
+.main-trigger:active {
+  transform: scale(0.96);
+}
+
+.main-trigger.active {
+  background: var(--danger-red);
+  color: white;
+}
+
+.auth-footer {
+  margin-top: auto;
+  text-align: center;
+  padding: 20px 0;
+  font-size: 1.1rem;
+}
+
+.auth-footer a {
+  color: var(--primary-yellow);
+  text-decoration: none;
+  font-weight: bold;
 }
