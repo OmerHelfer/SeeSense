@@ -15,6 +15,7 @@ from api.stream import router as stream_router
 from api.users import router as users_router
 from ml_engine.model_loader import load_model
 from core.config import MODEL_PATH, MODEL_MODE, CORS_ORIGINS
+from core.database import connect, disconnect
 from utils.metrics import tracker
 
 logging.basicConfig(level=logging.INFO)
@@ -24,15 +25,18 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("SeeSense server starting up...")
+    connect()
     app.state.model = load_model(MODEL_PATH, mode=MODEL_MODE)
     app.state.start_time = time.time()
     logger.info("Model loaded, server ready")
     yield
+    disconnect()
     logger.info("SeeSense server shutting down...")
 
 
 app = FastAPI(title="SeeSense", lifespan=lifespan)
 
+# CORS — allows the client app to connect to the server
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

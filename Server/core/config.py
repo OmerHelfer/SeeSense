@@ -3,10 +3,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 # ==================== Model ====================
 MODEL_PATH = "ml_engine/weights/best.pt"
-MODEL_MODE = "pretrained"  # "mock" | "pretrained" | "custom"
+MODEL_MODE = "mock"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
 TARGET_SIZE = 640
@@ -39,7 +38,6 @@ SENSITIVITY_PROFILES = {
     }
 }
 
-
 # ==================== Class Mapping ====================
 CLASS_NAMES = {
     0: "person",
@@ -60,10 +58,7 @@ ALL_CLASSES = set(CLASS_NAMES.values())
 HIGH_RISK_CLASSES = {"car", "motorcycle", "bicycle", "person", "stairs", "dog"}
 
 # ==================== Edge Cases ====================
-# Dark/black image detection — if mean pixel value is below this, reject the frame
-DARK_IMAGE_THRESHOLD = 25  # pixel intensity 0-255
-
-# Minimum image size in bytes (corrupt/empty file check)
+DARK_IMAGE_THRESHOLD = 25
 MIN_IMAGE_BYTES = 1000
 
 # ==================== CORS ====================
@@ -72,10 +67,14 @@ CORS_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:8080",
     "https://seesense.app",
-    "*"  # POC: allow all. Restrict in production.
+    "*"
 ]
 
 # ==================== JWT Authentication ====================
 JWT_SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-for-dev-only")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
+
+# ==================== MongoDB ====================
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+MONGODB_DB_NAME = "seesense"
