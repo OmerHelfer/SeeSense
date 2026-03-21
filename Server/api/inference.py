@@ -1,12 +1,12 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException, Request
 import logging
 
-from services.vision_service import decode_image
+from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
 from services.motion_tracker import get_tracker as get_motion_tracker
-from ml_engine.model_loader import run_inference
+from ml_engine.model_loader import run_inference, MockModel
 from schemas.payload import AnalyzeFrameResponse
-from core.config import HIGH_RISK_CLASSES, ALL_CLASSES
+from core.config import HIGH_RISK_CLASSES, ALL_CLASSES, MODEL_MODE
 from api.settings import user_settings, DEFAULT_SETTINGS
 from utils.metrics import tracker
 
@@ -45,11 +45,20 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), user_id:
         img = decode_image(image_bytes)
         logger.info(f"Decoded image shape: {img.shape}")
 
-        # 3. Run model inference → list of detections
+        # 3. Prepare input based on model mode
         model = request.app.state.model
-        detections = run_inference(model, img)
+        if MODEL_MODE == "custom":
+            # Pure PyTorch — needs full preprocessing
+            model_input = process_image(image_bytes)
+            logger.info(f"Preprocessed tensor shape: {model_input.shape}")
+        else:
+            # Mock or Ultralytics — raw image is enough
+            model_input = img
 
-        # 4. Motion tracking — enrich detections with movement data
+        # 4. Run model inference → list of detections
+        detections = run_inference(model, model_input)
+
+        # 5. Motion tracking — enrich detections with movement data
         motion_tracker = get_motion_tracker(user_id)
         detections_with_motion = motion_tracker.update(detections)
 

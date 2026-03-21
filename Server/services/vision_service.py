@@ -8,6 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 def decode_image(image_bytes: bytes) -> np.ndarray:
+    """
+    Decode and validate image only.
+    No resizing — ultralytics handles its own preprocessing.
+    For custom PyTorch mode, process_image() handles preprocessing separately.
+    """
     if len(image_bytes) < MIN_IMAGE_BYTES:
         raise ValueError(f"Image too small ({len(image_bytes)} bytes). File may be empty or corrupted.")
 

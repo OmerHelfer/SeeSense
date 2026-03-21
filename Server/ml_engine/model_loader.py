@@ -5,6 +5,7 @@ from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES
 
 logger = logging.getLogger(__name__)
 
+
 # ==================== Mock Model (Testing Mode) ====================
 
 class MockModel:
@@ -21,92 +22,106 @@ class MockModel:
 def load_model(model_path: str, mode: str = "mock"):
     """
     Load model based on selected mode.
-    
+
     mode:
         "mock"       — Dummy model, for testing without weight files
         "pretrained" — Pretrained YOLO from ultralytics (e.g. yolov8n.pt)
-        "custom"     — Your trained model (same ultralytics format)
+        "custom"     — Your own model trained with pure PyTorch
     """
     if mode == "mock":
         logger.warning("Testing mode — Mock Model active")
         return MockModel()
 
-    # Both pretrained and custom use ultralytics
-    from ultralytics import YOLO
-
     if mode == "pretrained":
+        from ultralytics import YOLO
         logger.info("Loading pretrained YOLO model for testing...")
-        model = YOLO("yolov8n.pt")  # Auto-downloads if not present
-    else:
-        logger.info(f"Loading custom trained model from {model_path}...")
-        model = YOLO(model_path)
+        model = YOLO("yolov8n.pt")
+        logger.info("Model loaded successfully")
+        return model
 
-    logger.info("Model loaded successfully")
-    return model
+    if mode == "custom":
+        import torch
+        logger.info(f"Loading custom PyTorch model from {model_path}...")
+        model = torch.load(model_path, map_location="cpu")
+        model.eval()
+        logger.info("Custom model loaded successfully")
+        return model
+
+    logger.error(f"Unknown mode: {mode}")
+    raise ValueError(f"Unknown mode: {mode}")
 
 
 # ==================== Inference ====================
 
-def run_inference(model, img_tensor: np.ndarray) -> list[dict]:
+def run_inference(model, img_input) -> list[dict]:
     """
-    Run model on preprocessed image and return list of detections.
-    Works with mock model, pretrained YOLO, and custom trained model.
+    Run model and return list of detections.
+    Automatically detects model type and uses correct pipeline.
+
+    For mock: returns empty list
+    For ultralytics: passes raw image, ultralytics handles preprocessing
+    For custom PyTorch: expects preprocessed tensor from process_image()
     """
-    # Mock model — returns empty list
+    # Mock model
     if isinstance(model, MockModel):
-        model(img_tensor)
+        model(img_input)
         return []
 
-    # Ultralytics inference
-    results = model(
-        source=img_tensor,
-        conf=CONFIDENCE_THRESHOLD,
-        iou=NMS_IOU_THRESHOLD,
-        verbose=False
-    )
+    # Ultralytics model
+    try:
+        from ultralytics import YOLO
+        if isinstance(model, YOLO):
+            results = model(
+                source=img_input,
+                conf=CONFIDENCE_THRESHOLD,
+                iou=NMS_IOU_THRESHOLD,
+                verbose=False
+            )
+            detections = parse_ultralytics_results(results)
+            logger.info(f"Inference complete: {len(detections)} detections")
+            return detections
+    except ImportError:
+        pass
 
-    detections = parse_ultralytics_results(results)
+    # Custom PyTorch model
+    import torch
+    with torch.no_grad():
+        tensor = torch.from_numpy(img_input).float()
+        raw_output = model(tensor)
+
+    detections = parse_raw_detections(raw_output)
     logger.info(f"Inference complete: {len(detections)} detections")
     return detections
 
 
-# ==================== Result Parsing ====================
+# ==================== Ultralytics Result Parsing ====================
 
 def parse_ultralytics_results(results) -> list[dict]:
     """
     Convert ultralytics Results object to standardized detection dicts.
-    Works with both pretrained YOLO and custom trained models — same format.
-    
-    Each detection returned as:
-    {
-        "class_name": str,
-        "confidence": float,
-        "bbox": [x1, y1, x2, y2]
-    }
+    Used for pretrained YOLO mode.
     """
     detections = []
 
     if not results or len(results) == 0:
         return detections
 
-    result = results[0]  # Single image — single result
+    result = results[0]
 
     if result.boxes is None or len(result.boxes) == 0:
         return detections
 
     boxes = result.boxes
-    model_names = result.names  # Model's own class mapping (id → name)
+    model_names = result.names
 
     for i in range(len(boxes)):
-        bbox = boxes.xyxy[i].tolist()       # [x1, y1, x2, y2]
+        bbox = boxes.xyxy[i].tolist()
         confidence = float(boxes.conf[i])
         class_id = int(boxes.cls[i])
 
-        # Use the model's own class mapping — works for both COCO and custom
         class_name = model_names.get(class_id, "unknown")
         class_name = class_name.replace(" ", "_")
 
-        # Filter — only keep classes our system recognizes
         if class_name not in CLASS_NAMES.values():
             continue
 
@@ -119,12 +134,13 @@ def parse_ultralytics_results(results) -> list[dict]:
     return detections
 
 
-# ==================== Raw Parsing (for future non-ultralytics use) ====================
+# ==================== Raw PyTorch Result Parsing ====================
 
 def parse_raw_detections(raw_output) -> list[dict]:
     """
-    Parse raw model output — matrix of shape [N, 6].
-    Only used if building a model without ultralytics.
+    Parse raw PyTorch model output — matrix of shape [N, 6].
+    Each row: [x1, y1, x2, y2, confidence, class_id]
+    Used for custom trained model mode.
     """
     import torch
 
@@ -137,6 +153,9 @@ def parse_raw_detections(raw_output) -> list[dict]:
 
     if output.ndim == 3:
         output = output[0]
+
+    if output.size == 0:
+        return detections
 
     for det in output:
         x1, y1, x2, y2 = det[0], det[1], det[2], det[3]
