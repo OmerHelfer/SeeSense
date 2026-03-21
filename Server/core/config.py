@@ -38,8 +38,22 @@ SENSITIVITY_PROFILES = {
     }
 }
 
-# All classes the model can detect (the menu shown to users)
-ALL_CLASSES = {"person", "car", "bus", "truck", "motorcycle", "bicycle", "stairs", "pole", "crosswalk"}
+
+# ==================== Class Mapping ====================
+CLASS_NAMES = {
+    0: "person",
+    1: "car",
+    2: "bus",
+    3: "truck",
+    4: "motorcycle",
+    5: "bicycle",
+    6: "stairs",
+    7: "pole",
+    8: "crosswalk",
+    9: "pothole"
+}
+
+ALL_CLASSES = set(CLASS_NAMES.values())
 
 # Default high risk classes (used when user hasn't customized)
 HIGH_RISK_CLASSES = {"car", "bus", "truck", "motorcycle", "bicycle", "person", "stairs"}

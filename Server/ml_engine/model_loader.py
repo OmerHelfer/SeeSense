@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import logging
 
-from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD
+from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +11,8 @@ class MockModel:
     def __init__(self):
         logger.info("Initializing Mock Model (Dummy mode active)")
 
-    def predict(self, img_tensor):
-        logger.info(f"Mock model received image tensor with shape: {img_tensor.shape}")
-        
+    def __call__(self, tensor):
+        logger.info(f"Mock model received tensor with shape: {tensor.shape}")
         return []
 
 
@@ -68,17 +67,6 @@ def parse_detections(raw_output) -> list[dict]:
     # TODO: Adjust parsing based on your exact model output format
     # This is the standard YOLO output structure
 
-    CLASS_NAMES = {
-        0: "person",
-        1: "car",
-        2: "bus",
-        3: "truck",
-        4: "motorcycle",
-        5: "bicycle",
-        6: "stairs",
-        7: "pole",
-        8: "crosswalk"
-    }
 
     detections = []
 
