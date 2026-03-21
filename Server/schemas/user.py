@@ -2,6 +2,9 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 class EmergencyContact(BaseModel):
     name: str

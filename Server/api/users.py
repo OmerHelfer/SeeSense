@@ -5,6 +5,7 @@ from schemas.user import (
     UserCreate,
     UserFeedback,
     EmergencyAlertRequest,
+    LoginRequest
 )
 from services.user_service import (
     create_user,
@@ -28,20 +29,19 @@ async def register(user: UserCreate):
     try:
         profile = create_user(user.model_dump())
         token = create_token(profile["user_id"], profile["email"])
-        return {"status": "success", "user": profile, "token": token}
+        return {"status": "success", "message": "Registered successfully", "user": profile, "token": token}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/login")
-async def login(email: str, password: str):
+async def login(request: LoginRequest):
     """Authenticate user. Returns profile + JWT token."""
-    profile = authenticate_user(email, password)
+    profile = authenticate_user(request.email, request.password)
     if not profile:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_token(profile["user_id"], profile["email"])
-    return {"status": "success", "user": profile, "token": token}
-
+    return {"status": "success", "message": "Logged in successfully", "user": profile, "token": token}
 
 @router.get("/profile/{user_id}")
 async def get_profile(user_id: str, current_user: dict = Depends(verify_token)):
