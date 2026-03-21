@@ -10,3 +10,4 @@ bcrypt
 torchvision
 python-dotenv
 ultralytics
+scipy
