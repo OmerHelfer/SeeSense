@@ -61,6 +61,21 @@ def send_welcome_email(to_email: str, name: str):
     """
     send_email(to_email, subject, html)
 
+def send_emergency_contact_email(to_email: str, contact_name: str, user_name: str):
+    """Notify emergency contact that they were added."""
+    subject = "SeeSense — You Were Added as Emergency Contact"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2c3e50;">Hello {contact_name},</h2>
+        <p><strong>{user_name}</strong> has added you as their emergency contact on SeeSense.</p>
+        <p>SeeSense is a smart navigation assistant for visually impaired individuals. 
+        In case of emergency, you may receive alerts with their GPS location.</p>
+        <p>No action is needed from you at this time.</p>
+        <br>
+        <p><strong>The SeeSense Team</strong></p>
+    </div>
+    """
+    send_email(to_email, subject, html)
 
 def send_password_changed_email(to_email: str, name: str):
     """Send notification after password change."""

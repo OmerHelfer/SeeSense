@@ -1,12 +1,15 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
+import pycountry
+
 
 
 class EmergencyContact(BaseModel):
     name: str
     phone: str
-    email: Optional[str] = None
+    email: EmailStr
+
 
 
 class UserCreate(BaseModel):
@@ -20,6 +23,15 @@ class UserCreate(BaseModel):
     weight_kg: Optional[float] = None
     emergency_contact: Optional[EmergencyContact] = None
 
+    @field_validator("country")
+    @classmethod
+    def validate_country(cls, v):
+        if v is None:
+            return v
+        country = pycountry.countries.get(name=v) or pycountry.countries.get(alpha_2=v)
+        if not country:
+            raise ValueError(f"Invalid country: {v}. Use full name (e.g. 'Israel') or code (e.g. 'IL')")
+        return country.name
 
 class UserProfile(BaseModel):
     user_id: str

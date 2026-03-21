@@ -29,6 +29,7 @@ from services.email_service import (
     send_password_changed_email,
     send_password_reset_email,
     send_profile_updated_email,
+    send_emergency_contact_email
 )
 from core.auth import create_token, verify_token
 
@@ -52,6 +53,12 @@ async def register(user: UserCreate):
         profile = create_user(user.model_dump())
         token = create_token(profile["user_id"], profile["email"])
         send_welcome_email(profile["email"], profile["name"])
+        if profile.get("emergency_contact") and profile["emergency_contact"].get("email"):
+            send_emergency_contact_email(
+            profile["emergency_contact"]["email"],
+            profile["emergency_contact"]["name"],
+            profile["name"]
+            )
         return {"status": "success", "message": "Registered successfully", "user": profile, "token": token}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
