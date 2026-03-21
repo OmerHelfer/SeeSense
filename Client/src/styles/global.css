@@ -1,0 +1,22 @@
+:root {
+  --bg-primary: #000000;
+  --text-primary: #FFFFFF;
+  --accent-color: #FFFF00;
+  --error-color: #FF3B30;
+  
+  --touch-target-size: 64px;
+  --border-radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+  margin: 0;
+  user-select: none;
+}
