@@ -3,9 +3,10 @@ from typing import Optional
 
 
 class MotionData(BaseModel):
-    direction: str = "unknown"      # "left" | "right" | "center" | "unknown"
+    track_id: int = -1          # Persistent object ID across frames (-1 = untracked)
+    direction: str = "unknown"  # "left" | "right" | "center" | "unknown"
     approaching: bool = False
-    speed: str = "unknown"          # "fast" | "moderate" | "static" | "moving_away" | "unknown"
+    speed: str = "unknown"      # "fast" | "moderate" | "static" | "moving_away" | "unknown"
     area_change: Optional[float] = None
 
 
