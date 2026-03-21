@@ -1,5 +1,3 @@
-
-import torch
 import numpy as np
 import logging
 
@@ -7,66 +5,128 @@ from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES
 
 logger = logging.getLogger(__name__)
 
-class MockModel:
-    def __init__(self):
-        logger.info("Initializing Mock Model (Dummy mode active)")
+# ==================== מצב בדיקות — מודל מדומה ====================
 
-    def __call__(self, tensor):
-        logger.info(f"Mock model received tensor with shape: {tensor.shape}")
+class MockModel:
+    """מודל מדומה לבדיקות בלי קובץ משקולות"""
+    def __init__(self):
+        logger.info("מודל מדומה פעיל — מצב בדיקות")
+
+    def __call__(self, source, conf=0.5, iou=0.45, verbose=False):
         return []
 
 
-def load_model(model_path: str):
-    logger.warning("Real model loading is DISABLED. Using MockModel for POC testing.")
-    return MockModel()
+# ==================== טעינת מודל ====================
+
+def load_model(model_path: str, mode: str = "mock"):
+    """
+    טוען מודל לפי המצב הנבחר.
+    
+    mode:
+        "mock"       — מודל מדומה, לבדיקות בלי קובץ משקולות
+        "pretrained" — YOLO מוכן מ-ultralytics (למשל yolov8n.pt) לבדיקות עם מודל אמיתי
+        "custom"     — המודל המאומן שלכם (אותו פורמט ultralytics)
+    """
+    if mode == "mock":
+        logger.warning("מצב בדיקות — מודל מדומה פעיל")
+        return MockModel()
+
+    # גם pretrained וגם custom משתמשים ב-ultralytics
+    from ultralytics import YOLO
+
+    if mode == "pretrained":
+        logger.info("טוען מודל YOLO מוכן לבדיקות...")
+        model = YOLO("yolov8n.pt")  # יוריד אוטומטית אם לא קיים
+    else:
+        logger.info(f"טוען מודל מאומן מ-{model_path}...")
+        model = YOLO(model_path)
+
+    logger.info("המודל נטען בהצלחה")
+    return model
 
 
-# def load_model(model_path: str):
-#     """
-#     Load trained YOLO model from .pt file.
-#     Called once on server startup via lifespan.
-#     """
-#     logger.info(f"Loading model from {model_path}...")
-#     model = torch.load(model_path, map_location="cpu")
-#     model.eval()
-#     logger.info("Model loaded successfully")
-#     return model
-
+# ==================== הרצת מודל ====================
 
 def run_inference(model, img_tensor: np.ndarray) -> list[dict]:
     """
-    Full inference pipeline:
-    1. Convert numpy tensor to torch
-    2. Run forward pass
-    3. Apply NMS
-    4. Parse raw output to standardized detections
+    מריץ את המודל על תמונה מעובדת ומחזיר רשימת זיהויים.
+    עובד עם מודל מדומה, YOLO מוכן, ומודל מאומן.
     """
-    with torch.no_grad():
-        tensor = torch.from_numpy(img_tensor).float()
-        raw_output = model(tensor)
+    # מודל מדומה — מחזיר רשימה ריקה
+    if isinstance(model, MockModel):
+        model(img_tensor)
+        return []
 
-    detections = parse_detections(raw_output)
-    logger.info(f"Inference complete: {len(detections)} detections")
+    # ultralytics — צריך תמונה בפורמט אחר
+    # ultralytics עושה preprocessing בעצמו, אז נשלח את הטנזור כמו שהוא
+    results = model(
+        source=img_tensor,
+        conf=CONFIDENCE_THRESHOLD,
+        iou=NMS_IOU_THRESHOLD,
+        verbose=False
+    )
+
+    detections = parse_ultralytics_results(results)
+    logger.info(f"זיהוי הושלם: {len(detections)} אובייקטים")
     return detections
 
 
-def parse_detections(raw_output) -> list[dict]:
+# ==================== פרסור תוצאות ====================
+
+def parse_ultralytics_results(results) -> list[dict]:
     """
-    Convert raw model output to standardized detection dicts.
-
-    Assumes YOLO-style output where each detection is:
-    [x1, y1, x2, y2, confidence, class_id]
-
-    Returns list of:
+    ממיר את הפלט של ultralytics לפורמט אחיד.
+    עובד גם עם YOLO מוכן וגם עם מודל מאומן — אותו פורמט.
+    
+    כל זיהוי מוחזר כ:
     {
         "class_name": str,
         "confidence": float,
         "bbox": [x1, y1, x2, y2]
     }
     """
-    # TODO: Adjust parsing based on your exact model output format
-    # This is the standard YOLO output structure
+    detections = []
 
+    if not results or len(results) == 0:
+        return detections
+
+    result = results[0]  # תמונה בודדת — תוצאה אחת
+
+    if result.boxes is None or len(result.boxes) == 0:
+        return detections
+
+    boxes = result.boxes
+    model_names = result.names  # המילון של המודל עצמו (מספר → שם)
+
+    for i in range(len(boxes)):
+        bbox = boxes.xyxy[i].tolist()       # [x1, y1, x2, y2]
+        confidence = float(boxes.conf[i])
+        class_id = int(boxes.cls[i])
+
+        # שימוש במילון של המודל עצמו — עובד גם ל-COCO וגם למודל מאומן
+        class_name = model_names.get(class_id, "unknown")
+
+        # סינון — רק מחלקות שהמערכת שלנו מכירה
+        if class_name not in CLASS_NAMES.values():
+            continue
+
+        detections.append({
+            "class_name": class_name,
+            "confidence": confidence,
+            "bbox": [float(c) for c in bbox]
+        })
+
+    return detections
+
+
+# ==================== פרסור גולמי (לשימוש עתידי אם לא ultralytics) ====================
+
+def parse_raw_detections(raw_output) -> list[dict]:
+    """
+    פרסור פלט גולמי — מטריצה בפורמט [N, 6].
+    לשימוש רק אם בונים מודל בלי ultralytics.
+    """
+    import torch
 
     detections = []
 
@@ -75,7 +135,6 @@ def parse_detections(raw_output) -> list[dict]:
     else:
         output = np.array(raw_output)
 
-    # Handle batched output — take first batch
     if output.ndim == 3:
         output = output[0]
 
