@@ -7,7 +7,7 @@ from services.motion_tracker import get_tracker as get_motion_tracker
 from ml_engine.model_loader import run_inference, MockModel
 from schemas.payload import AnalyzeFrameResponse
 from core.config import HIGH_RISK_CLASSES, ALL_CLASSES, MODEL_MODE
-from api.settings import user_settings, DEFAULT_SETTINGS
+from api.settings import get_user_settings, DEFAULT_SETTINGS
 from utils.metrics import tracker
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), user_id:
         detections_with_motion = motion_tracker.update(detections)
 
         # 5. Get user's custom high risk classes
-        settings = user_settings.get(user_id, DEFAULT_SETTINGS)
+        settings = get_user_settings(user_id)
         user_classes = set(settings.get("high_risk_classes", []))
         sensitivity = settings.get("detection_sensitivity", "medium")
 
