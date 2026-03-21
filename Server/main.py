@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 import logging
+import time
 
 from api.inference import router as inference_router
 from api.settings import router as settings_router
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("SeeSense server starting up...")
     app.state.model = load_model(MODEL_PATH, mode=MODEL_MODE)
+    app.state.start_time = time.time()
     logger.info("Model loaded, server ready")
     yield
     logger.info("SeeSense server shutting down...")
@@ -48,6 +50,19 @@ app.include_router(users_router)
 @app.get("/")
 async def root():
     return {"message": "SeeSense server is running"}
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Lightweight health check for client to verify connectivity.
+    Client pings this endpoint — if no response within timeout, switch to offline mode.
+    """
+    return {
+        "status": "healthy",
+        "model_mode": MODEL_MODE,
+        "uptime_seconds": round(time.time() - app.state.start_time, 2)
+    }
 
 
 @app.get("/get_system_status")
