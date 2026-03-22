@@ -149,21 +149,19 @@ async def reset_password(request: ResetPasswordRequest):
 
 # ==================== Profile ====================
 
-@router.get("/profile/{user_id}")
-async def get_profile(user_id: str, current_user: dict = Depends(verify_token)):
+@router.get("/profile")
+async def get_profile(current_user: dict = Depends(verify_token)):
     """Retrieve user profile. Requires authentication."""
-    profile = get_user(user_id)
+    profile = get_user(current_user["user_id"])
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
     return {"status": "success", "user": profile}
 
 
-@router.post("/profile/{user_id}/update")
-async def update_profile(user_id: str, updates: dict, current_user: dict = Depends(verify_token)):
+@router.post("/profile/update")
+async def update_profile(updates: dict, current_user: dict = Depends(verify_token)):
     """Update user profile fields. Requires authentication."""
-    if current_user["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="Cannot update another user's profile")
-
+    user_id = current_user["user_id"]
     profile = update_user(user_id, updates)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
@@ -174,20 +172,18 @@ async def update_profile(user_id: str, updates: dict, current_user: dict = Depen
 
 # ==================== History & Feedback ====================
 
-@router.get("/history/{user_id}")
-async def user_history(user_id: str, limit: int = 50, current_user: dict = Depends(verify_token)):
+@router.get("/history")
+async def user_history(limit: int = 50, current_user: dict = Depends(verify_token)):
     """Retrieve detection and alert history. Requires authentication."""
+    user_id = current_user["user_id"]
     history = get_user_history(user_id, limit)
     return {"status": "success", "user_id": user_id, "history": history}
 
 
 @router.post("/feedback")
-async def send_feedback(user_id: str, feedback: UserFeedback, current_user: dict = Depends(verify_token)):
+async def send_feedback(feedback: UserFeedback, current_user: dict = Depends(verify_token)):
     """Send user feedback on detection quality. Requires authentication."""
-    profile = get_user(user_id)
-    if not profile:
-        raise HTTPException(status_code=404, detail="User not found")
-
+    user_id = current_user["user_id"]
     add_feedback(user_id, feedback.model_dump())
     return {"status": "success", "message": "Feedback received"}
 
