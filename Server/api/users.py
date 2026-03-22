@@ -162,11 +162,32 @@ async def get_profile(current_user: dict = Depends(verify_token)):
 async def update_profile(updates: dict, current_user: dict = Depends(verify_token)):
     """Update user profile fields. Requires authentication."""
     user_id = current_user["user_id"]
+
+    # Get old profile to check if emergency contact email changed
+    old_profile = get_user(user_id)
+    old_contact_email = None
+    if old_profile and old_profile.get("emergency_contact"):
+        old_contact_email = old_profile["emergency_contact"].get("email")
+
     profile = update_user(user_id, updates)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    send_profile_updated_email(profile["email"], profile["name"], list(updates.keys()))
+    # Notify user about the change
+    send_profile_updated_email(profile["email"], profile["name"])
+
+    # Check if emergency contact email changed
+    new_contact_email = None
+    if profile.get("emergency_contact"):
+        new_contact_email = profile["emergency_contact"].get("email")
+
+    if new_contact_email and new_contact_email != old_contact_email:
+        send_emergency_contact_email(
+            new_contact_email,
+            profile["emergency_contact"]["name"],
+            profile["name"]
+        )
+
     return {"status": "success", "message": "Profile updated successfully", "user": profile}
 
 

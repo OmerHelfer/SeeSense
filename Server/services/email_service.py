@@ -115,16 +115,15 @@ def send_password_reset_email(to_email: str, name: str, reset_code: str):
     send_email(to_email, subject, html)
 
 
-def send_profile_updated_email(to_email: str, name: str, changed_fields: list):
+def send_profile_updated_email(to_email: str, name: str):
     """Send notification after profile update."""
-    fields_text = ", ".join(changed_fields)
     subject = "SeeSense — Profile Updated"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2c3e50;">Profile Updated</h2>
         <p>Hi {name},</p>
-        <p>The following fields were updated: <strong>{fields_text}</strong></p>
-        <p>If you did not make these changes, please change your password immediately.</p>
+        <p>Your SeeSense profile has been updated.</p>
+        <p>If you did not make this change, please change your password immediately.</p>
         <br>
         <p><strong>The SeeSense Team</strong></p>
     </div>

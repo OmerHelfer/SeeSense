@@ -8,6 +8,7 @@ from ml_engine.model_loader import run_inference, MockModel
 from schemas.payload import AnalyzeFrameResponse
 from core.config import HIGH_RISK_CLASSES, ALL_CLASSES, MODEL_MODE
 from api.settings import get_user_settings, DEFAULT_SETTINGS
+from services.user_service import add_detection_record
 from utils.metrics import tracker
 from fastapi import Depends
 from core.auth import verify_token
@@ -65,16 +66,18 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), current_
         motion_tracker = get_motion_tracker(user_id)
         detections_with_motion = motion_tracker.update(detections)
 
-        # 5. Get user's custom high risk classes
+        # 6. Get user's custom high risk classes
         settings = get_user_settings(user_id)
         user_classes = set(settings.get("high_risk_classes", []))
         sensitivity = settings.get("detection_sensitivity", "medium")
 
-        # 6. Danger assessment logic with user's classes + motion + sensitivity
+        # 8. Danger assessment logic with user's classes + motion + sensitivity
         image_height, image_width = img.shape[:2]
         result = assess_danger(detections_with_motion, high_risk_classes=user_classes, sensitivity=sensitivity, image_width=image_width, image_height=image_height)
+        # 8. Save detection to user history
+        add_detection_record(user_id, result)
 
-        # 7. Check if danger just cleared (was dangerous → now safe)
+        # 9. Check if danger just cleared (was dangerous → now safe)
         was_danger = _previous_danger_state.get(user_id, False)
         is_danger = result["danger"]
         danger_cleared = was_danger and not is_danger
@@ -85,11 +88,11 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), current_
             clearance_message = "Path Clear"
             logger.info(f"Danger cleared for user: {user_id}")
 
-        # 8. Track success
+        # 10. Track success
         latency = tracker.end_timer(start, success=True)
         logger.info(f"Request completed in {latency:.1f}ms")
 
-        # 9. Return structured response
+        # 11. Return structured response
         return AnalyzeFrameResponse(
             status="success",
             filename=file.filename,
