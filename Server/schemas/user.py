@@ -6,13 +6,27 @@ VALID_FEEDBACK_TYPES = {"wrong_detection", "missed_obstacle", "general"}
 
 
 class UserCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     name: str
     email: EmailStr
     phone: str
     password: str
+    country: Optional[str] = None
     date_of_birth: Optional[str] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
+
+    @field_validator("country")
+    @classmethod
+    def validate_country(cls, v):
+        if v is None:
+            return v
+        import pycountry
+        country = pycountry.countries.get(name=v) or pycountry.countries.get(alpha_2=v)
+        if not country:
+            raise ValueError(f"Invalid country: {v}. Use full name (e.g. 'Israel') or code (e.g. 'IL')")
+        return country.name
 
 
 class UserProfile(BaseModel):
@@ -20,11 +34,11 @@ class UserProfile(BaseModel):
     name: str
     email: EmailStr
     phone: str
+    country: Optional[str] = None
     date_of_birth: Optional[str] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
     created_at: str
-
 
 class LoginRequest(BaseModel):
     email: EmailStr

@@ -168,10 +168,20 @@ async def reset_password(request: ResetPasswordRequest):
 
 @router.get("/profile")
 async def get_profile(current_user: dict = Depends(verify_token)):
-    """Retrieve user profile. Requires authentication."""
-    profile = get_user(current_user["user_id"])
+    """Retrieve user profile with emergency contacts summary."""
+    user_id = current_user["user_id"]
+    profile = get_user(user_id)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
+
+    contacts = get_emergency_contacts(user_id)
+    profile["emergency_contacts"] = {
+        "total": len(contacts),
+        "verified": len([c for c in contacts if c["status"] == "verified"]),
+        "pending": len([c for c in contacts if c["status"] == "pending"]),
+        "contacts": contacts
+    }
+
     return {"status": "success", "user": profile}
 
 
