@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException
 import logging
 import uuid
 from datetime import datetime
+from fastapi import Depends
+from core.auth import verify_token
 
 from core.database import get_db
 
@@ -15,7 +17,7 @@ def _sessions():
 
 
 @router.post("/start_stream")
-async def start_stream(user_id: str = "default"):
+async def start_stream(user_id: str = "default", current_user: dict = Depends(verify_token)):
     """Initialize a continuous video streaming session."""
     # Check if user already has an active session
     existing = _sessions().find_one({"user_id": user_id, "status": "active"})
@@ -44,7 +46,7 @@ async def start_stream(user_id: str = "default"):
 
 
 @router.post("/stop_stream")
-async def stop_stream(session_id: str):
+async def stop_stream(session_id: str, current_user: dict = Depends(verify_token)):
     """Terminate an ongoing video analysis session."""
     session = _sessions().find_one({"session_id": session_id})
     if not session:
@@ -68,7 +70,7 @@ async def stop_stream(session_id: str):
 
 
 @router.get("/get_live_feedback")
-async def get_live_feedback(session_id: str):
+async def get_live_feedback(session_id: str, current_user: dict = Depends(verify_token)):
     """Returns current obstacle alerts for an active session."""
     session = _sessions().find_one({"session_id": session_id})
     if not session:

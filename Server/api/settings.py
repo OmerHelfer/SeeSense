@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException
 import logging
+from fastapi import Depends
+from core.auth import verify_token
 
 from core.config import ALL_CLASSES, HIGH_RISK_CLASSES
 from core.database import get_db
@@ -31,7 +33,7 @@ def get_user_settings(user_id: str) -> dict:
 
 
 @router.get("/get_settings")
-async def get_settings(user_id: str = "default"):
+async def get_settings(user_id: str = "default", current_user: dict = Depends(verify_token)):
     """Retrieve user preferences."""
     settings = get_user_settings(user_id)
     logger.info(f"Fetched settings for user: {user_id}")
@@ -39,7 +41,7 @@ async def get_settings(user_id: str = "default"):
 
 
 @router.post("/update_settings")
-async def update_settings(user_id: str = "default", settings: dict = {}):
+async def update_settings(user_id: str = "default", settings: dict = {}, current_user: dict = Depends(verify_token)):
     """Update user preferences."""
     valid_keys = DEFAULT_SETTINGS.keys()
 
@@ -83,7 +85,7 @@ async def update_settings(user_id: str = "default", settings: dict = {}):
 
 
 @router.get("/available_classes")
-async def get_available_classes():
+async def get_available_classes(current_user: dict = Depends(verify_token)):
     """Returns all classes the user can choose from."""
     return {
         "status": "success",
@@ -92,7 +94,7 @@ async def get_available_classes():
 
 
 @router.post("/reset_settings")
-async def reset_settings(user_id: str = "default"):
+async def reset_settings(user_id: str = "default", current_user: dict = Depends(verify_token)):
     """Restore all settings to default."""
     _settings_collection().update_one(
         {"user_id": user_id},

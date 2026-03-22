@@ -9,6 +9,8 @@ from schemas.payload import AnalyzeFrameResponse
 from core.config import HIGH_RISK_CLASSES, ALL_CLASSES, MODEL_MODE
 from api.settings import get_user_settings, DEFAULT_SETTINGS
 from utils.metrics import tracker
+from fastapi import Depends
+from core.auth import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,7 @@ _previous_danger_state = {}  # user_id → bool
 
 
 @router.post("/analyze_frame", response_model=AnalyzeFrameResponse)
-async def analyze_frame(request: Request, file: UploadFile = File(...), user_id: str = "default"):
+async def analyze_frame(request: Request, file: UploadFile = File(...), user_id: str = "default", current_user: dict = Depends(verify_token)):
     start = tracker.start_timer()
     try:
         # 0. Check if user is paused
@@ -109,7 +111,7 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), user_id:
 
 
 @router.get("/get_supported_objects")
-async def get_supported_objects():
+async def get_supported_objects(current_user: dict = Depends(verify_token)):
     """Lists all object classes the system can detect."""
     return {
         "status": "success",
@@ -118,7 +120,7 @@ async def get_supported_objects():
 
 
 @router.post("/pause_detection")
-async def pause_detection(user_id: str):
+async def pause_detection(user_id: str, current_user: dict = Depends(verify_token)):
     """Temporarily halt detection for battery or manual control reasons."""
     _paused_users.add(user_id)
     logger.info(f"Detection paused for user: {user_id}")
@@ -126,7 +128,7 @@ async def pause_detection(user_id: str):
 
 
 @router.post("/resume_detection")
-async def resume_detection(user_id: str):
+async def resume_detection(user_id: str, current_user: dict = Depends(verify_token)):
     """Resume paused detection activity."""
     _paused_users.discard(user_id)
     logger.info(f"Detection resumed for user: {user_id}")
