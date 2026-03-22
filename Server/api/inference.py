@@ -15,7 +15,8 @@ from core.auth import verify_token
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(prefix="/inference", tags=["inference"])
+
 
 # Track paused users (in-memory for POC)
 _paused_users = set()

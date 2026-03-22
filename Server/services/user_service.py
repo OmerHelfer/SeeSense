@@ -35,7 +35,6 @@ def create_user(data: dict) -> dict:
         "email": data["email"],
         "phone": data["phone"],
         "password_hash": _hash_password(data["password"]),
-        "country": data.get("country"),
         "date_of_birth": data.get("date_of_birth"),
         "height_cm": data.get("height_cm"),
         "weight_kg": data.get("weight_kg"),
@@ -129,12 +128,31 @@ def add_detection_record(user_id: str, record: dict) -> str:
     return str(result.inserted_id)
 
 
-def get_user_history(user_id: str, limit: int = 50) -> list[dict]:
-    """Retrieve detection history for a user."""
-    cursor = _detection_history().find(
-        {"user_id": user_id}
-    ).sort("timestamp", -1).limit(limit)
-    
+def get_user_history(user_id: str, limit: int = 50, period: str = "all") -> list[dict]:
+    """Retrieve detection history filtered by time period."""
+    query = {"user_id": user_id}
+
+    if period != "all":
+        from datetime import timedelta
+        now = datetime.now()
+        periods = {
+            "today": timedelta(days=1),
+            "week": timedelta(weeks=1),
+            "month": timedelta(days=30),
+            "three_Months": timedelta(days=90),
+            "half_year": timedelta(days=180),
+            "older": None
+        }
+        delta = periods.get(period)
+        if period == "older":
+            cutoff = (now - timedelta(days=180)).isoformat()
+            query["timestamp"] = {"$lt": cutoff}
+        elif delta:
+            cutoff = (now - delta).isoformat()
+            query["timestamp"] = {"$gte": cutoff}
+
+    cursor = _detection_history().find(query).sort("timestamp", -1).limit(limit)
+
     results = []
     for doc in cursor:
         doc["record_id"] = str(doc["_id"])
@@ -143,12 +161,13 @@ def get_user_history(user_id: str, limit: int = 50) -> list[dict]:
         results.append(doc)
     return results
 
-from bson import ObjectId
 
 def delete_detection_record(user_id: str, record_id: str) -> bool:
     """Delete a single detection record by ID."""
+    from bson import ObjectId
     result = _detection_history().delete_one({"_id": ObjectId(record_id), "user_id": user_id})
     return result.deleted_count > 0
+
 
 def clear_user_history(user_id: str) -> int:
     """Delete all detection history for a user. Returns count deleted."""
@@ -159,17 +178,142 @@ def clear_user_history(user_id: str) -> int:
 
 # ==================== Feedback ====================
 
-def add_feedback(user_id: str, feedback: dict):
-    """Store user feedback on detection quality."""
+def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = None) -> str:
+    """
+    Quick feedback from user during walk — no notes, status is pending.
+    Companion can add notes later.
+    Returns feedback ID.
+    """
+    if record_id:
+        existing = _feedback().find_one({"user_id": user_id, "record_id": record_id})
+        if existing:
+            raise ValueError("Feedback already exists for this record")
+            
     entry = {
         "user_id": user_id,
-        "timestamp": datetime.now().isoformat(),
-        "session_id": feedback.get("session_id"),
-        "feedback_type": feedback.get("feedback_type"),
-        "notes": feedback.get("notes")
+        "feedback_type": feedback_type,
+        "record_id": record_id,
+        "notes": None,
+        "status": "pending",
+        "created_at": datetime.now().isoformat(),
+        "updated_at": None
     }
-    _feedback().insert_one(entry)
-    logger.info(f"Feedback received from {user_id}: {feedback.get('feedback_type')}")
+    result = _feedback().insert_one(entry)
+    logger.info(f"Quick feedback from {user_id}: {feedback_type}")
+    return str(result.inserted_id)
+
+
+def create_feedback_from_history(user_id: str, record_id: str, feedback_type: str, notes: str = None) -> str:
+    """
+    Companion creates feedback from a specific history record.
+    Returns feedback ID.
+    """
+    if record_id:
+        existing = _feedback().find_one({"user_id": user_id, "record_id": record_id})
+        if existing:
+            raise ValueError("Feedback already exists for this record")
+
+    entry = {
+        "user_id": user_id,
+        "feedback_type": feedback_type,
+        "record_id": record_id,
+        "notes": notes,
+        "status": "submitted" if notes else "pending",
+        "created_at": datetime.now().isoformat(),
+        "updated_at": None
+    }
+    result = _feedback().insert_one(entry)
+    logger.info(f"Feedback from history for {user_id}: {feedback_type} on record {record_id}")
+    return str(result.inserted_id)
+
+
+def create_standalone_feedback(user_id: str, feedback_type: str, notes: str = None) -> str:
+    """
+    Standalone feedback — not linked to any specific detection.
+    Returns feedback ID.
+    """
+    entry = {
+        "user_id": user_id,
+        "feedback_type": feedback_type,
+        "record_id": None,
+        "notes": notes,
+        "status": "submitted" if notes else "pending",
+        "created_at": datetime.now().isoformat(),
+        "updated_at": None
+    }
+    result = _feedback().insert_one(entry)
+    logger.info(f"Standalone feedback from {user_id}: {feedback_type}")
+    return str(result.inserted_id)
+
+
+def get_pending_feedback(user_id: str) -> list[dict]:
+    """Get all pending feedback for a user (waiting for companion notes)."""
+    cursor = _feedback().find(
+        {"user_id": user_id, "status": "pending"}
+    ).sort("created_at", -1)
+
+    results = []
+    for doc in cursor:
+        doc["feedback_id"] = str(doc["_id"])
+        del doc["_id"]
+        del doc["user_id"]
+        results.append(doc)
+    return results
+
+
+def get_all_feedback(user_id: str) -> list[dict]:
+    """Get all feedback for a user."""
+    cursor = _feedback().find(
+        {"user_id": user_id}
+    ).sort("created_at", -1)
+
+    results = []
+    for doc in cursor:
+        doc["feedback_id"] = str(doc["_id"])
+        del doc["_id"]
+        del doc["user_id"]
+        results.append(doc)
+    return results
+
+
+def update_feedback(user_id: str, feedback_id: str, notes: str = None, feedback_type: str = None) -> dict:
+    from bson import ObjectId
+
+    updates = {"updated_at": datetime.now().isoformat()}
+    if notes is not None:
+        updates["notes"] = notes
+    if feedback_type is not None:
+        updates["feedback_type"] = feedback_type
+
+    result = _feedback().find_one_and_update(
+        {"_id": ObjectId(feedback_id), "user_id": user_id},
+        {"$set": updates},
+        return_document=True
+    )
+
+    if not result:
+        return None
+
+    result["feedback_id"] = str(result["_id"])
+    del result["_id"]
+    del result["user_id"]
+    return result
+
+def submit_feedback(user_id: str, feedback_id: str) -> bool:
+    """Submit a pending feedback as-is (without adding notes)."""
+    from bson import ObjectId
+    result = _feedback().update_one(
+        {"_id": ObjectId(feedback_id), "user_id": user_id, "status": "pending"},
+        {"$set": {"status": "submitted", "updated_at": datetime.now().isoformat()}}
+    )
+    return result.modified_count > 0
+
+
+def delete_feedback(user_id: str, feedback_id: str) -> bool:
+    """Delete a feedback entry."""
+    from bson import ObjectId
+    result = _feedback().delete_one({"_id": ObjectId(feedback_id), "user_id": user_id})
+    return result.deleted_count > 0
 
 
 # ==================== Emergency ====================
