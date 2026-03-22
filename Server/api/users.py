@@ -44,6 +44,7 @@ from services.user_service import (
     remove_emergency_contact,
     get_emergency_contacts,
     trigger_emergency,
+    MAX_EMERGENCY_CONTACTS,
 )
 from services.email_service import (
     send_welcome_email,
@@ -169,17 +170,17 @@ async def reset_password(request: ResetPasswordRequest):
 @router.get("/profile")
 async def get_profile(current_user: dict = Depends(verify_token)):
     """Retrieve user profile with emergency contacts summary."""
-    user_id = current_user["user_id"]
-    profile = get_user(user_id)
+    profile = get_user(current_user["user_id"])
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    contacts = get_emergency_contacts(user_id)
-    profile["emergency_contacts"] = {
+    # Add contacts summary
+    contacts = profile.get("emergency_contacts", [])
+    profile["contacts_summary"] = {
         "total": len(contacts),
         "verified": len([c for c in contacts if c["status"] == "verified"]),
         "pending": len([c for c in contacts if c["status"] == "pending"]),
-        "contacts": contacts
+        "max_allowed": MAX_EMERGENCY_CONTACTS
     }
 
     return {"status": "success", "user": profile}

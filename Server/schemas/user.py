@@ -30,6 +30,7 @@ class UserCreate(BaseModel):
 
 
 class UserProfile(BaseModel):
+
     user_id: str
     name: str
     email: EmailStr

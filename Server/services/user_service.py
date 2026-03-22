@@ -5,6 +5,7 @@ import random
 import string
 from datetime import datetime, timedelta
 from typing import Optional
+from bson import ObjectId
 
 from core.database import get_db
 
@@ -20,8 +21,6 @@ def _feedback():
 def _detection_history():
     return get_db()["detection_history"]
 
-def _emergency_contacts():
-    return get_db()["emergency_contacts"]
 
 MAX_EMERGENCY_CONTACTS = 5
 CONTACT_CODE_EXPIRY_MINUTES = 30
@@ -34,7 +33,6 @@ def create_user(data: dict) -> dict:
     """Register a new user. Returns the created profile."""
     user_id = str(uuid.uuid4())[:8]
 
-    # Check duplicate email
     if _users().find_one({"email": data["email"]}):
         raise ValueError(f"Email {data['email']} already registered")
 
@@ -48,6 +46,7 @@ def create_user(data: dict) -> dict:
         "date_of_birth": data.get("date_of_birth"),
         "height_cm": data.get("height_cm"),
         "weight_kg": data.get("weight_kg"),
+        "emergency_contacts": [],
         "created_at": datetime.now().isoformat()
     }
 
@@ -104,13 +103,11 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
     """
     Change user password.
     If force=True, skip old password check (for password reset).
-    Returns True if successful.
     """
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return False
 
-    # Verify old password unless forced (reset flow)
     if not force:
         if not _verify_password(old_password, profile["password_hash"]):
             return False
@@ -137,11 +134,29 @@ def add_detection_record(user_id: str, record: dict) -> str:
     return str(result.inserted_id)
 
 
-def get_user_history(user_id: str, limit: int = 50) -> list[dict]:
-    """Retrieve detection history for a user."""
-    cursor = _detection_history().find(
-        {"user_id": user_id}
-    ).sort("timestamp", -1).limit(limit)
+def get_user_history(user_id: str, limit: int = 50, period: str = "all") -> list[dict]:
+    """Retrieve detection history filtered by time period."""
+    query = {"user_id": user_id}
+
+    if period != "all":
+        now = datetime.now()
+        periods = {
+            "today": timedelta(days=1),
+            "week": timedelta(weeks=1),
+            "month": timedelta(days=30),
+            "three_months": timedelta(days=90),
+            "half_year": timedelta(days=180),
+            "older": None
+        }
+        delta = periods.get(period)
+        if period == "older":
+            cutoff = (now - timedelta(days=180)).isoformat()
+            query["timestamp"] = {"$lt": cutoff}
+        elif delta:
+            cutoff = (now - delta).isoformat()
+            query["timestamp"] = {"$gte": cutoff}
+
+    cursor = _detection_history().find(query).sort("timestamp", -1).limit(limit)
 
     results = []
     for doc in cursor:
@@ -154,7 +169,6 @@ def get_user_history(user_id: str, limit: int = 50) -> list[dict]:
 
 def delete_detection_record(user_id: str, record_id: str) -> bool:
     """Delete a single detection record by ID."""
-    from bson import ObjectId
     result = _detection_history().delete_one({"_id": ObjectId(record_id), "user_id": user_id})
     return result.deleted_count > 0
 
@@ -169,11 +183,12 @@ def clear_user_history(user_id: str) -> int:
 # ==================== Feedback ====================
 
 def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = None) -> str:
-    """
-    Quick feedback from user during walk — no notes, status is pending.
-    Companion can add notes later.
-    Returns feedback ID.
-    """
+    """Quick feedback from user during walk — no notes, status is pending."""
+    if record_id:
+        existing = _feedback().find_one({"user_id": user_id, "record_id": record_id})
+        if existing:
+            raise ValueError("Feedback already exists for this record")
+
     entry = {
         "user_id": user_id,
         "feedback_type": feedback_type,
@@ -189,10 +204,11 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
 
 
 def create_feedback_from_history(user_id: str, record_id: str, feedback_type: str, notes: str = None) -> str:
-    """
-    Companion creates feedback from a specific history record.
-    Returns feedback ID.
-    """
+    """Companion creates feedback from a specific history record."""
+    existing = _feedback().find_one({"user_id": user_id, "record_id": record_id})
+    if existing:
+        raise ValueError("Feedback already exists for this record")
+
     entry = {
         "user_id": user_id,
         "feedback_type": feedback_type,
@@ -208,10 +224,7 @@ def create_feedback_from_history(user_id: str, record_id: str, feedback_type: st
 
 
 def create_standalone_feedback(user_id: str, feedback_type: str, notes: str = None) -> str:
-    """
-    Standalone feedback — not linked to any specific detection.
-    Returns feedback ID.
-    """
+    """Standalone feedback — not linked to any specific detection."""
     entry = {
         "user_id": user_id,
         "feedback_type": feedback_type,
@@ -227,7 +240,7 @@ def create_standalone_feedback(user_id: str, feedback_type: str, notes: str = No
 
 
 def get_pending_feedback(user_id: str) -> list[dict]:
-    """Get all pending feedback for a user (waiting for companion notes)."""
+    """Get all pending feedback for a user."""
     cursor = _feedback().find(
         {"user_id": user_id, "status": "pending"}
     ).sort("created_at", -1)
@@ -257,13 +270,8 @@ def get_all_feedback(user_id: str) -> list[dict]:
 
 
 def update_feedback(user_id: str, feedback_id: str, notes: str = None, feedback_type: str = None) -> dict:
-    """
-    Companion updates a pending feedback — adds notes and/or changes type.
-    Automatically marks as submitted.
-    """
-    from bson import ObjectId
-
-    updates = {"status": "submitted", "updated_at": datetime.now().isoformat()}
+    """Companion updates a feedback — adds notes and/or changes type."""
+    updates = {"updated_at": datetime.now().isoformat()}
     if notes is not None:
         updates["notes"] = notes
     if feedback_type is not None:
@@ -286,7 +294,6 @@ def update_feedback(user_id: str, feedback_id: str, notes: str = None, feedback_
 
 def submit_feedback(user_id: str, feedback_id: str) -> bool:
     """Submit a pending feedback as-is (without adding notes)."""
-    from bson import ObjectId
     result = _feedback().update_one(
         {"_id": ObjectId(feedback_id), "user_id": user_id, "status": "pending"},
         {"$set": {"status": "submitted", "updated_at": datetime.now().isoformat()}}
@@ -296,41 +303,61 @@ def submit_feedback(user_id: str, feedback_id: str) -> bool:
 
 def delete_feedback(user_id: str, feedback_id: str) -> bool:
     """Delete a feedback entry."""
-    from bson import ObjectId
     result = _feedback().delete_one({"_id": ObjectId(feedback_id), "user_id": user_id})
     return result.deleted_count > 0
 
 
-# ==================== Emergency Contacts ====================
+# ==================== Emergency Contacts (embedded in user document) ====================
+
+def _cleanup_expired_contacts(user_id: str):
+    """Remove pending contacts whose verification code has expired."""
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        return
+
+    contacts = profile.get("emergency_contacts", [])
+    now = datetime.now().isoformat()
+
+    expired = [c["email"] for c in contacts
+               if c["status"] == "pending" and c.get("code_expires") and c["code_expires"] < now]
+
+    for email in expired:
+        _users().update_one(
+            {"user_id": user_id},
+            {"$pull": {"emergency_contacts": {"email": email}}}
+        )
+        logger.info(f"Expired contact removed: {email} for user {user_id}")
 
 def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> dict:
     """
-    Add a new emergency contact. Sends verification code to their email.
-    Contact stays pending until verified.
+    Add a new emergency contact to user's embedded array.
+    Sends verification code to their email. Contact stays pending until verified.
     """
-
+    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         raise ValueError("User not found")
 
-    # Edge case: can't add yourself
+    # Can't add yourself
     if email == profile["email"]:
         raise ValueError("Cannot add yourself as an emergency contact")
 
-    # Edge case: max contacts reached
-    existing_count = _emergency_contacts().count_documents({"user_id": user_id})
-    if existing_count >= MAX_EMERGENCY_CONTACTS:
+    # Get current contacts
+    contacts = profile.get("emergency_contacts", [])
+
+    # Max contacts reached
+    if len(contacts) >= MAX_EMERGENCY_CONTACTS:
         raise ValueError(f"Maximum {MAX_EMERGENCY_CONTACTS} emergency contacts allowed")
 
-    # Edge case: duplicate email for same user
-    if _emergency_contacts().find_one({"user_id": user_id, "email": email}):
-        raise ValueError(f"Contact with email {email} already exists")
+    # Duplicate email check
+    for c in contacts:
+        if c["email"] == email:
+            raise ValueError(f"Contact with email {email} already exists")
 
     # Generate verification code
     code = ''.join(random.choices(string.digits, k=6))
 
     contact = {
-        "user_id": user_id,
         "name": name,
         "phone": phone,
         "email": email,
@@ -342,46 +369,57 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
         "verified_at": None
     }
 
-    _emergency_contacts().insert_one(contact)
+    _users().update_one(
+        {"user_id": user_id},
+        {"$push": {"emergency_contacts": contact}}
+    )
+
     logger.info(f"Emergency contact added (pending): {email} for user {user_id}")
     return {"name": name, "phone": phone, "email": email, "status": "pending", "_code": code}
 
 
 def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
     """Verify emergency contact using the code they received."""
-    contact = _emergency_contacts().find_one({"user_id": user_id, "email": email})
+    _cleanup_expired_contacts(user_id)
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        raise ValueError("User not found")
+
+    contacts = profile.get("emergency_contacts", [])
+    contact = next((c for c in contacts if c["email"] == email), None)
+
     if not contact:
         raise ValueError("Contact not found")
 
     if contact["status"] == "verified":
         raise ValueError("Contact is already verified")
 
-    # Edge case: too many wrong attempts
+    # Too many wrong attempts
     if contact["code_attempts"] >= MAX_CODE_ATTEMPTS:
         raise ValueError("Too many failed attempts. Please request a new code.")
 
-    # Edge case: code expired
+    # Code expired
     if datetime.now().isoformat() > contact["code_expires"]:
         raise ValueError("Verification code has expired. Please request a new code.")
 
-    # Edge case: wrong code
+    # Wrong code
     if contact["verification_code"] != code:
-        _emergency_contacts().update_one(
-            {"user_id": user_id, "email": email},
-            {"$inc": {"code_attempts": 1}}
+        _users().update_one(
+            {"user_id": user_id, "emergency_contacts.email": email},
+            {"$inc": {"emergency_contacts.$.code_attempts": 1}}
         )
         remaining = MAX_CODE_ATTEMPTS - contact["code_attempts"] - 1
         raise ValueError(f"Invalid code. {remaining} attempts remaining.")
 
     # Verify the contact
-    _emergency_contacts().update_one(
-        {"user_id": user_id, "email": email},
+    _users().update_one(
+        {"user_id": user_id, "emergency_contacts.email": email},
         {"$set": {
-            "status": "verified",
-            "verified_at": datetime.now().isoformat(),
-            "verification_code": None,
-            "code_expires": None,
-            "code_attempts": 0
+            "emergency_contacts.$.status": "verified",
+            "emergency_contacts.$.verified_at": datetime.now().isoformat(),
+            "emergency_contacts.$.verification_code": None,
+            "emergency_contacts.$.code_expires": None,
+            "emergency_contacts.$.code_attempts": 0
         }}
     )
 
@@ -391,8 +429,14 @@ def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
 
 def resend_contact_code(user_id: str, email: str) -> str:
     """Resend verification code to a pending contact. Returns new code."""
+    _cleanup_expired_contacts(user_id)
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        raise ValueError("User not found")
 
-    contact = _emergency_contacts().find_one({"user_id": user_id, "email": email})
+    contacts = profile.get("emergency_contacts", [])
+    contact = next((c for c in contacts if c["email"] == email), None)
+
     if not contact:
         raise ValueError("Contact not found")
 
@@ -402,12 +446,12 @@ def resend_contact_code(user_id: str, email: str) -> str:
     # Generate new code and reset attempts
     code = ''.join(random.choices(string.digits, k=6))
 
-    _emergency_contacts().update_one(
-        {"user_id": user_id, "email": email},
+    _users().update_one(
+        {"user_id": user_id, "emergency_contacts.email": email},
         {"$set": {
-            "verification_code": code,
-            "code_expires": (datetime.now() + timedelta(minutes=CONTACT_CODE_EXPIRY_MINUTES)).isoformat(),
-            "code_attempts": 0
+            "emergency_contacts.$.verification_code": code,
+            "emergency_contacts.$.code_expires": (datetime.now() + timedelta(minutes=CONTACT_CODE_EXPIRY_MINUTES)).isoformat(),
+            "emergency_contacts.$.code_attempts": 0
         }}
     )
 
@@ -416,38 +460,46 @@ def resend_contact_code(user_id: str, email: str) -> str:
 
 
 def remove_emergency_contact(user_id: str, email: str) -> bool:
-    """Remove an emergency contact (pending or verified)."""
-    result = _emergency_contacts().delete_one({"user_id": user_id, "email": email})
-    if result.deleted_count > 0:
+    """Remove an emergency contact from user's array."""
+    _cleanup_expired_contacts(user_id)
+    result = _users().update_one(
+        {"user_id": user_id},
+        {"$pull": {"emergency_contacts": {"email": email}}}
+    )
+    if result.modified_count > 0:
         logger.info(f"Emergency contact removed: {email} for user {user_id}")
         return True
     return False
 
 
 def get_emergency_contacts(user_id: str) -> list[dict]:
-    """Get all emergency contacts for a user."""
-    cursor = _emergency_contacts().find(
-        {"user_id": user_id}
-    )
-    results = []
-    for doc in cursor:
-        results.append({
-            "name": doc["name"],
-            "phone": doc["phone"],
-            "email": doc["email"],
-            "status": doc["status"],
-            "created_at": doc["created_at"],
-            "verified_at": doc.get("verified_at")
-        })
-    return results
+    """Get all emergency contacts for a user (without internal fields)."""
+    _cleanup_expired_contacts(user_id)
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        return []
+
+    contacts = profile.get("emergency_contacts", [])
+    return [{
+        "name": c["name"],
+        "phone": c["phone"],
+        "email": c["email"],
+        "status": c["status"],
+        "created_at": c["created_at"],
+        "verified_at": c.get("verified_at")
+    } for c in contacts]
 
 
 def get_verified_contacts(user_id: str) -> list[dict]:
     """Get only verified emergency contacts (for sending alerts)."""
-    cursor = _emergency_contacts().find(
-        {"user_id": user_id, "status": "verified"}
-    )
-    return [{"name": d["name"], "phone": d["phone"], "email": d["email"]} for d in cursor]
+    _cleanup_expired_contacts(user_id)
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        return []
+
+    contacts = profile.get("emergency_contacts", [])
+    return [{"name": c["name"], "phone": c["phone"], "email": c["email"]}
+            for c in contacts if c["status"] == "verified"]
 
 
 # ==================== Emergency Alert ====================
@@ -455,7 +507,6 @@ def get_verified_contacts(user_id: str) -> list[dict]:
 def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float, message: str) -> dict:
     """
     Trigger emergency alert — sends location to ALL verified contacts.
-    Returns the alert payload with list of notified contacts.
     """
     profile = _users().find_one({"user_id": user_id})
     if not profile:
@@ -495,5 +546,18 @@ def _verify_password(password: str, hashed: bytes) -> bool:
 
 
 def _safe_profile(profile: dict) -> dict:
-    """Return profile without password hash and MongoDB _id."""
-    return {k: v for k, v in profile.items() if k not in ("password_hash", "_id")}
+    """Return profile without password hash, MongoDB _id, and internal contact fields."""
+    safe = {k: v for k, v in profile.items() if k not in ("password_hash", "_id")}
+
+    # Clean internal fields from emergency contacts
+    if "emergency_contacts" in safe:
+        safe["emergency_contacts"] = [{
+            "name": c["name"],
+            "phone": c["phone"],
+            "email": c["email"],
+            "status": c["status"],
+            "created_at": c["created_at"],
+            "verified_at": c.get("verified_at")
+        } for c in safe["emergency_contacts"]]
+
+    return safe
