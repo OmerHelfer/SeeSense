@@ -15,6 +15,10 @@ from schemas.user import (
     ChangePasswordRequest,
     ResetPasswordRequest,
     ForgotPasswordRequest,
+    AddEmergencyContactRequest,
+    VerifyEmergencyContactRequest,
+    ResendContactCodeRequest,
+    RemoveEmergencyContactRequest,
 )
 from services.user_service import (
     create_user,
@@ -34,6 +38,11 @@ from services.user_service import (
     update_feedback,
     submit_feedback,
     delete_feedback,
+    add_emergency_contact,
+    verify_emergency_contact,
+    resend_contact_code,
+    remove_emergency_contact,
+    get_emergency_contacts,
     trigger_emergency,
 )
 from services.email_service import (
@@ -41,7 +50,9 @@ from services.email_service import (
     send_password_changed_email,
     send_password_reset_email,
     send_profile_updated_email,
-    send_emergency_contact_email,
+    send_emergency_contact_verification_email,
+    send_emergency_contact_confirmed_email,
+    send_emergency_contact_removed_email,
 )
 from core.auth import create_token, verify_token, blacklisted_tokens
 
@@ -169,45 +180,22 @@ async def update_profile(updates: dict, current_user: dict = Depends(verify_toke
     """Update user profile fields. Requires authentication."""
     user_id = current_user["user_id"]
 
-    old_profile = get_user(user_id)
-    old_contact_email = None
-    if old_profile and old_profile.get("emergency_contact"):
-        old_contact_email = old_profile["emergency_contact"].get("email")
-
     profile = update_user(user_id, updates)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
     send_profile_updated_email(profile["email"], profile["name"])
-
-    new_contact_email = None
-    if profile.get("emergency_contact"):
-        new_contact_email = profile["emergency_contact"].get("email")
-
-    if new_contact_email and new_contact_email != old_contact_email:
-        send_emergency_contact_email(
-            new_contact_email,
-            profile["emergency_contact"]["name"],
-            profile["name"]
-        )
-
     return {"status": "success", "message": "Profile updated successfully", "user": profile}
 
 
 # ==================== History ====================
 
 @router.get("/history")
-async def user_history(
-    limit: int = 50,
-    period: str = "all",
-    current_user: dict = Depends(verify_token)
-):
-    """
-    Retrieve detection history. Filter by period: today, week, month, half_year, all.
-    """
+async def user_history(limit: int = 50, current_user: dict = Depends(verify_token)):
+    """Retrieve detection and alert history. Requires authentication."""
     user_id = current_user["user_id"]
-    history = get_user_history(user_id, limit, period)
-    return {"status": "success", "user_id": user_id, "total_records": len(history), "period": period, "history": history}
+    history = get_user_history(user_id, limit)
+    return {"status": "success", "user_id": user_id, "total_records": len(history), "history": history}
 
 
 @router.delete("/history/{record_id}")
@@ -307,7 +295,118 @@ async def delete_feedback_endpoint(feedback_id: str, current_user: dict = Depend
     return {"status": "success", "message": "Feedback deleted"}
 
 
-# ==================== Emergency ====================
+# ==================== Emergency Contacts ====================
+
+@router.post("/contacts/add")
+async def add_contact(request: AddEmergencyContactRequest, current_user: dict = Depends(verify_token)):
+    """
+    Add an emergency contact. Sends verification code to their email.
+    Contact stays pending until they confirm with the code. Max 5 contacts.
+    """
+    try:
+        user_id = current_user["user_id"]
+        profile = get_user(user_id)
+        result = add_emergency_contact(user_id, request.name, request.phone, request.email)
+
+        # Send verification email with the code
+        code = result.pop("_code")
+        send_emergency_contact_verification_email(
+            request.email,
+            request.name,
+            profile["name"],
+            code
+        )
+
+        return {"status": "success", "message": f"Verification code sent to {request.email}", "contact": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/contacts/verify")
+async def verify_contact(request: VerifyEmergencyContactRequest, current_user: dict = Depends(verify_token)):
+    """Verify emergency contact using the code they received via email."""
+    try:
+        user_id = current_user["user_id"]
+        profile = get_user(user_id)
+        contact = verify_emergency_contact(user_id, request.email, request.code)
+
+        # Notify contact they are confirmed
+        send_emergency_contact_confirmed_email(
+            request.email,
+            contact["name"],
+            profile["name"]
+        )
+
+        return {"status": "success", "message": "Contact verified successfully", "contact": contact}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/contacts/resend_code")
+async def resend_code(request: ResendContactCodeRequest, current_user: dict = Depends(verify_token)):
+    """Resend verification code to a pending contact."""
+    try:
+        user_id = current_user["user_id"]
+        profile = get_user(user_id)
+
+        # Get contact name before resending
+        contacts = get_emergency_contacts(user_id)
+        contact_info = next((c for c in contacts if c["email"] == request.email), None)
+        contact_name = contact_info["name"] if contact_info else ""
+
+        code = resend_contact_code(user_id, request.email)
+
+        send_emergency_contact_verification_email(
+            request.email,
+            contact_name,
+            profile["name"],
+            code
+        )
+
+        return {"status": "success", "message": f"New verification code sent to {request.email}"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/contacts/remove")
+async def remove_contact(request: RemoveEmergencyContactRequest, current_user: dict = Depends(verify_token)):
+    """Remove an emergency contact (pending or verified)."""
+    user_id = current_user["user_id"]
+    profile = get_user(user_id)
+
+    # Get contact info before removing (for email notification)
+    contacts = get_emergency_contacts(user_id)
+    contact_info = next((c for c in contacts if c["email"] == request.email), None)
+
+    success = remove_emergency_contact(user_id, request.email)
+    if not success:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    # Notify the removed contact if they were verified
+    if contact_info and contact_info["status"] == "verified":
+        send_emergency_contact_removed_email(
+            request.email,
+            contact_info["name"],
+            profile["name"]
+        )
+
+    return {"status": "success", "message": "Contact removed"}
+
+
+@router.get("/contacts")
+async def list_contacts(current_user: dict = Depends(verify_token)):
+    """Get all emergency contacts with their status."""
+    user_id = current_user["user_id"]
+    contacts = get_emergency_contacts(user_id)
+    return {
+        "status": "success",
+        "total": len(contacts),
+        "max_allowed": 5,
+        "contacts": contacts
+    }
+
+
+# ==================== Emergency Alert ====================
 
 @router.post("/emergency_alert")
 async def emergency_alert(alert: EmergencyAlertRequest):
