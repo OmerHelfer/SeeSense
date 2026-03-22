@@ -24,8 +24,9 @@ _previous_danger_state = {}  # user_id → bool
 
 
 @router.post("/analyze_frame", response_model=AnalyzeFrameResponse)
-async def analyze_frame(request: Request, file: UploadFile = File(...), user_id: str = "default", current_user: dict = Depends(verify_token)):
+async def analyze_frame(request: Request, file: UploadFile = File(...), current_user: dict = Depends(verify_token)):
     start = tracker.start_timer()
+    user_id = current_user["user_id"]
     try:
         # 0. Check if user is paused
         if user_id in _paused_users:
@@ -120,16 +121,16 @@ async def get_supported_objects(current_user: dict = Depends(verify_token)):
 
 
 @router.post("/pause_detection")
-async def pause_detection(user_id: str, current_user: dict = Depends(verify_token)):
-    """Temporarily halt detection for battery or manual control reasons."""
+async def pause_detection(current_user: dict = Depends(verify_token)):
+    user_id = current_user["user_id"]
     _paused_users.add(user_id)
     logger.info(f"Detection paused for user: {user_id}")
     return {"status": "success", "user_id": user_id, "detection": "paused"}
 
 
 @router.post("/resume_detection")
-async def resume_detection(user_id: str, current_user: dict = Depends(verify_token)):
-    """Resume paused detection activity."""
+async def resume_detection(current_user: dict = Depends(verify_token)):
+    user_id = current_user["user_id"]
     _paused_users.discard(user_id)
     logger.info(f"Detection resumed for user: {user_id}")
     return {"status": "success", "user_id": user_id, "detection": "active"}
