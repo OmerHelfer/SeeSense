@@ -461,7 +461,6 @@ def resend_contact_code(user_id: str, email: str) -> str:
 
 def remove_emergency_contact(user_id: str, email: str) -> bool:
     """Remove an emergency contact from user's array."""
-    _cleanup_expired_contacts(user_id)
     result = _users().update_one(
         {"user_id": user_id},
         {"$pull": {"emergency_contacts": {"email": email}}}
