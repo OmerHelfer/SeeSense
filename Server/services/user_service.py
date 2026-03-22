@@ -136,6 +136,18 @@ def get_user_history(user_id: str, limit: int = 50) -> list[dict]:
     ).sort("timestamp", -1).limit(limit)
     return list(cursor)
 
+def delete_detection_record(user_id: str, timestamp: str) -> bool:
+    """Delete a single detection record by timestamp."""
+    result = _detection_history().delete_one({"user_id": user_id, "timestamp": timestamp})
+    return result.deleted_count > 0
+
+
+def clear_user_history(user_id: str) -> int:
+    """Delete all detection history for a user. Returns count deleted."""
+    result = _detection_history().delete_many({"user_id": user_id})
+    logger.info(f"Cleared {result.deleted_count} history records for user: {user_id}")
+    return result.deleted_count
+
 
 # ==================== Feedback ====================
 

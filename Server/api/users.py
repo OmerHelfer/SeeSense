@@ -4,6 +4,7 @@ import random
 import string
 from datetime import datetime, timedelta
 
+
 from schemas.user import (
     UserCreate,
     UserFeedback,
@@ -22,7 +23,9 @@ from services.user_service import (
     authenticate_user,
     get_user_history,
     add_feedback,
-    trigger_emergency,
+    trigger_emergency,    
+    delete_detection_record,
+    clear_user_history
 )
 from services.email_service import (
     send_welcome_email,
@@ -205,6 +208,21 @@ async def user_history(limit: int = 50, current_user: dict = Depends(verify_toke
         "history": history
     }
 
+
+@router.delete("/history/{timestamp}")
+async def delete_history_record(timestamp: str, current_user: dict = Depends(verify_token)):
+    """Delete a single detection record."""
+    success = delete_detection_record(current_user["user_id"], timestamp)
+    if not success:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return {"status": "success", "message": "Record deleted"}
+
+
+@router.delete("/history")
+async def clear_history(current_user: dict = Depends(verify_token)):
+    """Delete all detection history for the user."""
+    count = clear_user_history(current_user["user_id"])
+    return {"status": "success", "message": f"Cleared {count} records"}
 
 @router.post("/feedback")
 async def send_feedback(feedback: UserFeedback, current_user: dict = Depends(verify_token)):
