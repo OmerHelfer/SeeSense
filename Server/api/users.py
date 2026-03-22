@@ -88,6 +88,9 @@ async def change_password_endpoint(
     if len(request.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
+    if request.old_password == request.new_password:
+        raise HTTPException(status_code=400, detail="New password must be different from current password")
+
     success = change_password(current_user["user_id"], request.old_password, request.new_password)
     if not success:
         raise HTTPException(status_code=400, detail="Current password is incorrect")
