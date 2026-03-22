@@ -208,15 +208,13 @@ async def user_history(limit: int = 50, current_user: dict = Depends(verify_toke
         "history": history
     }
 
-
-@router.delete("/history/{timestamp}")
-async def delete_history_record(timestamp: str, current_user: dict = Depends(verify_token)):
-    """Delete a single detection record."""
-    success = delete_detection_record(current_user["user_id"], timestamp)
+@router.delete("/history/{record_id}")
+async def delete_history_record(record_id: str, current_user: dict = Depends(verify_token)):
+    """Delete a single detection record by ID."""
+    success = delete_detection_record(current_user["user_id"], record_id)
     if not success:
         raise HTTPException(status_code=404, detail="Record not found")
     return {"status": "success", "message": "Record deleted"}
-
 
 @router.delete("/history")
 async def clear_history(current_user: dict = Depends(verify_token)):

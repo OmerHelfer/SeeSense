@@ -115,8 +115,8 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
 
 # ==================== Detection History ====================
 
-def add_detection_record(user_id: str, record: dict):
-    """Store a detection result in user history."""
+def add_detection_record(user_id: str, record: dict) -> str:
+    """Store a detection result in user history. Returns record ID."""
     entry = {
         "user_id": user_id,
         "timestamp": datetime.now().isoformat(),
@@ -125,22 +125,30 @@ def add_detection_record(user_id: str, record: dict):
         "distance": record.get("distance", "Far"),
         "objects_detected": len(record.get("objects", []))
     }
-    _detection_history().insert_one(entry)
+    result = _detection_history().insert_one(entry)
+    return str(result.inserted_id)
 
 
 def get_user_history(user_id: str, limit: int = 50) -> list[dict]:
     """Retrieve detection history for a user."""
     cursor = _detection_history().find(
-        {"user_id": user_id},
-        {"_id": 0}
+        {"user_id": user_id}
     ).sort("timestamp", -1).limit(limit)
-    return list(cursor)
+    
+    results = []
+    for doc in cursor:
+        doc["record_id"] = str(doc["_id"])
+        del doc["_id"]
+        del doc["user_id"]
+        results.append(doc)
+    return results
 
-def delete_detection_record(user_id: str, timestamp: str) -> bool:
-    """Delete a single detection record by timestamp."""
-    result = _detection_history().delete_one({"user_id": user_id, "timestamp": timestamp})
+from bson import ObjectId
+
+def delete_detection_record(user_id: str, record_id: str) -> bool:
+    """Delete a single detection record by ID."""
+    result = _detection_history().delete_one({"_id": ObjectId(record_id), "user_id": user_id})
     return result.deleted_count > 0
-
 
 def clear_user_history(user_id: str) -> int:
     """Delete all detection history for a user. Returns count deleted."""
