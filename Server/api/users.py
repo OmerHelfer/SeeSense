@@ -198,7 +198,12 @@ async def user_history(limit: int = 50, current_user: dict = Depends(verify_toke
     """Retrieve detection and alert history. Requires authentication."""
     user_id = current_user["user_id"]
     history = get_user_history(user_id, limit)
-    return {"status": "success", "user_id": user_id, "history": history}
+    return {
+        "status": "success",
+        "user_id": user_id,
+        "total_records": len(history),
+        "history": history
+    }
 
 
 @router.post("/feedback")
