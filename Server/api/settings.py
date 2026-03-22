@@ -33,16 +33,18 @@ def get_user_settings(user_id: str) -> dict:
 
 
 @router.get("/get_settings")
-async def get_settings(user_id: str = "default", current_user: dict = Depends(verify_token)):
+async def get_settings(current_user: dict = Depends(verify_token)):
     """Retrieve user preferences."""
+    user_id = current_user["user_id"]
     settings = get_user_settings(user_id)
     logger.info(f"Fetched settings for user: {user_id}")
     return {"status": "success", "user_id": user_id, "settings": settings}
 
 
 @router.post("/update_settings")
-async def update_settings(user_id: str = "default", settings: dict = {}, current_user: dict = Depends(verify_token)):
+async def update_settings(settings: dict = {}, current_user: dict = Depends(verify_token)):
     """Update user preferences."""
+    user_id = current_user["user_id"]
     valid_keys = DEFAULT_SETTINGS.keys()
 
     for key, value in settings.items():
@@ -87,6 +89,7 @@ async def update_settings(user_id: str = "default", settings: dict = {}, current
 @router.get("/available_classes")
 async def get_available_classes(current_user: dict = Depends(verify_token)):
     """Returns all classes the user can choose from."""
+    user_id = current_user["user_id"]
     return {
         "status": "success",
         "classes": sorted(list(ALL_CLASSES))
@@ -94,8 +97,9 @@ async def get_available_classes(current_user: dict = Depends(verify_token)):
 
 
 @router.post("/reset_settings")
-async def reset_settings(user_id: str = "default", current_user: dict = Depends(verify_token)):
+async def reset_settings(current_user: dict = Depends(verify_token)):
     """Restore all settings to default."""
+    user_id = current_user["user_id"]
     _settings_collection().update_one(
         {"user_id": user_id},
         {"$set": {**DEFAULT_SETTINGS, "user_id": user_id}},
