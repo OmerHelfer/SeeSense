@@ -31,14 +31,12 @@ from services.email_service import (
     send_profile_updated_email,
     send_emergency_contact_email
 )
-from core.auth import create_token, verify_token
+from core.auth import create_token, verify_token, blacklisted_tokens
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-# Blacklisted tokens (for logout)
-_blacklisted_tokens = set()
 
 # Password reset codes: email → {"code": str, "expires": datetime}
 _reset_codes = {}
@@ -76,9 +74,8 @@ async def login(request: LoginRequest):
 
 @router.post("/logout")
 async def logout(current_user: dict = Depends(verify_token)):
-    """Logout — invalidates the current token."""
+    blacklisted_tokens.add(current_user["token"])
     return {"status": "success", "message": "Logged out successfully"}
-
 
 # ==================== Password Management ====================
 

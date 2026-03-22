@@ -10,9 +10,11 @@ logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
+# Blacklisted tokens (logged out)
+blacklisted_tokens = set()
+
 
 def create_token(user_id: str, email: str) -> str:
-    """Create a JWT token for an authenticated user."""
     payload = {
         "user_id": user_id,
         "email": email,
@@ -25,16 +27,17 @@ def create_token(user_id: str, email: str) -> str:
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """
-    FastAPI dependency — verifies JWT token from Authorization header.
-    Usage: add to endpoint like: async def my_endpoint(user: dict = Depends(verify_token))
-    """
     token = credentials.credentials
+
+    if token in blacklisted_tokens:
+        raise HTTPException(status_code=401, detail="Token has been revoked (logged out)")
+
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         return {
             "user_id": payload["user_id"],
-            "email": payload["email"]
+            "email": payload["email"],
+            "token": token
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
