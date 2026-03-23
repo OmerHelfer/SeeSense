@@ -50,7 +50,7 @@ async def start_stream(current_user: dict = Depends(verify_token)):
         # Reactivate the recent session
         _sessions().update_one(
             {"session_id": recent["session_id"]},
-            {"$set": {"status": "active"}, "$unset": {"stopped_at": ""}}
+            {"$set": {"status": "active", "paused": False}, "$unset": {"stopped_at": ""}}
         )
         logger.info(f"Stream resumed: session={recent['session_id']}, user={user_id}")
         return {
@@ -92,7 +92,7 @@ async def stop_stream(request: StopStreamRequest, current_user: dict = Depends(v
 
     _sessions().update_one(
         {"session_id": request.session_id},
-        {"$set": {"status": "stopped", "stopped_at": datetime.now().isoformat()}}
+        {"$set": {"status": "stopped", "stopped_at": datetime.now().isoformat(), "paused": False}}
     )
 
     logger.info(f"Stream stopped: session={request.session_id}, frames={session['frame_count']}")

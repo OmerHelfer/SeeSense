@@ -201,9 +201,13 @@ async def update_profile(updates: dict, current_user: dict = Depends(verify_toke
 
 # ==================== History ====================
 
+VALID_PERIODS = {"all", "today", "week", "month", "three_months", "half_year", "older"}
+
 @router.get("/history")
 async def user_history(limit: int = 50, period: str = "all", session_id: str = None, current_user: dict = Depends(verify_token)):
     """Retrieve detection history. Filter by period and/or session_id."""
+    if period not in VALID_PERIODS:
+        raise HTTPException(status_code=400, detail=f"Invalid period. Choose from: {sorted(VALID_PERIODS)}")
     user_id = current_user["user_id"]
     history = get_user_history(user_id, limit, period, session_id)
     return {"status": "success", "user_id": user_id, "total_records": len(history), "period": period, "session_id": session_id, "history": history}
