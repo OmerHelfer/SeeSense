@@ -104,26 +104,25 @@ async def stop_stream(request: StopStreamRequest, current_user: dict = Depends(v
     }
 
 
-@router.post("/get_live_feedback")
-async def get_live_feedback(request: LiveFeedbackRequest, current_user: dict = Depends(verify_token)):
-    """Returns current obstacle alerts for an active session."""
+@router.get("/session_status")
+async def session_status(current_user: dict = Depends(verify_token)):
+    """Returns current session status — active/paused, frame count, duration."""
     user_id = current_user["user_id"]
-    session = _sessions().find_one({"session_id": request.session_id, "user_id": user_id})
+    session = _sessions().find_one({"user_id": user_id, "status": "active"})
 
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if session["status"] != "active":
-        raise HTTPException(status_code=400, detail="Session is not active")
+        return {
+            "status": "success",
+            "session": None,
+            "message": "No active session"
+        }
 
     return {
         "status": "success",
-        "session_id": request.session_id,
-        "frame_count": session["frame_count"],
-        "latest_detection": {
-            "danger": False,
-            "alert_level": "none",
-            "distance": "Far",
-            "objects": []
+        "session": {
+            "session_id": session["session_id"],
+            "started_at": session["started_at"],
+            "frame_count": session["frame_count"],
+            "paused": session.get("paused", False)
         }
     }
