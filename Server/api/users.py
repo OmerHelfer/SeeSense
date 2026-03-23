@@ -202,11 +202,11 @@ async def update_profile(updates: dict, current_user: dict = Depends(verify_toke
 # ==================== History ====================
 
 @router.get("/history")
-async def user_history(limit: int = 50, current_user: dict = Depends(verify_token)):
-    """Retrieve detection and alert history. Requires authentication."""
+async def user_history(limit: int = 50, period: str = "all", session_id: str = None, current_user: dict = Depends(verify_token)):
+    """Retrieve detection history. Filter by period and/or session_id."""
     user_id = current_user["user_id"]
-    history = get_user_history(user_id, limit)
-    return {"status": "success", "user_id": user_id, "total_records": len(history), "history": history}
+    history = get_user_history(user_id, limit, period, session_id)
+    return {"status": "success", "user_id": user_id, "total_records": len(history), "period": period, "session_id": session_id, "history": history}
 
 
 @router.delete("/history/{record_id}")
@@ -249,7 +249,7 @@ async def feedback_from_history(feedback: FeedbackFromHistory, current_user: dic
     return {"status": "success", "message": "Feedback recorded", "feedback_id": feedback_id}
 
 
-@router.post("/feedback/standalone")
+@router.post("/feedback/general")
 async def standalone_feedback(feedback: StandaloneFeedback, current_user: dict = Depends(verify_token)):
     """
     Standalone feedback — not linked to any specific detection.

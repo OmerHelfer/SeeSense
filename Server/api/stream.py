@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core.auth import verify_token
 from core.database import get_db
@@ -26,9 +26,10 @@ def _sessions():
 
 @router.post("/start_stream")
 async def start_stream(current_user: dict = Depends(verify_token)):
-    """Initialize a continuous video streaming session."""
+    """Initialize or resume a video streaming session."""
     user_id = current_user["user_id"]
 
+    # Check if already has an active session
     existing = _sessions().find_one({"user_id": user_id, "status": "active"})
     if existing:
         return {
@@ -37,6 +38,29 @@ async def start_stream(current_user: dict = Depends(verify_token)):
             "message": "Session already running"
         }
 
+    # Check if there's a recently stopped session (within 15 minutes)
+    cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
+    recent = _sessions().find_one({
+        "user_id": user_id,
+        "status": "stopped",
+        "stopped_at": {"$gte": cutoff}
+    })
+
+    if recent:
+        # Reactivate the recent session
+        _sessions().update_one(
+            {"session_id": recent["session_id"]},
+            {"$set": {"status": "active"}, "$unset": {"stopped_at": ""}}
+        )
+        logger.info(f"Stream resumed: session={recent['session_id']}, user={user_id}")
+        return {
+            "status": "resumed",
+            "session_id": recent["session_id"],
+            "frame_count": recent["frame_count"],
+            "message": "Previous session resumed"
+        }
+
+    # Create new session
     session_id = str(uuid.uuid4())
     _sessions().insert_one({
         "session_id": session_id,

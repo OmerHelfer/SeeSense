@@ -120,10 +120,11 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
 
 # ==================== Detection History ====================
 
-def add_detection_record(user_id: str, record: dict) -> str:
+def add_detection_record(user_id: str, record: dict, session_id: str = None) -> str:
     """Store a detection result in user history. Returns record ID."""
     entry = {
         "user_id": user_id,
+        "session_id": session_id,
         "timestamp": datetime.now().isoformat(),
         "danger": record.get("danger", False),
         "alert_level": record.get("alert_level", "none"),
@@ -134,9 +135,12 @@ def add_detection_record(user_id: str, record: dict) -> str:
     return str(result.inserted_id)
 
 
-def get_user_history(user_id: str, limit: int = 50, period: str = "all") -> list[dict]:
-    """Retrieve detection history filtered by time period."""
+def get_user_history(user_id: str, limit: int = 50, period: str = "all", session_id: str = None) -> list[dict]:
+    """Retrieve detection history filtered by time period and/or session."""
     query = {"user_id": user_id}
+
+    if session_id:
+        query["session_id"] = session_id
 
     if period != "all":
         now = datetime.now()
@@ -189,10 +193,16 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
         if existing:
             raise ValueError("Feedback already exists for this record")
 
+    # Find active session
+    from core.database import get_db
+    session = get_db()["sessions"].find_one({"user_id": user_id, "status": "active"})
+    session_id = session["session_id"] if session else None
+
     entry = {
         "user_id": user_id,
         "feedback_type": feedback_type,
         "record_id": record_id,
+        "session_id": session_id,
         "notes": None,
         "status": "pending",
         "created_at": datetime.now().isoformat(),
@@ -309,31 +319,11 @@ def delete_feedback(user_id: str, feedback_id: str) -> bool:
 
 # ==================== Emergency Contacts (embedded in user document) ====================
 
-def _cleanup_expired_contacts(user_id: str):
-    """Remove pending contacts whose verification code has expired."""
-    profile = _users().find_one({"user_id": user_id})
-    if not profile:
-        return
-
-    contacts = profile.get("emergency_contacts", [])
-    now = datetime.now().isoformat()
-
-    expired = [c["email"] for c in contacts
-               if c["status"] == "pending" and c.get("code_expires") and c["code_expires"] < now]
-
-    for email in expired:
-        _users().update_one(
-            {"user_id": user_id},
-            {"$pull": {"emergency_contacts": {"email": email}}}
-        )
-        logger.info(f"Expired contact removed: {email} for user {user_id}")
-
 def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> dict:
     """
     Add a new emergency contact to user's embedded array.
     Sends verification code to their email. Contact stays pending until verified.
     """
-    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         raise ValueError("User not found")
@@ -380,7 +370,6 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
 
 def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
     """Verify emergency contact using the code they received."""
-    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         raise ValueError("User not found")
@@ -429,7 +418,6 @@ def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
 
 def resend_contact_code(user_id: str, email: str) -> str:
     """Resend verification code to a pending contact. Returns new code."""
-    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         raise ValueError("User not found")
@@ -473,7 +461,6 @@ def remove_emergency_contact(user_id: str, email: str) -> bool:
 
 def get_emergency_contacts(user_id: str) -> list[dict]:
     """Get all emergency contacts for a user (without internal fields)."""
-    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return []
@@ -491,7 +478,6 @@ def get_emergency_contacts(user_id: str) -> list[dict]:
 
 def get_verified_contacts(user_id: str) -> list[dict]:
     """Get only verified emergency contacts (for sending alerts)."""
-    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return []

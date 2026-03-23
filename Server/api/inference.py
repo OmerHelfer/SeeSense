@@ -1,35 +1,54 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Depends
 import logging
+
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
 from services.motion_tracker import get_tracker as get_motion_tracker
 from ml_engine.model_loader import run_inference, MockModel
 from schemas.payload import AnalyzeFrameResponse
 from core.config import HIGH_RISK_CLASSES, ALL_CLASSES, MODEL_MODE
-from api.settings import get_user_settings, DEFAULT_SETTINGS
-from services.user_service import add_detection_record
-from utils.metrics import tracker
 from core.auth import verify_token
+from core.database import get_db
+from api.settings import get_user_settings, DEFAULT_SETTINGS
+from utils.metrics import tracker
+from services.user_service import add_detection_record
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/inference", tags=["inference"])
+router = APIRouter(prefix="/inference", tags=["Inference"])
 
-
-# Track paused users (in-memory for POC)
-_paused_users = set()
 
 # Track previous danger state per user (for "danger cleared" notifications)
 _previous_danger_state = {}  # user_id → bool
 
+def _is_user_paused(user_id: str) -> bool:
+    """Check if user's active session is paused."""
+    sessions = get_db()["sessions"]
+    session = sessions.find_one({"user_id": user_id, "status": "active"})
+    if not session:
+        return False
+    return session.get("paused", False)
+
+def _get_active_session(user_id: str):
+    """Find the active session for a user and increment frame count."""
+    sessions = get_db()["sessions"]
+    session = sessions.find_one({"user_id": user_id, "status": "active"})
+    if session:
+        sessions.update_one(
+            {"session_id": session["session_id"]},
+            {"$inc": {"frame_count": 1}}
+        )
+        return session["session_id"]
+    return None
+
 
 @router.post("/analyze_frame", response_model=AnalyzeFrameResponse)
 async def analyze_frame(request: Request, file: UploadFile = File(...), current_user: dict = Depends(verify_token)):
-    start = tracker.start_timer()
     user_id = current_user["user_id"]
+    start = tracker.start_timer()
     try:
         # 0. Check if user is paused
-        if user_id in _paused_users:
+        if _is_user_paused(user_id):
             tracker.end_timer(start, success=True)
             return AnalyzeFrameResponse(
                 status="paused",
@@ -51,11 +70,9 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), current_
         # 3. Prepare input based on model mode
         model = request.app.state.model
         if MODEL_MODE == "custom":
-            # Pure PyTorch — needs full preprocessing
             model_input = process_image(image_bytes)
             logger.info(f"Preprocessed tensor shape: {model_input.shape}")
         else:
-            # Mock or Ultralytics — raw image is enough
             model_input = img
 
         # 4. Run model inference → list of detections
@@ -70,11 +87,19 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), current_
         user_classes = set(settings.get("high_risk_classes", []))
         sensitivity = settings.get("detection_sensitivity", "medium")
 
-        # 8. Danger assessment logic with user's classes + motion + sensitivity
+        # 7. Danger assessment logic with user's classes + motion + sensitivity
         image_height, image_width = img.shape[:2]
-        result = assess_danger(detections_with_motion, high_risk_classes=user_classes, sensitivity=sensitivity, image_width=image_width, image_height=image_height)
-        # 8. Save detection to user history
-        add_detection_record(user_id, result)
+        result = assess_danger(
+            detections_with_motion,
+            high_risk_classes=user_classes,
+            sensitivity=sensitivity,
+            image_width=image_width,
+            image_height=image_height
+        )
+
+        # 8. Link to active session and save to history
+        session_id = _get_active_session(user_id)
+        add_detection_record(user_id, result, session_id=session_id)
 
         # 9. Check if danger just cleared (was dangerous → now safe)
         was_danger = _previous_danger_state.get(user_id, False)
@@ -114,7 +139,7 @@ async def analyze_frame(request: Request, file: UploadFile = File(...), current_
 
 
 @router.get("/get_supported_objects")
-async def get_supported_objects(current_user: dict = Depends(verify_token)):
+async def get_supported_objects():
     """Lists all object classes the system can detect."""
     return {
         "status": "success",
@@ -124,15 +149,27 @@ async def get_supported_objects(current_user: dict = Depends(verify_token)):
 
 @router.post("/pause_detection")
 async def pause_detection(current_user: dict = Depends(verify_token)):
+    """Temporarily halt detection."""
     user_id = current_user["user_id"]
-    _paused_users.add(user_id)
-    logger.info(f"Detection paused for user: {user_id}")
-    return {"status": "success", "user_id": user_id, "detection": "paused"}
+    sessions = get_db()["sessions"]
+    result = sessions.update_one(
+        {"user_id": user_id, "status": "active"},
+        {"$set": {"paused": True}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=400, detail="No active session")
+    return {"status": "success", "detection": "paused"}
 
 
 @router.post("/resume_detection")
 async def resume_detection(current_user: dict = Depends(verify_token)):
+    """Resume paused detection."""
     user_id = current_user["user_id"]
-    _paused_users.discard(user_id)
-    logger.info(f"Detection resumed for user: {user_id}")
-    return {"status": "success", "user_id": user_id, "detection": "active"}
+    sessions = get_db()["sessions"]
+    result = sessions.update_one(
+        {"user_id": user_id, "status": "active"},
+        {"$set": {"paused": False}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=400, detail="No active session")
+    return {"status": "success", "detection": "active"}
