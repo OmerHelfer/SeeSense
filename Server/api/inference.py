@@ -1,6 +1,5 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Request
+from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Depends
 import logging
-
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
 from services.motion_tracker import get_tracker as get_motion_tracker
@@ -10,7 +9,6 @@ from core.config import HIGH_RISK_CLASSES, ALL_CLASSES, MODEL_MODE
 from api.settings import get_user_settings, DEFAULT_SETTINGS
 from services.user_service import add_detection_record
 from utils.metrics import tracker
-from fastapi import Depends
 from core.auth import verify_token
 
 logger = logging.getLogger(__name__)
