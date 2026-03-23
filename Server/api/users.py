@@ -54,6 +54,7 @@ from services.email_service import (
     send_emergency_contact_verification_email,
     send_emergency_contact_confirmed_email,
     send_emergency_contact_removed_email,
+    send_contact_verified_notification,
 )
 from core.auth import create_token, verify_token, blacklisted_tokens
 
@@ -349,6 +350,11 @@ async def verify_contact(request: VerifyEmergencyContactRequest, current_user: d
             request.email,
             contact["name"],
             profile["name"]
+        )
+        send_contact_verified_notification(
+            profile["email"],
+            profile["name"],
+            contact["name"]
         )
 
         return {"status": "success", "message": "Contact verified successfully", "contact": contact}

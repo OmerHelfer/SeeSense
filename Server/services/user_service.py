@@ -341,6 +341,15 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
     Add a new emergency contact to user's embedded array.
     Sends verification code to their email. Contact stays pending until verified.
     """
+    expired = _cleanup_expired_contacts(user_id)
+    if expired:
+        from services.email_service import send_contact_expired_notification
+        profile = _users().find_one({"user_id": user_id})
+        for exp_email, exp_name in expired:
+            send_contact_expired_notification(profile["email"], profile["name"], exp_name)
+
+    profile = _users().find_one({"user_id": user_id})
+    # ... rest stays the same
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         raise ValueError("User not found")
@@ -387,6 +396,7 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
 
 def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
     """Verify emergency contact using the code they received."""
+    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         raise ValueError("User not found")
@@ -435,6 +445,7 @@ def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
 
 def resend_contact_code(user_id: str, email: str) -> str:
     """Resend verification code to a pending contact. Returns new code."""
+    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         raise ValueError("User not found")
@@ -478,6 +489,7 @@ def remove_emergency_contact(user_id: str, email: str) -> bool:
 
 def get_emergency_contacts(user_id: str) -> list[dict]:
     """Get all emergency contacts for a user (without internal fields)."""
+    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return []
@@ -495,6 +507,7 @@ def get_emergency_contacts(user_id: str) -> list[dict]:
 
 def get_verified_contacts(user_id: str) -> list[dict]:
     """Get only verified emergency contacts (for sending alerts)."""
+    _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return []
@@ -503,36 +516,6 @@ def get_verified_contacts(user_id: str) -> list[dict]:
     return [{"name": c["name"], "phone": c["phone"], "email": c["email"]}
             for c in contacts if c["status"] == "verified"]
 
-
-# ==================== Emergency Alert ====================
-
-def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float, message: str) -> dict:
-    """
-    Trigger emergency alert — sends location to ALL verified contacts.
-    """
-    profile = _users().find_one({"user_id": user_id})
-    if not profile:
-        raise ValueError("User not found")
-
-    contacts = get_verified_contacts(user_id)
-    if not contacts:
-        raise ValueError("No verified emergency contacts configured")
-
-    alert = {
-        "user_id": user_id,
-        "user_name": profile["name"],
-        "gps": {"lat": gps_lat, "lon": gps_lon},
-        "google_maps_link": f"https://maps.google.com/?q={gps_lat},{gps_lon}",
-        "message": message,
-        "timestamp": datetime.now().isoformat(),
-        "notified_contacts": contacts
-    }
-
-    # TODO: Send actual SMS/push to each contact (Twilio / other service)
-    for contact in contacts:
-        logger.warning(f"EMERGENCY ALERT to {contact['name']} ({contact['phone']}): {alert['google_maps_link']}")
-
-    return alert
 
 
 # ==================== Helpers ====================
@@ -563,3 +546,62 @@ def _safe_profile(profile: dict) -> dict:
         } for c in safe["emergency_contacts"]]
 
     return safe
+
+def _cleanup_expired_contacts(user_id: str) -> list[str]:
+    """Remove pending contacts whose verification code has expired. Returns removed names."""
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        return []
+
+    contacts = profile.get("emergency_contacts", [])
+    now = datetime.now().isoformat()
+
+    expired = [(c["email"], c["name"]) for c in contacts
+               if c["status"] == "pending" and c.get("code_expires") and c["code_expires"] < now]
+
+    for email, name in expired:
+        _users().update_one(
+            {"user_id": user_id},
+            {"$pull": {"emergency_contacts": {"email": email}}}
+        )
+        logger.info(f"Expired contact removed: {email} for user {user_id}")
+
+    return expired
+
+# ==================== Emergency Alert ====================
+
+def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float, message: str) -> dict:
+    from services.email_service import send_emergency_alert_email
+
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        raise ValueError("User not found")
+
+    contacts = get_verified_contacts(user_id)
+    if not contacts:
+        raise ValueError("No verified emergency contacts configured")
+
+    maps_link = f"https://maps.google.com/?q={gps_lat},{gps_lon}"
+
+    alert = {
+        "user_id": user_id,
+        "user_name": profile["name"],
+        "gps": {"lat": gps_lat, "lon": gps_lon},
+        "google_maps_link": maps_link,
+        "message": message,
+        "timestamp": datetime.now().isoformat(),
+        "notified_contacts": contacts
+    }
+
+    # Send email to each verified contact
+    for contact in contacts:
+        send_emergency_alert_email(
+            contact["email"],
+            contact["name"],
+            profile["name"],
+            maps_link,
+            message
+        )
+        logger.warning(f"EMERGENCY ALERT to {contact['name']} ({contact['email']}): {maps_link}")
+
+    return alert

@@ -171,3 +171,57 @@ def send_emergency_contact_removed_email(to_email: str, contact_name: str, user_
     </div>
     """
     send_email(to_email, subject, html)
+
+
+def send_contact_verified_notification(to_email: str, user_name: str, contact_name: str):
+    """Notify the user that their emergency contact has been verified."""
+    subject = "SeeSense — Emergency Contact Verified"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2c3e50;">Contact Verified</h2>
+        <p>Hi {user_name},</p>
+        <p><strong>{contact_name}</strong> has been verified as your emergency contact.</p>
+        <p>They will now receive alerts in case of emergency.</p>
+        <br>
+        <p><strong>The SeeSense Team</strong></p>
+    </div>
+    """
+    send_email(to_email, subject, html)
+
+
+def send_contact_expired_notification(to_email: str, user_name: str, contact_name: str):
+    """Notify the user that their emergency contact didn't verify in time."""
+    subject = "SeeSense — Emergency Contact Expired"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2c3e50;">Contact Not Verified</h2>
+        <p>Hi {user_name},</p>
+        <p><strong>{contact_name}</strong> did not verify in time and has been removed from your emergency contacts.</p>
+        <p>You can add them again if you'd like to retry.</p>
+        <br>
+        <p><strong>The SeeSense Team</strong></p>
+    </div>
+    """
+    send_email(to_email, subject, html)
+
+def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str, maps_link: str, message: str):
+    """Send emergency alert email to verified contact."""
+    subject = "URGENT — SeeSense Emergency Alert"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 3px solid #e74c3c; padding: 20px;">
+        <h2 style="color: #e74c3c;">EMERGENCY ALERT</h2>
+        <p>Hi {contact_name},</p>
+        <p><strong>{user_name}</strong> has triggered an emergency alert on SeeSense.</p>
+        <p>Message: <strong>{message}</strong></p>
+        <p>Their location:</p>
+        <a href="{maps_link}" style="display: inline-block; background: #e74c3c; color: white; 
+           padding: 15px 30px; text-decoration: none; border-radius: 8px; font-size: 18px;">
+            View Location on Google Maps
+        </a>
+        <br><br>
+        <p>Please try to contact them or send help immediately.</p>
+        <br>
+        <p><strong>The SeeSense Team</strong></p>
+    </div>
+    """
+    send_email(to_email, subject, html)
