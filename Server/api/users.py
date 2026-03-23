@@ -60,6 +60,8 @@ from services.email_service import (
     send_emergency_contact_removed_email,
     send_contact_verified_notification,
     send_emergency_contact_removed_email,
+    send_account_deleted_email,
+    send_account_deleted_to_contact,
 )
 from core.auth import create_token, verify_token, blacklisted_tokens
 
@@ -109,30 +111,29 @@ async def logout(current_user: dict = Depends(verify_token)):
 
 @router.delete("/account")
 async def delete_account(current_user: dict = Depends(verify_token)):
-    """
-    Permanently delete user account and all associated data.
-    Notifies verified emergency contacts that they have been removed.
-    """
+    """Permanently delete user account and all associated data."""
     user_id = current_user["user_id"]
     profile = get_user(user_id)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Notify verified emergency contacts before deletion
+    # Notify verified emergency contacts
     contacts = profile.get("emergency_contacts", [])
     for contact in contacts:
         if contact["status"] == "verified":
-            send_emergency_contact_removed_email(
+            send_account_deleted_to_contact(
                 contact["email"],
                 contact["name"],
                 profile["name"]
             )
 
+    # Send confirmation to user
+    send_account_deleted_email(profile["email"], profile["name"])
+
     success = delete_user_account(user_id)
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Blacklist the current token
     blacklisted_tokens.add(current_user["token"])
 
     return {"status": "success", "message": "Account and all data permanently deleted"}

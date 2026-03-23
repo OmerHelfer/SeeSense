@@ -225,3 +225,34 @@ def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str,
     </div>
     """
     send_email(to_email, subject, html)
+
+def send_account_deleted_email(to_email: str, name: str):
+    """Notify user that their account has been deleted."""
+    subject = "SeeSense — Account Deleted"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2c3e50;">Account Deleted</h2>
+        <p>Hi {name},</p>
+        <p>Your SeeSense account and all associated data have been permanently deleted.</p>
+        <p>If you did not request this, please contact us immediately.</p>
+        <br>
+        <p><strong>The SeeSense Team</strong></p>
+    </div>
+    """
+    send_email(to_email, subject, html)
+
+
+def send_account_deleted_to_contact(to_email: str, contact_name: str, user_name: str):
+    """Notify emergency contact that the user deleted their account."""
+    subject = "SeeSense — Account Closed"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2c3e50;">Account Closed</h2>
+        <p>Hello {contact_name},</p>
+        <p><strong>{user_name}</strong> has closed their SeeSense account.</p>
+        <p>You will no longer receive emergency alerts for this user.</p>
+        <br>
+        <p><strong>The SeeSense Team</strong></p>
+    </div>
+    """
+    send_email(to_email, subject, html)
