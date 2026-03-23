@@ -66,8 +66,9 @@ async def health_check():
     }
 
 
-@app.get("/get_system_status")
+@app.get("/get_system_status", summary="Admin Only — System Performance")
 async def get_system_status(current_user: dict = Depends(verify_admin)):
+    """Admin only — server performance metrics."""
     return tracker.get_status()
 
 if __name__ == "__main__":
