@@ -38,6 +38,7 @@ def create_user(data: dict) -> dict:
 
     profile = {
         "user_id": user_id,
+        "is_admin": False,
         "name": data["name"],
         "email": data["email"],
         "phone": data["phone"],

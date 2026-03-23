@@ -14,6 +14,7 @@ security = HTTPBearer()
 blacklisted_tokens = set()
 
 
+
 def create_token(user_id: str, email: str) -> str:
     payload = {
         "user_id": user_id,
@@ -43,3 +44,15 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Verify token AND check admin status."""
+    from core.database import get_db
+
+    user = verify_token(credentials)
+
+    profile = get_db()["users"].find_one({"user_id": user["user_id"]})
+    if not profile or not profile.get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    return user

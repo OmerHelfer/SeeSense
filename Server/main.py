@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
@@ -13,6 +13,7 @@ from ml_engine.model_loader import load_model
 from core.config import MODEL_PATH, MODEL_MODE, CORS_ORIGINS
 from core.database import connect, disconnect
 from utils.metrics import tracker
+from core.auth import verify_token, verify_admin
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -66,9 +67,8 @@ async def health_check():
 
 
 @app.get("/get_system_status")
-async def get_system_status():
+async def get_system_status(current_user: dict = Depends(verify_admin)):
     return tracker.get_status()
-
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
