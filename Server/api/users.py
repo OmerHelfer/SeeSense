@@ -233,25 +233,24 @@ async def clear_history(current_user: dict = Depends(verify_token)):
 
 @router.post("/feedback/quick")
 async def quick_feedback(feedback: QuickFeedback, current_user: dict = Depends(verify_token)):
-    """
-    Quick feedback during walk — user presses 'wrong detection' or 'missed obstacle'.
-    No notes required. Goes to pending list for companion to review later.
-    """
-    user_id = current_user["user_id"]
-    feedback_id = create_quick_feedback(user_id, feedback.feedback_type, feedback.record_id)
-    return {"status": "success", "message": "Feedback recorded", "feedback_id": feedback_id}
+    """Quick feedback during walk."""
+    try:
+        user_id = current_user["user_id"]
+        feedback_id = create_quick_feedback(user_id, feedback.feedback_type, feedback.record_id)
+        return {"status": "success", "message": "Feedback recorded", "feedback_id": feedback_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/feedback/from_history")
 async def feedback_from_history(feedback: FeedbackFromHistory, current_user: dict = Depends(verify_token)):
-    """
-    Companion creates feedback from a specific history record.
-    Can include notes immediately or leave empty for later.
-    """
-    user_id = current_user["user_id"]
-    feedback_id = create_feedback_from_history(user_id, feedback.record_id, feedback.feedback_type, feedback.notes)
-    return {"status": "success", "message": "Feedback recorded", "feedback_id": feedback_id}
-
+    """Companion creates feedback from a specific history record."""
+    try:
+        user_id = current_user["user_id"]
+        feedback_id = create_feedback_from_history(user_id, feedback.record_id, feedback.feedback_type, feedback.notes)
+        return {"status": "success", "message": "Feedback recorded", "feedback_id": feedback_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/feedback/general")
 async def standalone_feedback(feedback: StandaloneFeedback, current_user: dict = Depends(verify_token)):

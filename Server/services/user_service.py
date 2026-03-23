@@ -189,6 +189,14 @@ def clear_user_history(user_id: str) -> int:
 def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = None) -> str:
     """Quick feedback from user during walk — no notes, status is pending."""
     if record_id:
+        try:
+            record = _detection_history().find_one({"_id": ObjectId(record_id), "user_id": user_id})
+        except Exception:
+            raise ValueError("Invalid record ID format")
+
+        if not record:
+            raise ValueError("Detection record not found")
+
         existing = _feedback().find_one({"user_id": user_id, "record_id": record_id})
         if existing:
             raise ValueError("Feedback already exists for this record")
@@ -215,6 +223,15 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
 
 def create_feedback_from_history(user_id: str, record_id: str, feedback_type: str, notes: str = None) -> str:
     """Companion creates feedback from a specific history record."""
+    # Validate record exists and belongs to user
+    try:
+        record = _detection_history().find_one({"_id": ObjectId(record_id), "user_id": user_id})
+    except Exception:
+        raise ValueError("Invalid record ID format")
+
+    if not record:
+        raise ValueError("Detection record not found")
+ 
     existing = _feedback().find_one({"user_id": user_id, "record_id": record_id})
     if existing:
         raise ValueError("Feedback already exists for this record")
