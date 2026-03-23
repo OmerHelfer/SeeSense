@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-print("EMAIL_ADDRESS:", os.getenv("EMAIL_ADDRESS"))
-print("EMAIL_PASSWORD:", os.getenv("EMAIL_PASSWORD"))
 
 # ==================== Model ====================
 MODEL_PATH = "ml_engine/weights/best.pt"

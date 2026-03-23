@@ -1,7 +1,3 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -28,7 +24,7 @@ async def lifespan(app: FastAPI):
     connect()
     app.state.model = load_model(MODEL_PATH, mode=MODEL_MODE)
     app.state.start_time = time.time()
-    logger.info("Model loaded, server ready")
+    logger.info("Server is ready")
     yield
     disconnect()
     logger.info("SeeSense server shutting down...")
