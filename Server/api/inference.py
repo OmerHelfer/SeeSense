@@ -12,6 +12,8 @@ from core.database import get_db
 from api.settings import get_user_settings, DEFAULT_SETTINGS
 from utils.metrics import tracker
 from services.user_service import add_detection_record
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +23,10 @@ router = APIRouter(prefix="/inference", tags=["Inference"])
 # Track previous danger state per user (for "danger cleared" notifications)
 _previous_danger_state = {}  # user_id → bool
 
+limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/analyze_frame", response_model=AnalyzeFrameResponse)
+@limiter.limit("400/minute")
 async def analyze_frame(request: Request, file: UploadFile = File(...), current_user: dict = Depends(verify_token)):
     start = tracker.start_timer()
     user_id = current_user["user_id"]

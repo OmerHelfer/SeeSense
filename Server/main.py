@@ -2,9 +2,12 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
-import logging
+import logging.handlers
 import time
-
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 from api.inference import router as inference_router
 from api.settings import router as settings_router
 from api.stream import router as stream_router
@@ -15,9 +18,26 @@ from core.database import connect, disconnect
 from utils.metrics import tracker
 from core.auth import verify_token, verify_admin
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import os
 
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.handlers.RotatingFileHandler(
+            f"{LOG_DIR}/seesense.log",
+            maxBytes=5_000_000,
+            backupCount=5,
+            encoding="utf-8"
+        )
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,6 +52,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="SeeSense", lifespan=lifespan)
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please slow down."}
+    )
 
 # CORS — allows the client app to connect to the server
 app.add_middleware(

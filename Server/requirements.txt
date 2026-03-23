@@ -14,3 +14,5 @@ scipy
 pymongo[srv]
 motor
 pycountry
+os
+slowapi

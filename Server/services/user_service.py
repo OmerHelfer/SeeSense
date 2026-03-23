@@ -606,3 +606,22 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float, message: str
         logger.warning(f"EMERGENCY ALERT to {contact['name']} ({contact['email']}): {maps_link}")
 
     return alert
+
+def delete_user_account(user_id: str) -> bool:
+    """
+    Delete user account and ALL associated data.
+    Removes: profile, detection history, feedback, sessions.
+    """
+    profile = _users().find_one({"user_id": user_id})
+    if not profile:
+        return False
+
+    # Delete all user data
+    _users().delete_one({"user_id": user_id})
+    _detection_history().delete_many({"user_id": user_id})
+    _feedback().delete_many({"user_id": user_id})
+    get_db()["sessions"].delete_many({"user_id": user_id})
+    get_db()["settings"].delete_many({"user_id": user_id})
+
+    logger.info(f"Account deleted: {user_id} ({profile['name']})")
+    return True

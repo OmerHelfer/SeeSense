@@ -3,6 +3,9 @@ import logging
 import random
 import string
 from datetime import datetime, timedelta
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from starlette.requests import Request
 
 from schemas.user import (
     UserCreate,
@@ -45,6 +48,7 @@ from services.user_service import (
     get_emergency_contacts,
     trigger_emergency,
     MAX_EMERGENCY_CONTACTS,
+    delete_user_account,
 )
 from services.email_service import (
     send_welcome_email,
@@ -55,6 +59,7 @@ from services.email_service import (
     send_emergency_contact_confirmed_email,
     send_emergency_contact_removed_email,
     send_contact_verified_notification,
+    send_emergency_contact_removed_email,
 )
 from core.auth import create_token, verify_token, blacklisted_tokens
 
@@ -67,6 +72,9 @@ _blacklisted_tokens = set()
 
 # Password reset codes: email → {"code": str, "expires": datetime}
 _reset_codes = {}
+
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ==================== Auth ====================
@@ -84,7 +92,8 @@ async def register(user: UserCreate):
 
 
 @router.post("/login")
-async def login(request: LoginRequest):
+@limiter.limit("10/minute")
+async def login(request: Request, login_data: LoginRequest):
     """Authenticate user. Returns profile + JWT token."""
     profile = authenticate_user(request.email, request.password)
     if not profile:
@@ -98,6 +107,35 @@ async def logout(current_user: dict = Depends(verify_token)):
     """Logout — invalidates the current token."""
     return {"status": "success", "message": "Logged out successfully"}
 
+@router.delete("/account")
+async def delete_account(current_user: dict = Depends(verify_token)):
+    """
+    Permanently delete user account and all associated data.
+    Notifies verified emergency contacts that they have been removed.
+    """
+    user_id = current_user["user_id"]
+    profile = get_user(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Notify verified emergency contacts before deletion
+    contacts = profile.get("emergency_contacts", [])
+    for contact in contacts:
+        if contact["status"] == "verified":
+            send_emergency_contact_removed_email(
+                contact["email"],
+                contact["name"],
+                profile["name"]
+            )
+
+    success = delete_user_account(user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Blacklist the current token
+    blacklisted_tokens.add(current_user["token"])
+
+    return {"status": "success", "message": "Account and all data permanently deleted"}
 
 # ==================== Password Management ====================
 
@@ -120,7 +158,8 @@ async def change_password_endpoint(
 
 
 @router.post("/forgot_password")
-async def forgot_password(request: ForgotPasswordRequest):
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, req: ForgotPasswordRequest):
     """Send password reset code to email. No auth required."""
     profile = get_user_by_email(request.email)
     if not profile:
