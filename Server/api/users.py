@@ -59,7 +59,6 @@ from services.email_service import (
     send_emergency_contact_confirmed_email,
     send_emergency_contact_removed_email,
     send_contact_verified_notification,
-    send_emergency_contact_removed_email,
     send_account_deleted_email,
     send_account_deleted_to_contact,
 )
@@ -97,7 +96,7 @@ async def register(user: UserCreate):
 @limiter.limit("10/minute")
 async def login(request: Request, login_data: LoginRequest):
     """Authenticate user. Returns profile + JWT token."""
-    profile = authenticate_user(request.email, request.password)
+    profile = authenticate_user(login_data.email, login_data.password)
     if not profile:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_token(profile["user_id"], profile["email"])
@@ -162,19 +161,19 @@ async def change_password_endpoint(
 @limiter.limit("3/minute")
 async def forgot_password(request: Request, req: ForgotPasswordRequest):
     """Send password reset code to email. No auth required."""
-    profile = get_user_by_email(request.email)
+    profile = get_user_by_email(req.email)
     if not profile:
         # Don't reveal if email exists or not (security)
         return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
 
     # Generate 6-digit code
     code = ''.join(random.choices(string.digits, k=6))
-    _reset_codes[request.email] = {
+    _reset_codes[req.email] = {
         "code": code,
         "expires": datetime.now() + timedelta(minutes=15)
     }
 
-    send_password_reset_email(request.email, profile["name"], code)
+    send_password_reset_email(req.email, profile["name"], code)
     return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
 
 
