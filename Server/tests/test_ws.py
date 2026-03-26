@@ -14,13 +14,13 @@ import websockets
 import json
 
 # ── Paste your JWT token here ──
-TOKEN = "PASTE_YOUR_TOKEN_HERE"
+TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhjZGI4NjUiLCJlbWFpbCI6Im9tZXJoZWxmZXJAZ21haWwuY29tIiwiZXhwIjoxNzc0NjA3ODc1LCJpYXQiOjE3NzQ1MjE0NzV9.lhkyXJ0OeEgFLSHE8mhKOv2MaKS6BCvmgku6iLEZ2Sg"
 
 # ── Server address ──
 SERVER = "ws://localhost:8000/stream/ws"
 
 # ── Test image path ──
-IMAGE_PATH = "test_image.jpg"
+IMAGE_PATH = "tests/test_images/File2.jpg"
 
 
 async def test():
@@ -42,6 +42,7 @@ async def test():
 
         # 3. Receive detection result
         result = json.loads(await ws.recv())
+        print("RAW:", result) 
         print(f"\n{'='*50}")
         print(f"Status:    {result.get('status')}")
         print(f"Danger:    {result.get('danger')}")
