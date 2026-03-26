@@ -25,7 +25,7 @@ venv/
 Thumbs.db
 
 # Temp files
-temp_images/
+/tests
 *.log
 
 # Logs

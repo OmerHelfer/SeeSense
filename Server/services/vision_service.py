@@ -43,10 +43,10 @@ def validate_image_quality(img: np.ndarray):
     """
     h, w = img.shape[:2]
 
-    # Check 1: Resolution too low
-    if w < MIN_RESOLUTION or h < MIN_RESOLUTION:
+    # Check 1: Resolution too low (longest side must be at least 640)
+    if max(w, h) < MIN_RESOLUTION:
         raise ValueError(
-            f"Image resolution too low ({w}x{h}). Minimum is {MIN_RESOLUTION}x{MIN_RESOLUTION}."
+            f"Image resolution too low ({w}x{h}). Longest side must be at least {MIN_RESOLUTION}px."
         )
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
