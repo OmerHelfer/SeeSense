@@ -82,6 +82,9 @@ async def update_settings(settings: dict = {}, current_user: dict = Depends(veri
     )
 
     updated = get_user_settings(user_id)
+    # Update cache so WebSocket uses new settings instantly
+    from api.stream import update_cache
+    update_cache(user_id, settings=updated)
     logger.info(f"Updated settings for user: {user_id} → {settings}")
     return {"status": "success", "user_id": user_id, "settings": updated}
 

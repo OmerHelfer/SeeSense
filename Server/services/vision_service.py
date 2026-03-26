@@ -15,63 +15,71 @@ MIN_RESOLUTION = 640            # Minimum width or height in pixels
 
 def decode_image(image_bytes: bytes) -> np.ndarray:
     """
-    Decode and validate image with full edge case handling.
-    No resizing — ultralytics handles its own preprocessing.
-    For custom PyTorch mode, process_image() handles preprocessing separately.
+    Decode, validate, and resize image.
+
+    Pipeline:
+    1. Decode bytes → numpy array
+    2. Check resolution on original (reject if too small)
+    3. Letterbox resize to 640x640 (for performance + model input)
+    4. Quality checks on resized image (blur, dark, overexposed, covered)
     """
     # Edge case: empty or too small file
     if len(image_bytes) < MIN_IMAGE_BYTES:
         raise ValueError(f"Image too small ({len(image_bytes)} bytes). File may be empty or corrupted.")
 
-    # Decode
+    # 1. Decode
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if img is None:
         raise ValueError("Failed to decode image. The file might be corrupted or not a valid image format.")
 
-    # Run all quality checks
-    validate_image_quality(img)
-
-    return img
-
-
-def validate_image_quality(img: np.ndarray):
-    """
-    Run all image quality checks. Raises ValueError with descriptive message.
-    Each check returns early with a specific error for the client to handle.
-    """
+    # 2. Resolution check on original (before resize)
     h, w = img.shape[:2]
-
-    # Check 1: Resolution too low (longest side must be at least 640)
     if max(w, h) < MIN_RESOLUTION:
         raise ValueError(
             f"Image resolution too low ({w}x{h}). Longest side must be at least {MIN_RESOLUTION}px."
         )
 
+    # 3. Letterbox resize to TARGET_SIZE (640x640)
+    img_resized = letterbox_resize(img, TARGET_SIZE)
+
+    # 4. Quality checks on resized image (much faster than on 2048x1536)
+    validate_image_quality(img_resized)
+
+    return img_resized
+
+
+def validate_image_quality(img: np.ndarray):
+    """
+    Run image quality checks on the resized image.
+    Raises ValueError with descriptive message for the client.
+    Resolution check is NOT here — it runs on the original before resize.
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     mean_intensity = float(np.mean(gray))
     std_intensity = float(np.std(gray))
+    h, w = img.shape[:2]
 
-    # Check 2: Camera covered (uniform solid color — black, white, or any color)
+    # Check 1: Camera covered (uniform solid color — black, white, or any color)
     if std_intensity < UNIFORM_STD_THRESHOLD:
         raise ValueError(
             "Camera appears to be covered or blocked. Image is a uniform color."
         )
 
-    # Check 3: Too dark (night without light, pocket, etc.)
+    # Check 2: Too dark (night without light, pocket, etc.)
     if mean_intensity < DARK_IMAGE_THRESHOLD:
         raise ValueError(
             "Image is too dark. Lighting is insufficient or camera is obstructed."
         )
 
-    # Check 4: Overexposed (direct sunlight into lens, white wall too close)
+    # Check 3: Overexposed (direct sunlight into lens, white wall too close)
     if mean_intensity > OVEREXPOSED_THRESHOLD:
         raise ValueError(
             "Image is overexposed. Too much light or camera is facing a bright surface."
         )
 
-    # Check 5: Blurry (out of focus, motion blur, shaking)
+    # Check 4: Blurry (out of focus, motion blur, shaking)
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
     if laplacian_var < BLUR_THRESHOLD:
         raise ValueError(
@@ -87,36 +95,24 @@ def validate_image_quality(img: np.ndarray):
 def process_image(image_bytes: bytes) -> np.ndarray:
     """
     Full preprocessing pipeline for custom PyTorch models:
-    1. Validate image bytes
-    2. Decode
-    3. Edge case checks
-    4. Letterbox resize
-    5. BGR → RGB → CHW → Normalize → Batch
+    1. Decode + resize + quality check (via decode_image)
+    2. BGR → RGB → CHW → Normalize → Batch
+
+    Returns tensor of shape (1, 3, 640, 640)
     """
-    if len(image_bytes) < MIN_IMAGE_BYTES:
-        raise ValueError(f"Image too small ({len(image_bytes)} bytes). File may be empty or corrupted.")
+    # decode_image now returns a 640x640 letterboxed, quality-checked image
+    img_resized = decode_image(image_bytes)
 
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-    if img is None:
-        raise ValueError("Failed to decode image. The file might be corrupted or not a valid image format.")
-
-    validate_image_quality(img)
-
-    # 1. Letterbox resize (aspect ratio preserved)
-    img_resized = letterbox_resize(img, TARGET_SIZE)
-
-    # 2. BGR → RGB
+    # 1. BGR → RGB
     img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
 
-    # 3. HWC → CHW (channels first for PyTorch)
+    # 2. HWC → CHW (channels first for PyTorch)
     img_transposed = img_rgb.transpose((2, 0, 1))
 
-    # 4. Normalize to [0, 1]
+    # 3. Normalize to [0, 1]
     img_normalized = img_transposed.astype(np.float32) / 255.0
 
-    # 5. Add batch dimension → (1, 3, 640, 640)
+    # 4. Add batch dimension → (1, 3, 640, 640)
     img_tensor = np.expand_dims(img_normalized, axis=0)
 
     return img_tensor

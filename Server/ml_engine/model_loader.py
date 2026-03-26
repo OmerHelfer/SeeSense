@@ -1,9 +1,14 @@
 import numpy as np
 import logging
+import torch
 
 from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES
 
 logger = logging.getLogger(__name__)
+
+# ==================== GPU Detection ====================
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+logger.info(f"Inference device: {DEVICE}")
 
 
 # ==================== Mock Model (Testing Mode) ====================
@@ -40,11 +45,10 @@ def load_model(model_path: str, mode: str = "mock"):
         return model
 
     if mode == "custom":
-        import torch
         logger.info(f"Loading custom PyTorch model from {model_path}...")
-        model = torch.load(model_path, map_location="cpu")
+        model = torch.load(model_path, map_location=DEVICE)
         model.eval()
-        logger.info("Custom model loaded successfully")
+        logger.info(f"Custom model loaded successfully on {DEVICE}")
         return model
 
     logger.error(f"Unknown mode: {mode}")
@@ -75,6 +79,7 @@ def run_inference(model, img_input) -> list[dict]:
                 source=img_input,
                 conf=CONFIDENCE_THRESHOLD,
                 iou=NMS_IOU_THRESHOLD,
+                device=DEVICE,
                 verbose=False
             )
             detections = parse_ultralytics_results(results)
@@ -84,9 +89,8 @@ def run_inference(model, img_input) -> list[dict]:
         pass
 
     # Custom PyTorch model
-    import torch
     with torch.no_grad():
-        tensor = torch.from_numpy(img_input).float()
+        tensor = torch.from_numpy(img_input).float().to(DEVICE)
         raw_output = model(tensor)
 
     detections = parse_raw_detections(raw_output)

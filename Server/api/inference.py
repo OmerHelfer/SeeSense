@@ -100,6 +100,7 @@ async def get_supported_objects():
 @router.post("/pause_detection")
 async def pause_detection(current_user: dict = Depends(verify_token)):
     """Temporarily halt detection."""
+    from api.stream import update_cache
     user_id = current_user["user_id"]
     sessions = get_db()["sessions"]
     result = sessions.update_one(
@@ -108,12 +109,14 @@ async def pause_detection(current_user: dict = Depends(verify_token)):
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=400, detail="No active session")
+    update_cache(user_id, paused=True)  # Update cache so WebSocket sees it instantly
     return {"status": "success", "detection": "paused"}
 
 
 @router.post("/resume_detection")
 async def resume_detection(current_user: dict = Depends(verify_token)):
     """Resume paused detection."""
+    from api.stream import update_cache
     user_id = current_user["user_id"]
     sessions = get_db()["sessions"]
     result = sessions.update_one(
@@ -122,4 +125,5 @@ async def resume_detection(current_user: dict = Depends(verify_token)):
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=400, detail="No active session")
+    update_cache(user_id, paused=False)  # Update cache so WebSocket sees it instantly
     return {"status": "success", "detection": "active"}

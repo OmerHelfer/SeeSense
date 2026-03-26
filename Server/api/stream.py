@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import logging
 import json
 import uuid
+import threading
 from datetime import datetime, timedelta
 
 from core.auth import verify_token
@@ -22,6 +23,35 @@ router = APIRouter(prefix="/stream", tags=["Stream"])
 
 # Track previous danger state per user (for "danger cleared" via WS)
 _ws_previous_danger_state = {}
+
+# ==================== In-Memory Cache ====================
+# Caches session state and user settings per user to avoid DB calls every frame.
+# Updated by pause/resume endpoints and settings changes.
+# user_id → {"paused": bool, "settings": dict, "session_id": str}
+_user_cache = {}
+
+
+def get_cached_state(user_id: str) -> dict:
+    """Get cached session state for a user."""
+    return _user_cache.get(user_id, {})
+
+
+def update_cache(user_id: str, **kwargs):
+    """Update cache for a user. Called by pause/resume/settings endpoints."""
+    if user_id not in _user_cache:
+        _user_cache[user_id] = {}
+    _user_cache[user_id].update(kwargs)
+
+
+def clear_cache(user_id: str):
+    """Clear cache when user disconnects."""
+    _user_cache.pop(user_id, None)
+
+
+def _db_write_background(func, *args, **kwargs):
+    """Run a DB write in a background thread — doesn't block the response."""
+    thread = threading.Thread(target=func, args=args, kwargs=kwargs, daemon=True)
+    thread.start()
 
 
 class StopStreamRequest(BaseModel):
@@ -188,6 +218,13 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
             })
             logger.info(f"WebSocket new session: {session_id}, user={user_id}")
 
+    # ── Load cache once at connection (only DB calls during connection) ──
+    settings = get_user_settings(user_id)
+    update_cache(user_id,
+                 paused=False,
+                 session_id=session_id,
+                 settings=settings)
+
     # Send connection confirmation
     await websocket.send_json({
         "type": "connected",
@@ -195,7 +232,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
         "message": "Stream session active"
     })
 
-    # ── 3. Frame processing loop ──
+    # ── 3. Frame processing loop (zero DB calls per frame) ──
     model = websocket.app.state.model
     frame_count = 0
 
@@ -207,9 +244,9 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
             frame_count += 1
 
             try:
-                # Check if paused
-                session = sessions.find_one({"session_id": session_id})
-                if session and session.get("paused", False):
+                # Check if paused (from cache — 0ms, not DB — 71ms)
+                cached = get_cached_state(user_id)
+                if cached.get("paused", False):
                     await websocket.send_json({
                         "type": "result",
                         "status": "paused",
@@ -217,12 +254,6 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     })
                     tracker.end_timer(start, success=True)
                     continue
-
-                # Increment frame count in DB
-                sessions.update_one(
-                    {"session_id": session_id},
-                    {"$inc": {"frame_count": 1}}
-                )
 
                 # Decode and validate
                 img = decode_image(image_bytes)
@@ -240,10 +271,10 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 motion_tracker = get_motion_tracker(user_id)
                 detections_with_motion = motion_tracker.update(detections)
 
-                # User settings
-                settings = get_user_settings(user_id)
-                user_classes = set(settings.get("high_risk_classes", []))
-                sensitivity = settings.get("detection_sensitivity", "medium")
+                # User settings (from cache — 0ms, not DB — 71ms)
+                user_settings = cached.get("settings", settings)
+                user_classes = set(user_settings.get("high_risk_classes", []))
+                sensitivity = user_settings.get("detection_sensitivity", "medium")
 
                 # Danger assessment
                 image_height, image_width = img.shape[:2]
@@ -254,9 +285,6 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     image_width=image_width,
                     image_height=image_height
                 )
-
-                # Save to history
-                add_detection_record(user_id, result, session_id=session_id)
 
                 # Danger cleared check
                 was_danger = _ws_previous_danger_state.get(user_id, False)
@@ -269,7 +297,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 # Track latency
                 latency = tracker.end_timer(start, success=True)
 
-                # Send result back
+                # ── Send result FIRST (fast) ──
                 await websocket.send_json({
                     "type": "result",
                     "status": "success",
@@ -282,6 +310,11 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     "distance": result["distance"],
                     "objects": result["objects"]
                 })
+
+                # ── DB writes AFTER response (background thread — doesn't block) ──
+                _db_write_background(
+                    _save_frame_data, session_id, user_id, result, frame_count
+                )
 
             except ValueError as e:
                 tracker.end_timer(start, success=False)
@@ -307,9 +340,23 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
         logger.error(f"WebSocket unexpected error: {e}", exc_info=True)
 
     finally:
-        # ── 4. Cleanup: stop session on disconnect ──
+        # ── 4. Cleanup: stop session + clear cache on disconnect ──
+        clear_cache(user_id)
         sessions.update_one(
             {"session_id": session_id, "status": "active"},
             {"$set": {"status": "stopped", "stopped_at": datetime.now().isoformat()}}
         )
         logger.info(f"Session stopped on disconnect: {session_id}")
+
+
+def _save_frame_data(session_id: str, user_id: str, result: dict, frame_count: int):
+    """Background DB writes — runs in a separate thread after response is sent."""
+    try:
+        sessions = _sessions()
+        sessions.update_one(
+            {"session_id": session_id},
+            {"$set": {"frame_count": frame_count}}
+        )
+        add_detection_record(user_id, result, session_id=session_id)
+    except Exception as e:
+        logger.error(f"Background DB write failed: {e}")

@@ -29,6 +29,7 @@ import time
 import requests
 import glob
 import cv2
+import numpy as np
 
 # ── Configuration ──
 TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhjZGI4NjUiLCJlbWFpbCI6Im9tZXJoZWxmZXJAZ21haWwuY29tIiwiZXhwIjoxNzc0NjA3ODc1LCJpYXQiOjE3NzQ1MjE0NzV9.lhkyXJ0OeEgFLSHE8mhKOv2MaKS6BCvmgku6iLEZ2Sg"
@@ -37,6 +38,27 @@ IMAGES_DIR = "tests/test_images"
 VIDEOS_DIR = "tests/test_videos"
 DELAY_BETWEEN_FRAMES = 0.5  # seconds, for 'all' and 'video' mode
 VIDEO_FRAME_SKIP = 5  # extract every Nth frame from video
+CLIENT_RESIZE = True  # Simulate client-side resize to 640 before sending
+CLIENT_TARGET = 640
+CLIENT_JPEG_QUALITY = 80
+
+
+def client_resize(image_bytes):
+    """
+    Simulate what the client does before sending:
+    Resize longest side to 640 and compress to JPEG.
+    This is NOT counted in timing — happens on the phone.
+    """
+    if not CLIENT_RESIZE:
+        return image_bytes
+    img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+    h, w = img.shape[:2]
+    if max(w, h) <= CLIENT_TARGET:
+        return image_bytes  # already small enough
+    scale = min(CLIENT_TARGET / h, CLIENT_TARGET / w)
+    resized = cv2.resize(img, (int(w * scale), int(h * scale)))
+    _, buffer = cv2.imencode('.jpg', resized, [cv2.IMWRITE_JPEG_QUALITY, CLIENT_JPEG_QUALITY])
+    return buffer.tobytes()
 
 
 def load_image_list():
@@ -206,10 +228,13 @@ async def test():
                 video_path = videos[vid_idx]
                 print(f"\n  Extracting frames from {os.path.basename(video_path)} (every {VIDEO_FRAME_SKIP}th frame)...")
                 frames = extract_frames_as_jpeg(video_path)
-                print(f"  Extracted {len(frames)} frames. Sending...\n")
+                print(f"  Extracted {len(frames)} frames. Sending...")
+                print(f"  Client resize: {'ON (640px)' if CLIENT_RESIZE else 'OFF (original size)'}\n")
 
                 for i, frame_bytes in enumerate(frames):
-                    print(f"  Frame [{i}/{len(frames)}] ({len(frame_bytes):,} bytes)")
+                    original_size = len(frame_bytes)
+                    frame_bytes = client_resize(frame_bytes)  # before timing
+                    print(f"  Frame [{i}/{len(frames)}] ({original_size:,} → {len(frame_bytes):,} bytes)")
                     result, round_trip = await send_and_measure(ws, frame_bytes)
                     print_result(result, round_trip)
                     if i < len(frames) - 1:
@@ -223,11 +248,14 @@ async def test():
                     print(f"  No images found in {IMAGES_DIR}/")
                     continue
 
-                print(f"\nSending all {len(images)} images with {DELAY_BETWEEN_FRAMES}s delay...\n")
+                print(f"\nSending all {len(images)} images with {DELAY_BETWEEN_FRAMES}s delay...")
+                print(f"  Client resize: {'ON (640px)' if CLIENT_RESIZE else 'OFF (original size)'}\n")
                 for i, img_path in enumerate(images):
                     with open(img_path, "rb") as f:
                         image_bytes = f.read()
-                    print(f"  Sending [{i}] {os.path.basename(img_path)} ({len(image_bytes):,} bytes)")
+                    original_size = len(image_bytes)
+                    image_bytes = client_resize(image_bytes)  # before timing
+                    print(f"  Sending [{i}] {os.path.basename(img_path)} ({original_size:,} → {len(image_bytes):,} bytes)")
                     result, round_trip = await send_and_measure(ws, image_bytes)
                     print_result(result, round_trip)
                     if i < len(images) - 1:
@@ -261,8 +289,10 @@ async def test():
                 img_path = images[current_index]
                 with open(img_path, "rb") as f:
                     image_bytes = f.read()
+                original_size = len(image_bytes)
+                image_bytes = client_resize(image_bytes)  # before timing
 
-                print(f"  Sending [{current_index}] {os.path.basename(img_path)} ({len(image_bytes):,} bytes)")
+                print(f"  Sending [{current_index}] {os.path.basename(img_path)} ({original_size:,} → {len(image_bytes):,} bytes)")
                 result, round_trip = await send_and_measure(ws, image_bytes)
                 print_result(result, round_trip)
 
