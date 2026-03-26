@@ -16,4 +16,3 @@ motor
 pycountry
 slowapi
 websockets
-certifi
