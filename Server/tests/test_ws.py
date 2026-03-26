@@ -4,7 +4,7 @@ Connects to the WebSocket, sends a JPEG image, prints the detection result.
 
 Usage:
     1. Start the server: python main.py
-    2. Get a JWT token (login via Postman)
+    2. Get a JWT token
     3. Place a test image (any JPEG) in this folder as test_image.jpg
     4. Paste your token below and run: python test_ws.py
 """

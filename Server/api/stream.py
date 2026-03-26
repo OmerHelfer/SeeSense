@@ -159,14 +159,34 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
     if existing:
         session_id = existing["session_id"]
     else:
-        session_id = str(uuid.uuid4())
-        sessions.insert_one({
-            "session_id": session_id,
+        # Check for recently stopped session (within 15 minutes)
+        cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
+        recent = sessions.find_one({
             "user_id": user_id,
-            "status": "active",
-            "started_at": datetime.now().isoformat(),
-            "frame_count": 0
+            "status": "stopped",
+            "stopped_at": {"$gte": cutoff}
         })
+
+        if recent:
+            # Resume the recent session
+            session_id = recent["session_id"]
+            sessions.update_one(
+                {"session_id": session_id},
+                {"$set": {"status": "active", "paused": False},
+                 "$unset": {"stopped_at": ""}}
+            )
+            logger.info(f"WebSocket resumed session: {session_id}, user={user_id}")
+        else:
+            # Create new session
+            session_id = str(uuid.uuid4())
+            sessions.insert_one({
+                "session_id": session_id,
+                "user_id": user_id,
+                "status": "active",
+                "started_at": datetime.now().isoformat(),
+                "frame_count": 0
+            })
+            logger.info(f"WebSocket new session: {session_id}, user={user_id}")
 
     # Send connection confirmation
     await websocket.send_json({
