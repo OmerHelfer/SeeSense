@@ -27,6 +27,7 @@ CONTACT_CODE_EXPIRY_MINUTES = 30
 MAX_CODE_ATTEMPTS = 3
 
 
+
 # ==================== User CRUD ====================
 
 def create_user(data: dict) -> dict:
@@ -117,6 +118,10 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
     _users().update_one({"user_id": user_id}, {"$set": {"password_hash": new_hash}})
     logger.info(f"Password changed for user: {user_id}")
     return True
+
+
+def _reset_codes_col():
+    return get_db()["reset_codes"]
 
 
 # ==================== Detection History ====================

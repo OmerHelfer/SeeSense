@@ -31,6 +31,42 @@ import glob
 import cv2
 import numpy as np
 
+# ── Latency Tracker ──
+
+class LatencyTracker:
+    """Collects latency samples and prints stats."""
+
+    def __init__(self):
+        self.samples = []  # list of (round_trip_ms, server_ms, network_ms)
+
+    def record(self, round_trip_ms: float, server_ms: float):
+        network_ms = round_trip_ms - server_ms
+        self.samples.append((round_trip_ms, server_ms, network_ms))
+
+    def print_stats(self):
+        if not self.samples:
+            return
+
+        totals   = [s[0] for s in self.samples]
+        servers  = [s[1] for s in self.samples]
+        networks = [s[2] for s in self.samples]
+
+        print("\n" + "─" * 50)
+        print(f"  📊 Latency Stats ({len(self.samples)} frames)")
+        print("─" * 50)
+        print(f"  {'':12} {'avg':>8} {'min':>8} {'max':>8}")
+        print(f"  {'Total':12} {sum(totals)/len(totals):>7.1f}ms {min(totals):>7.1f}ms {max(totals):>7.1f}ms")
+        print(f"  {'Server':12} {sum(servers)/len(servers):>7.1f}ms {min(servers):>7.1f}ms {max(servers):>7.1f}ms")
+        print(f"  {'Network':12} {sum(networks)/len(networks):>7.1f}ms {min(networks):>7.1f}ms {max(networks):>7.1f}ms")
+        print("─" * 50)
+
+    def reset(self):
+        self.samples = []
+
+
+latency_tracker = LatencyTracker()
+
+
 # ── Configuration ──
 TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhjZGI4NjUiLCJlbWFpbCI6Im9tZXJoZWxmZXJAZ21haWwuY29tIiwiZXhwIjoxNzc0Njk0OTI3LCJpYXQiOjE3NzQ2MDg1Mjd9.Ee5a26u62Pow8hyUSwKUjLdZiBNSFigp2b5d0tkwG7E"
 SERVER = "ws://localhost:8000/stream/ws"
@@ -118,6 +154,7 @@ def print_result(result, round_trip_ms=None):
     if round_trip_ms:
         network_ms = round_trip_ms - server_ms
         timing = f"Total: {round_trip_ms:.0f}ms (server: {server_ms}ms, network: {network_ms:.0f}ms)"
+        latency_tracker.record(round_trip_ms, server_ms)
     else:
         timing = f"{server_ms}ms"
 
@@ -178,6 +215,7 @@ async def test():
             cmd = cmd.strip().lower()
 
             if cmd == "quit" or cmd == "q":
+                latency_tracker.print_stats()
                 print("Disconnecting...")
                 break
 
@@ -241,6 +279,8 @@ async def test():
                         await asyncio.sleep(DELAY_BETWEEN_FRAMES)
 
                 print(f"\n  Video done. {len(frames)} frames sent.")
+                latency_tracker.print_stats()
+                latency_tracker.reset()
                 continue
 
             elif cmd == "all":
@@ -261,6 +301,8 @@ async def test():
                     if i < len(images) - 1:
                         await asyncio.sleep(DELAY_BETWEEN_FRAMES)
                 print(f"\nAll {len(images)} frames sent.")
+                latency_tracker.print_stats()
+                latency_tracker.reset()
                 current_index = 0
                 continue
 

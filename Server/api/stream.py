@@ -31,9 +31,9 @@ def _authenticate_ws(token: str) -> dict | None:
     """Verify JWT token for WebSocket connection (no Depends available)."""
     import jwt
     from core.config import JWT_SECRET_KEY, JWT_ALGORITHM
-    from core.auth import blacklisted_tokens
+    from core.auth import is_blacklisted
 
-    if token in blacklisted_tokens:
+    if is_blacklisted(token):
         return None
 
     try:

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from starlette.requests import Request
+from core.config import VALID_PERIODS
 
 from schemas.user import (
     UserCreate,
@@ -49,6 +50,7 @@ from services.user_service import (
     trigger_emergency,
     MAX_EMERGENCY_CONTACTS,
     delete_user_account,
+    _reset_codes_col, 
 )
 from services.email_service import (
     send_welcome_email,
@@ -69,11 +71,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["Users"])
 
 limiter = Limiter(key_func=get_remote_address)
-
-
-def _reset_codes_col():
-    from core.database import get_db
-    return get_db()["reset_codes"]
 
 
 # ==================== Auth ====================
@@ -236,8 +233,6 @@ async def update_profile(updates: dict, current_user: dict = Depends(verify_toke
 
 
 # ==================== History ====================
-
-VALID_PERIODS = {"all", "today", "week", "month", "three_months", "half_year", "older"}
 
 @router.get("/history")
 async def user_history(limit: int = 50, period: str = "all", session_id: str = None, current_user: dict = Depends(verify_token)):

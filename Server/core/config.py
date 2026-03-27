@@ -72,6 +72,9 @@ DEFAULT_SETTINGS = {
     "high_risk_classes": list(HIGH_RISK_CLASSES)
 }
 
+# Valid Periods
+
+VALID_PERIODS = {"all", "today", "week", "month", "three_months", "half_year", "older"}
 
 # ==================== CORS ====================
 CORS_ORIGINS = [

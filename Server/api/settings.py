@@ -6,6 +6,7 @@ from core.config import DEFAULT_SETTINGS
 
 from core.config import ALL_CLASSES
 from core.database import get_db
+from services.session_service import update_cache
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,6 @@ async def update_settings(settings: dict = {}, current_user: dict = Depends(veri
 
     updated = get_user_settings(user_id)
     # Update cache so WebSocket uses new settings instantly
-    from services.session_service import update_cache
     update_cache(user_id, settings=updated)
     logger.info(f"Updated settings for user: {user_id} → {settings}")
     return {"status": "success", "user_id": user_id, "settings": updated}
