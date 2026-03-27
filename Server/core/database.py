@@ -13,6 +13,21 @@ _client = None
 _db = None
 
 
+def _ensure_indexes(db):
+    """Create TTL indexes for collections that need automatic expiry."""
+    from core.config import JWT_EXPIRATION_HOURS
+
+    # Blacklisted tokens — expire after JWT lifetime (no need to keep after token expires anyway)
+    db["blacklisted_tokens"].create_index(
+        "created_at", expireAfterSeconds=JWT_EXPIRATION_HOURS * 3600
+    )
+    # Reset codes — expire after 15 minutes
+    db["reset_codes"].create_index(
+        "created_at", expireAfterSeconds=900
+    )
+    logger.info("MongoDB TTL indexes ensured")
+
+
 def connect():
     """Connect to MongoDB. Called once on server startup."""
     global _client, _db
@@ -21,6 +36,7 @@ def connect():
         _db = _client[MONGODB_DB_NAME]
         # Test connection
         _client.admin.command("ping")
+        _ensure_indexes(_db)
         logger.info(f"Connected to MongoDB: {MONGODB_DB_NAME}")
     except Exception as e:
         logger.error(f"Failed to connect to MongoDB: {e}")

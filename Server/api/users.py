@@ -62,20 +62,18 @@ from services.email_service import (
     send_account_deleted_email,
     send_account_deleted_to_contact,
 )
-from core.auth import create_token, verify_token, blacklisted_tokens
+from core.auth import create_token, verify_token, blacklist_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-# Blacklisted tokens (for logout)
-_blacklisted_tokens = set()
-
-# Password reset codes: email → {"code": str, "expires": datetime}
-_reset_codes = {}
-
-
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _reset_codes_col():
+    from core.database import get_db
+    return get_db()["reset_codes"]
 
 
 # ==================== Auth ====================
@@ -106,6 +104,7 @@ async def login(request: Request, login_data: LoginRequest):
 @router.post("/logout")
 async def logout(current_user: dict = Depends(verify_token)):
     """Logout — invalidates the current token."""
+    blacklist_token(current_user["token"])
     return {"status": "success", "message": "Logged out successfully"}
 
 @router.delete("/account")
@@ -133,7 +132,7 @@ async def delete_account(current_user: dict = Depends(verify_token)):
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
 
-    blacklisted_tokens.add(current_user["token"])
+    blacklist_token(current_user["token"])
 
     return {"status": "success", "message": "Account and all data permanently deleted"}
 
@@ -166,12 +165,13 @@ async def forgot_password(request: Request, req: ForgotPasswordRequest):
         # Don't reveal if email exists or not (security)
         return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
 
-    # Generate 6-digit code
+    # Generate 6-digit code and store in MongoDB (TTL handles expiry)
     code = ''.join(random.choices(string.digits, k=6))
-    _reset_codes[req.email] = {
-        "code": code,
-        "expires": datetime.now() + timedelta(minutes=15)
-    }
+    _reset_codes_col().update_one(
+        {"email": req.email},
+        {"$set": {"code": code, "created_at": datetime.utcnow()}},
+        upsert=True
+    )
 
     send_password_reset_email(req.email, profile["name"], code)
     return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
@@ -183,13 +183,9 @@ async def reset_password(request: ResetPasswordRequest):
     if len(request.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
-    reset_data = _reset_codes.get(request.email)
+    reset_data = _reset_codes_col().find_one({"email": request.email})
     if not reset_data:
         raise HTTPException(status_code=400, detail="No reset code found. Request a new one.")
-
-    if datetime.now() > reset_data["expires"]:
-        _reset_codes.pop(request.email, None)
-        raise HTTPException(status_code=400, detail="Reset code expired. Request a new one.")
 
     if reset_data["code"] != request.code:
         raise HTTPException(status_code=400, detail="Invalid reset code")
@@ -199,7 +195,7 @@ async def reset_password(request: ResetPasswordRequest):
         raise HTTPException(status_code=404, detail="User not found")
 
     change_password(profile["user_id"], None, request.new_password, force=True)
-    _reset_codes.pop(request.email, None)
+    _reset_codes_col().delete_one({"email": request.email})
 
     send_password_changed_email(request.email, profile["name"])
     return {"status": "success", "message": "Password reset successfully"}

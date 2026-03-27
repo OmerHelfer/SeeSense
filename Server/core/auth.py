@@ -10,8 +10,23 @@ logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
-# Blacklisted tokens (logged out)
-blacklisted_tokens = set()
+
+def _blacklisted_col():
+    from core.database import get_db
+    return get_db()["blacklisted_tokens"]
+
+
+def blacklist_token(token: str):
+    """Add a token to the blacklist in MongoDB."""
+    _blacklisted_col().insert_one({
+        "token": token,
+        "created_at": datetime.utcnow()
+    })
+
+
+def is_blacklisted(token: str) -> bool:
+    """Check if a token has been blacklisted (logged out)."""
+    return _blacklisted_col().find_one({"token": token}) is not None
 
 
 
@@ -30,7 +45,7 @@ def create_token(user_id: str, email: str) -> str:
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     token = credentials.credentials
 
-    if token in blacklisted_tokens:
+    if is_blacklisted(token):
         raise HTTPException(status_code=401, detail="Token has been revoked (logged out)")
 
     try:
