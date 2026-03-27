@@ -1,9 +1,7 @@
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
-
-VALID_FEEDBACK_TYPES = {"wrong_detection", "missed_obstacle", "general"}
-
+from core.config import VALID_FEEDBACK_TYPES
 
 class UserCreate(BaseModel):
     model_config = {"extra": "forbid"}
