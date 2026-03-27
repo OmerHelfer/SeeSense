@@ -10,6 +10,7 @@ from core.config import VALID_PERIODS
 
 from schemas.user import (
     UserCreate,
+    UpdateProfileRequest,
     QuickFeedback,
     FeedbackUpdate,
     FeedbackFromHistory,
@@ -50,7 +51,6 @@ from services.user_service import (
     trigger_emergency,
     MAX_EMERGENCY_CONTACTS,
     delete_user_account,
-    _reset_codes_col, 
 )
 from services.email_service import (
     send_welcome_email,
@@ -73,6 +73,17 @@ router = APIRouter(prefix="/users", tags=["Users"])
 limiter = Limiter(key_func=get_remote_address)
 
 
+def _send_email_background(func, *args):
+    """Send email in a background thread — doesn't block the response."""
+    import threading
+    threading.Thread(target=func, args=args, daemon=True).start()
+
+
+def _reset_codes_col():
+    from core.database import get_db
+    return get_db()["reset_codes"]
+
+
 # ==================== Auth ====================
 
 @router.post("/register")
@@ -81,7 +92,7 @@ async def register(user: UserCreate):
     try:
         profile = create_user(user.model_dump())
         token = create_token(profile["user_id"], profile["email"])
-        send_welcome_email(profile["email"], profile["name"])
+        _send_email_background(send_welcome_email, profile["email"], profile["name"])
         return {"status": "success", "message": "Registered successfully", "user": profile, "token": token}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -116,14 +127,15 @@ async def delete_account(current_user: dict = Depends(verify_token)):
     contacts = profile.get("emergency_contacts", [])
     for contact in contacts:
         if contact["status"] == "verified":
-            send_account_deleted_to_contact(
+            _send_email_background(
+                send_account_deleted_to_contact,
                 contact["email"],
                 contact["name"],
                 profile["name"]
             )
 
     # Send confirmation to user
-    send_account_deleted_email(profile["email"], profile["name"])
+    _send_email_background(send_account_deleted_email, profile["email"], profile["name"])
 
     success = delete_user_account(user_id)
     if not success:
@@ -149,7 +161,7 @@ async def change_password_endpoint(
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     profile = get_user(current_user["user_id"])
-    send_password_changed_email(profile["email"], profile["name"])
+    _send_email_background(send_password_changed_email, profile["email"], profile["name"])
     return {"status": "success", "message": "Password changed successfully"}
 
 
@@ -170,7 +182,7 @@ async def forgot_password(request: Request, req: ForgotPasswordRequest):
         upsert=True
     )
 
-    send_password_reset_email(req.email, profile["name"], code)
+    _send_email_background(send_password_reset_email, req.email, profile["name"], code)
     return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
 
 
@@ -194,7 +206,7 @@ async def reset_password(request: ResetPasswordRequest):
     change_password(profile["user_id"], None, request.new_password, force=True)
     _reset_codes_col().delete_one({"email": request.email})
 
-    send_password_changed_email(request.email, profile["name"])
+    _send_email_background(send_password_changed_email, request.email, profile["name"])
     return {"status": "success", "message": "Password reset successfully"}
 
 
@@ -220,19 +232,18 @@ async def get_profile(current_user: dict = Depends(verify_token)):
 
 
 @router.post("/profile/update")
-async def update_profile(updates: dict, current_user: dict = Depends(verify_token)):
+async def update_profile(updates: UpdateProfileRequest, current_user: dict = Depends(verify_token)):
     """Update user profile fields. Requires authentication."""
     user_id = current_user["user_id"]
-
-    profile = update_user(user_id, updates)
+    profile = update_user(user_id, updates.model_dump(exclude_none=True))
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
-
-    send_profile_updated_email(profile["email"], profile["name"])
+    _send_email_background(send_profile_updated_email, profile["email"], profile["name"])
     return {"status": "success", "message": "Profile updated successfully", "user": profile}
 
 
 # ==================== History ====================
+
 
 @router.get("/history")
 async def user_history(limit: int = 50, period: str = "all", session_id: str = None, current_user: dict = Depends(verify_token)):
@@ -355,11 +366,9 @@ async def add_contact(request: AddEmergencyContactRequest, current_user: dict = 
 
         # Send verification email with the code
         code = result.pop("_code")
-        send_emergency_contact_verification_email(
-            request.email,
-            request.name,
-            profile["name"],
-            code
+        _send_email_background(
+            send_emergency_contact_verification_email,
+            request.email, request.name, profile["name"], code
         )
 
         return {"status": "success", "message": f"Verification code sent to {request.email}", "contact": result}
@@ -376,16 +385,8 @@ async def verify_contact(request: VerifyEmergencyContactRequest, current_user: d
         contact = verify_emergency_contact(user_id, request.email, request.code)
 
         # Notify contact they are confirmed
-        send_emergency_contact_confirmed_email(
-            request.email,
-            contact["name"],
-            profile["name"]
-        )
-        send_contact_verified_notification(
-            profile["email"],
-            profile["name"],
-            contact["name"]
-        )
+        _send_email_background(send_emergency_contact_confirmed_email, request.email, contact["name"], profile["name"])
+        _send_email_background(send_contact_verified_notification, profile["email"], profile["name"], contact["name"])
 
         return {"status": "success", "message": "Contact verified successfully", "contact": contact}
     except ValueError as e:
@@ -406,11 +407,9 @@ async def resend_code(request: ResendContactCodeRequest, current_user: dict = De
 
         code = resend_contact_code(user_id, request.email)
 
-        send_emergency_contact_verification_email(
-            request.email,
-            contact_name,
-            profile["name"],
-            code
+        _send_email_background(
+            send_emergency_contact_verification_email,
+            request.email, contact_name, profile["name"], code
         )
 
         return {"status": "success", "message": f"New verification code sent to {request.email}"}
@@ -434,10 +433,9 @@ async def remove_contact(request: RemoveEmergencyContactRequest, current_user: d
 
     # Notify the removed contact if they were verified
     if contact_info and contact_info["status"] == "verified":
-        send_emergency_contact_removed_email(
-            request.email,
-            contact_info["name"],
-            profile["name"]
+        _send_email_background(
+            send_emergency_contact_removed_email,
+            request.email, contact_info["name"], profile["name"]
         )
 
     return {"status": "success", "message": "Contact removed"}
@@ -459,11 +457,11 @@ async def list_contacts(current_user: dict = Depends(verify_token)):
 # ==================== Emergency Alert ====================
 
 @router.post("/emergency_alert")
-async def emergency_alert(alert: EmergencyAlertRequest):
-    """Send emergency signal with GPS location. No auth required — emergency must always work."""
+async def emergency_alert(alert: EmergencyAlertRequest, current_user: dict = Depends(verify_token)):
+    """Send emergency signal with GPS location."""
     try:
         result = trigger_emergency(
-            user_id=alert.user_id,
+            user_id=current_user["user_id"],
             gps_lat=alert.gps_lat,
             gps_lon=alert.gps_lon,
             message=alert.message

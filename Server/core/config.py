@@ -76,6 +76,9 @@ DEFAULT_SETTINGS = {
 
 VALID_PERIODS = {"all", "today", "week", "month", "three_months", "half_year", "older"}
 
+# Valid Feedback Types
+VALID_FEEDBACK_TYPES = {"wrong_detection", "missed_obstacle", "general"}
+
 # ==================== CORS ====================
 CORS_ORIGINS = [
     "http://localhost:3000",
@@ -96,3 +99,4 @@ MONGODB_DB_NAME = "seesense"
 # ==================== Email ====================
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
+

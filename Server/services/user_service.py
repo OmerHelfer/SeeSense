@@ -120,10 +120,6 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
     return True
 
 
-def _reset_codes_col():
-    return get_db()["reset_codes"]
-
-
 # ==================== Detection History ====================
 
 def add_detection_record(user_id: str, record: dict, session_id: str = None) -> str:

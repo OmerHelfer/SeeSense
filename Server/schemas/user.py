@@ -1,9 +1,7 @@
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
-
-VALID_FEEDBACK_TYPES = {"wrong_detection", "missed_obstacle", "general"}
-
+from core.config import VALID_FEEDBACK_TYPES
 
 class UserCreate(BaseModel):
     model_config = {"extra": "forbid"}
@@ -120,8 +118,29 @@ class DetectionRecord(BaseModel):
     objects_detected: int
 
 
+class UpdateProfileRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    country: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+
+    @field_validator("country")
+    @classmethod
+    def validate_country(cls, v):
+        if v is None:
+            return v
+        import pycountry
+        country = pycountry.countries.get(name=v) or pycountry.countries.get(alpha_2=v)
+        if not country:
+            raise ValueError(f"Invalid country: {v}. Use full name (e.g. 'Israel') or code (e.g. 'IL')")
+        return country.name
+
+
 class EmergencyAlertRequest(BaseModel):
-    user_id: str
     gps_lat: float
     gps_lon: float
     message: Optional[str] = "Emergency alert triggered"
