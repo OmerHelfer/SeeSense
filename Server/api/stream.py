@@ -5,7 +5,7 @@ from core.auth import verify_token
 from core.config import MODEL_MODE
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
-from services.motion_tracker import get_tracker as get_motion_tracker
+from services.motion_tracker import get_tracker as get_motion_tracker, clear_tracker
 from services.session_service import (
     get_or_create_session,
     stop_session,
@@ -206,6 +206,5 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
     finally:
         # ── 4. Cleanup on disconnect ──
         clear_cache(user_id)
-        from services.motion_tracker import clear_tracker   
         clear_tracker(user_id)
         stop_session(session_id)
