@@ -204,7 +204,7 @@ def send_contact_expired_notification(to_email: str, user_name: str, contact_nam
     """
     send_email(to_email, subject, html)
 
-def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str, maps_link: str, message: str):
+def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str, maps_link: str):
     """Send emergency alert email to verified contact."""
     subject = "URGENT — SeeSense Emergency Alert"
     html = f"""
@@ -212,9 +212,8 @@ def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str,
         <h2 style="color: #e74c3c;">EMERGENCY ALERT</h2>
         <p>Hi {contact_name},</p>
         <p><strong>{user_name}</strong> has triggered an emergency alert on SeeSense.</p>
-        <p>Message: <strong>{message}</strong></p>
-        <p>Their location:</p>
-        <a href="{maps_link}" style="display: inline-block; background: #e74c3c; color: white; 
+        <p>Their current location:</p>
+        <a href="{maps_link}" style="display: inline-block; background: #e74c3c; color: white;
            padding: 15px 30px; text-decoration: none; border-radius: 8px; font-size: 18px;">
             View Location on Google Maps
         </a>

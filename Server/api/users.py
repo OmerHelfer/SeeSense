@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from starlette.requests import Request
-from core.config import VALID_PERIODS
 
 from schemas.user import (
     UserCreate,
@@ -65,7 +64,7 @@ from services.email_service import (
     send_account_deleted_to_contact,
 )
 from core.auth import create_token, verify_token, blacklist_token
-
+from core.config import VALID_PERIODS
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -243,7 +242,6 @@ async def update_profile(updates: UpdateProfileRequest, current_user: dict = Dep
 
 
 # ==================== History ====================
-
 
 @router.get("/history")
 async def user_history(limit: int = 50, period: str = "all", session_id: str = None, current_user: dict = Depends(verify_token)):
@@ -464,7 +462,6 @@ async def emergency_alert(alert: EmergencyAlertRequest, current_user: dict = Dep
             user_id=current_user["user_id"],
             gps_lat=alert.gps_lat,
             gps_lon=alert.gps_lon,
-            message=alert.message
         )
         return {"status": "Alert Sent", "alert": result}
     except ValueError as e:

@@ -1,7 +1,9 @@
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
-from core.config import VALID_FEEDBACK_TYPES
+
+VALID_FEEDBACK_TYPES = {"wrong_detection", "missed_obstacle", "general"}
+
 
 class UserCreate(BaseModel):
     model_config = {"extra": "forbid"}
@@ -143,7 +145,6 @@ class UpdateProfileRequest(BaseModel):
 class EmergencyAlertRequest(BaseModel):
     gps_lat: float
     gps_lon: float
-    message: Optional[str] = "Emergency alert triggered"
 
 
 class AddEmergencyContactRequest(BaseModel):

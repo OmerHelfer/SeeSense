@@ -27,7 +27,6 @@ CONTACT_CODE_EXPIRY_MINUTES = 30
 MAX_CODE_ATTEMPTS = 3
 
 
-
 # ==================== User CRUD ====================
 
 def create_user(data: dict) -> dict:
@@ -572,7 +571,7 @@ def _cleanup_expired_contacts(user_id: str) -> list[str]:
 
 # ==================== Emergency Alert ====================
 
-def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float, message: str) -> dict:
+def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
     from services.email_service import send_emergency_alert_email
 
     profile = _users().find_one({"user_id": user_id})
@@ -590,7 +589,6 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float, message: str
         "user_name": profile["name"],
         "gps": {"lat": gps_lat, "lon": gps_lon},
         "google_maps_link": maps_link,
-        "message": message,
         "timestamp": datetime.now().isoformat(),
         "notified_contacts": contacts
     }
@@ -601,8 +599,7 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float, message: str
             contact["email"],
             contact["name"],
             profile["name"],
-            maps_link,
-            message
+            maps_link
         )
         logger.warning(f"EMERGENCY ALERT to {contact['name']} ({contact['email']}): {maps_link}")
 
