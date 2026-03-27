@@ -206,4 +206,6 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
     finally:
         # ── 4. Cleanup on disconnect ──
         clear_cache(user_id)
+        from services.motion_tracker import clear_tracker   
+        clear_tracker(user_id)
         stop_session(session_id)

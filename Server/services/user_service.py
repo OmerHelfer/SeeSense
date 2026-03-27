@@ -350,8 +350,6 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
             send_contact_expired_notification(profile["email"], profile["name"], exp_name)
 
     profile = _users().find_one({"user_id": user_id})
-    # ... rest stays the same
-    profile = _users().find_one({"user_id": user_id})
     if not profile:
         raise ValueError("User not found")
 
