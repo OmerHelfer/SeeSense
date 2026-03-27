@@ -62,6 +62,17 @@ HIGH_RISK_CLASSES = {"car", "motorcycle", "bicycle", "person", "stairs", "dog"}
 DARK_IMAGE_THRESHOLD = 25
 MIN_IMAGE_BYTES = 1000
 
+# Default Settings
+
+DEFAULT_SETTINGS = {
+    "alert_type": "both",
+    "volume_intensity": 0.8,
+    "vibration_intensity": 0.8,
+    "detection_sensitivity": "medium",
+    "high_risk_classes": list(HIGH_RISK_CLASSES)
+}
+
+
 # ==================== CORS ====================
 CORS_ORIGINS = [
     "http://localhost:3000",

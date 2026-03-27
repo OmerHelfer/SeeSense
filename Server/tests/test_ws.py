@@ -32,7 +32,7 @@ import cv2
 import numpy as np
 
 # ── Configuration ──
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhjZGI4NjUiLCJlbWFpbCI6Im9tZXJoZWxmZXJAZ21haWwuY29tIiwiZXhwIjoxNzc0NjA3ODc1LCJpYXQiOjE3NzQ1MjE0NzV9.lhkyXJ0OeEgFLSHE8mhKOv2MaKS6BCvmgku6iLEZ2Sg"
+TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhjZGI4NjUiLCJlbWFpbCI6Im9tZXJoZWxmZXJAZ21haWwuY29tIiwiZXhwIjoxNzc0Njk0OTI3LCJpYXQiOjE3NzQ2MDg1Mjd9.Ee5a26u62Pow8hyUSwKUjLdZiBNSFigp2b5d0tkwG7E"
 SERVER = "ws://localhost:8000/stream/ws"
 IMAGES_DIR = "tests/test_images"
 VIDEOS_DIR = "tests/test_videos"

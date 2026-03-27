@@ -2,21 +2,14 @@ from fastapi import APIRouter, HTTPException
 import logging
 from fastapi import Depends
 from core.auth import verify_token
+from core.config import DEFAULT_SETTINGS
 
-from core.config import ALL_CLASSES, HIGH_RISK_CLASSES
+from core.config import ALL_CLASSES
 from core.database import get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
-
-DEFAULT_SETTINGS = {
-    "alert_type": "both",
-    "volume_intensity": 0.8,
-    "vibration_intensity": 0.8,
-    "detection_sensitivity": "medium",
-    "high_risk_classes": list(HIGH_RISK_CLASSES)
-}
 
 
 def _settings_collection():
@@ -83,7 +76,7 @@ async def update_settings(settings: dict = {}, current_user: dict = Depends(veri
 
     updated = get_user_settings(user_id)
     # Update cache so WebSocket uses new settings instantly
-    from api.stream import update_cache
+    from services.session_service import update_cache
     update_cache(user_id, settings=updated)
     logger.info(f"Updated settings for user: {user_id} → {settings}")
     return {"status": "success", "user_id": user_id, "settings": updated}
