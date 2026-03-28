@@ -141,11 +141,11 @@ const Dashboard = () => {
     if (result.danger) {
       haptic('danger');
       // Always speak in Hebrew using class-name mapping (backend message is English)
-      announceDetections(objects);
+      announceDetections(objects, true);
       showFeedbackBriefly();
     } else if (level === 'low') {
       haptic('detection');
-      announceDetections(objects);
+      announceDetections(objects, false);
       showFeedbackBriefly();
     }
   }, [showFeedbackBriefly]);

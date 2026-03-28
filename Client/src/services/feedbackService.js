@@ -62,17 +62,18 @@ export const speakMessage = (text) => {
 };
 
 /**
- * Speak the most prominent detected object in Hebrew (class-name fallback).
+ * Speak the most prominent detected object in Hebrew.
+ * If isDanger is true, prepends "סכנה!" before the object name.
  * Throttled per class to prevent speech spam.
  *
  * @param {Array<{class_name?: string, label?: string}>} objects
+ * @param {boolean} isDanger — true for high-risk alerts
  */
-export const announceDetections = (objects) => {
+export const announceDetections = (objects, isDanger = false) => {
   if (!window.speechSynthesis || !Array.isArray(objects) || objects.length === 0) return;
 
-  // Take the first (highest-confidence) object
-  const topObj      = objects[0];
-  const className   = topObj?.class_name || topObj?.label;
+  const topObj    = objects[0];
+  const className = topObj?.class_name || topObj?.label;
   if (!className) return;
 
   const now = Date.now();
@@ -81,12 +82,15 @@ export const announceDetections = (objects) => {
   lastClassName  = className;
   lastAnnounceAt = now;
 
-  const text      = HEBREW_NAMES[className] || className;
-  const utterance = new SpeechSynthesisUtterance(text);
+  const name = HEBREW_NAMES[className] || className;
+  const text = isDanger ? `סכנה! ${name}` : name;
+
+  const utterance  = new SpeechSynthesisUtterance(text);
   utterance.lang   = 'he-IL';
   utterance.volume = 1;
   utterance.rate   = 1.1;
 
-  window.speechSynthesis.cancel(); // stop any ongoing speech
+  window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
 };
+
