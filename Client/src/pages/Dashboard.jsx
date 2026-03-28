@@ -239,12 +239,14 @@ const Dashboard = () => {
     const send = async (lat, lon) => {
       try {
         await emergencyAlert({
-          user_id: userIdRef.current,
           gps_lat: lat,
           gps_lon: lon,
         });
+        haptic('danger');
+        speakMessage('בקשת עזרה נשלחה בהצלחה');
       } catch (err) {
         console.warn('[SeeSense] Emergency alert failed:', err?.message);
+        speakMessage('שליחת בקשת עזרה נכשלה');
       }
       setSosState('sent');
       setSosProgress(0);

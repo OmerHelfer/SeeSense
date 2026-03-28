@@ -104,18 +104,14 @@ export const removeContact = async ({ email }) => {
  * POST /users/emergency_alert — No auth required (intentionally open).
  * Sends GPS location to all verified emergency contacts via email.
  *
- * @param {{ user_id: string, gps_lat: number, gps_lon: number, message?: string }} payload
- */
-export const emergencyAlert = async ({ user_id, gps_lat, gps_lon, message = 'Emergency alert triggered' }) => {
+* @param {{ gps_lat: number, gps_lon: number }} payload */
+export const emergencyAlert = async ({ gps_lat, gps_lon }) => {
   const { data } = await apiClient.post('/users/emergency_alert', {
-    user_id,
     gps_lat,
     gps_lon,
-    message,
   });
   return data;
 };
-
 // ── History ───────────────────────────────────────────
 
 /**
