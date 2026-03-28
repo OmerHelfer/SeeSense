@@ -1,11 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, Settings, Home, Scan, VideoOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CameraView      from '../components/CameraView';
 import useOrientation  from '../hooks/useOrientation';
 import { analyzeFrame }          from '../services/visionService';
-import { haptic, announceDetections } from '../services/feedbackService';
+import { haptic, announceDetections, speakMessage } from '../services/feedbackService';
+import { emergencyAlert } from '../services/userService';
 
 // ── Constants ────────────────────────────────────────────
 
@@ -58,6 +60,7 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
 
 const Dashboard = () => {
   const { logout, user }            = useAuth();
+  const navigate                    = useNavigate();
   const [isScanning, setIsScanning] = useState(false);
   const [alertLevel, setAlertLevel] = useState('none'); // 'none' | 'low' | 'high'
 
@@ -71,6 +74,13 @@ const Dashboard = () => {
   const isAnalyzingRef = useRef(false);       // prevent concurrent API calls
   const userIdRef      = useRef(user?.id ?? 'default');
   const prevAlignedRef = useRef(isAligned);
+
+  // ── SOS state ──
+  // 'idle' | 'pressing' | 'sending' | 'sent'
+  const [sosState, setSosState]       = useState('idle');
+  const [sosProgress, setSosProgress] = useState(0); // 0–1 during long-press
+  const sosRafRef                     = useRef(null);
+  const sosStartRef                   = useRef(null);
 
   useEffect(() => { isScanningRef.current = isScanning;        }, [isScanning]);
   useEffect(() => { isAlignedRef.current  = isAligned;         }, [isAligned]);
@@ -108,16 +118,21 @@ const Dashboard = () => {
     isAnalyzingRef.current = true;
 
     try {
-      const result = await analyzeFrame(base64Frame, userIdRef.current);
-      const level  = result.alert_level ?? 'none';
+      const result  = await analyzeFrame(base64Frame, userIdRef.current);
+      const level   = result.alert_level ?? 'none';
+      const objects = result.objects ?? [];
 
       setAlertLevel(level);
 
       if (result.danger) {
         haptic('danger');
-        announceDetections(result.objects_detected ?? []);
+        // Prefer the backend's pre-composed alert_message; fall back to class-name mapping
+        const alertMsg = objects[0]?.alert_message;
+        if (alertMsg) speakMessage(alertMsg);
+        else          announceDetections(objects);
       } else if (level === 'low') {
         haptic('detection');
+        announceDetections(objects);
       }
     } catch (err) {
       // Network / server error — don't crash, just log
@@ -126,6 +141,69 @@ const Dashboard = () => {
       isAnalyzingRef.current = false;
     }
   }, []); // stable reference — no deps, reads state through refs
+
+  /* ── SOS: long-press handlers ──
+     Hold for 2 s → get GPS → POST /users/emergency_alert */
+  const handleSOSDown = (e) => {
+    e.preventDefault();
+    if (sosState !== 'idle') return;
+    setSosState('pressing');
+    haptic('aligned'); // subtle acknowledgement tick
+    sosStartRef.current = Date.now();
+
+    const tick = () => {
+      const progress = Math.min((Date.now() - sosStartRef.current) / 2000, 1);
+      setSosProgress(progress);
+      if (progress < 1) {
+        sosRafRef.current = requestAnimationFrame(tick);
+      } else {
+        fireSOS();
+      }
+    };
+    sosRafRef.current = requestAnimationFrame(tick);
+  };
+
+  const cancelSOS = () => {
+    if (sosRafRef.current) {
+      cancelAnimationFrame(sosRafRef.current);
+      sosRafRef.current = null;
+    }
+    if (sosState === 'pressing') {
+      setSosState('idle');
+      setSosProgress(0);
+    }
+  };
+
+  const fireSOS = () => {
+    if (sosRafRef.current) {
+      cancelAnimationFrame(sosRafRef.current);
+      sosRafRef.current = null;
+    }
+    setSosState('sending');
+    setSosProgress(1);
+    haptic('danger');
+
+    const send = async (lat, lon) => {
+      try {
+        await emergencyAlert({
+          user_id: userIdRef.current,
+          gps_lat: lat,
+          gps_lon: lon,
+        });
+      } catch (err) {
+        console.warn('[SeeSense] Emergency alert failed:', err?.message);
+      }
+      setSosState('sent');
+      setSosProgress(0);
+      setTimeout(() => setSosState('idle'), 3000);
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => send(pos.coords.latitude, pos.coords.longitude),
+      ()    => send(0, 0),
+      { timeout: 5000, enableHighAccuracy: true }
+    );
+  };
 
   /* ── CSS class string for corner brackets ── */
   const bracketClass = [
@@ -153,7 +231,7 @@ const Dashboard = () => {
       <header className="dashboard-header">
         <span className="header-brand">SEE<span>SENSE</span></span>
         <div className="header-actions">
-          <button className="icon-btn" aria-label="הגדרות">
+          <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
           </button>
           <button className="icon-btn" onClick={logout} aria-label="יציאה">
@@ -163,7 +241,11 @@ const Dashboard = () => {
       </header>
 
       {/* ── Camera + HUD ── */}
-      <main className={`camera-viewport${isScanning ? ' scanning' : ''}`}>
+      <main className={[
+        'camera-viewport',
+        isScanning ? 'scanning' : '',
+        alertLevel === 'high' ? 'danger-border' : '',
+      ].filter(Boolean).join(' ')}>
         <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} />
 
         {/* Non-interactive HUD elements */}
@@ -187,6 +269,23 @@ const Dashboard = () => {
 
           {/* Scan sweep line — only shown when scanning AND aligned (frames are being sent) */}
           {isScanning && isAligned && <div className="scan-line" />}
+
+          {/* Tilt warning — shown when scanning but device is not aligned */}
+          <AnimatePresence>
+            {isScanning && !isAligned && (
+              <motion.div
+                className="alignment-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                aria-live="polite"
+              >
+                <span className="alignment-icon" aria-hidden="true">📱</span>
+                <p className="alignment-text">הטה את המכשיר</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Gyroscope spirit level */}
           <SpiritLevel beta={beta} gamma={gamma} isAligned={isAligned} />
@@ -225,6 +324,33 @@ const Dashboard = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* ── SOS Emergency Button ── */}
+        <div
+          className={`sos-btn sos-${sosState}`}
+          onPointerDown={handleSOSDown}
+          onPointerUp={cancelSOS}
+          onPointerLeave={cancelSOS}
+          onContextMenu={(e) => e.preventDefault()}
+          role="button"
+          aria-label="כפתור חירום — לחץ לחיצה ארוכה (2 שניות) לשליחת התראה"
+        >
+          {/* SVG progress ring — fills clockwise as user holds */}
+          <svg className="sos-ring" viewBox="0 0 80 80" aria-hidden="true">
+            <circle
+              cx="40" cy="40" r="36"
+              fill="none"
+              stroke="rgba(255,255,255,0.9)"
+              strokeWidth="3.5"
+              strokeDasharray={`${sosProgress * 226.2} 226.2`}
+              strokeLinecap="round"
+              transform="rotate(-90 40 40)"
+            />
+          </svg>
+          <span className="sos-label">
+            {sosState === 'sent' ? '✓' : sosState === 'sending' ? '...' : 'SOS'}
+          </span>
+        </div>
       </main>
 
       {/* ── Main scan button ── */}
@@ -265,7 +391,7 @@ const Dashboard = () => {
             <Home size={22} />
             <span>בית</span>
           </button>
-          <button className="tab-btn" aria-label="הגדרות">
+          <button className="tab-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
             <span>הגדרות</span>
           </button>

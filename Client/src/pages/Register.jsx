@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff, UserPlus, Scan } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { register as apiRegister } from '../services/authService';
 
 const MeshBackground = () => (
   <div className="mesh-background" aria-hidden="true">
@@ -22,11 +23,16 @@ const cardVariants = {
 const Register = () => {
   const [name, setName]               = useState('');
   const [email, setEmail]             = useState('');
+  const [phone, setPhone]             = useState('');
+  const [country, setCountry]         = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [password, setPassword]       = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError]             = useState('');
   const [loading, setLoading]         = useState(false);
   const navigate = useNavigate();
+
+  const isFormValid = name && email && phone && country && password;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -39,11 +45,22 @@ const Register = () => {
 
     setLoading(true);
     try {
-      // TODO: replace with → POST /users/register
-      console.log('Registering:', { name, email });
+      await apiRegister({
+        name,
+        email,
+        phone,
+        password,
+        country: country.toUpperCase(),
+        ...(dateOfBirth && { date_of_birth: dateOfBirth }),
+      });
       navigate('/login');
-    } catch {
-      setError('ההרשמה נכשלה. נסה שוב.');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      if (typeof detail === 'string') {
+        setError(detail);
+      } else {
+        setError('ההרשמה נכשלה. נסה שוב.');
+      }
     } finally {
       setLoading(false);
     }
@@ -119,6 +136,48 @@ const Register = () => {
           </div>
 
           <div className="input-group">
+            <label className="input-label" htmlFor="reg-phone">טלפון</label>
+            <input
+              id="reg-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              className="input-field"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+972501234567"
+              required
+            />
+          </div>
+
+          <div className="input-group">
+            <label className="input-label" htmlFor="reg-country">מדינה (קוד ISO)</label>
+            <input
+              id="reg-country"
+              type="text"
+              autoComplete="country"
+              className="input-field"
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              placeholder="IL"
+              maxLength={2}
+              required
+            />
+          </div>
+
+          <div className="input-group">
+            <label className="input-label" htmlFor="reg-dob">תאריך לידה (אופציונלי)</label>
+            <input
+              id="reg-dob"
+              type="date"
+              autoComplete="bday"
+              className="input-field"
+              value={dateOfBirth}
+              onChange={(e) => setDateOfBirth(e.target.value)}
+            />
+          </div>
+
+          <div className="input-group">
             <label className="input-label" htmlFor="reg-password">סיסמה</label>
             <div className="input-password-wrap">
               <input
@@ -145,7 +204,7 @@ const Register = () => {
           <motion.button
             type="submit"
             className="auth-btn"
-            disabled={loading || !name || !email || !password}
+            disabled={loading || !isFormValid}
             whileTap={{ scale: 0.97 }}
             aria-label="צור חשבון חדש"
           >

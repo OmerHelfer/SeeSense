@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { login as apiLogin } from '../services/authService';
 import { Eye, EyeOff, LogIn, Scan } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -34,11 +35,14 @@ const Login = () => {
     setError('');
     setLoading(true);
     try {
-      // TODO: replace with → POST /users/login
-      login({ email, id: '123' });
+      const data = await apiLogin({ email, password });
+      login(data.user, data.token);
       navigate('/');
-    } catch {
-      setError('האימייל או הסיסמה שגויים. נסה שוב.');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setError(detail === 'Invalid email or password'
+        ? 'האימייל או הסיסמה שגויים. נסה שוב.'
+        : 'ההתחברות נכשלה. נסה שוב.');
     } finally {
       setLoading(false);
     }
@@ -135,6 +139,9 @@ const Login = () => {
           </motion.button>
         </form>
 
+        <p className="auth-footer">
+          <Link to="/forgot-password">שכחת סיסמה?</Link>
+        </p>
         <p className="auth-footer">
           עוד לא רשום?&nbsp;<Link to="/register">צור חשבון חדש</Link>
         </p>

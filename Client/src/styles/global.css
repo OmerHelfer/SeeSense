@@ -526,24 +526,18 @@ body {
   border-radius: 0 0 4px 0;
 }
 
-/* Active corners — cyan neon glow (scanning, not yet aligned) */
+/* Active corners — muted/dim when scanning but not yet aligned */
 .hud-brackets.active .hud-corner-tl,
 .hud-brackets.active .hud-corner-tr,
 .hud-brackets.active .hud-corner-bl,
 .hud-brackets.active .hud-corner-br {
-  border-color: var(--cyan);
-  animation: bracket-pulse 2s ease-in-out infinite;
+  border-color: rgba(255, 255, 255, 0.35);
+  animation: bracket-muted-pulse 1.8s ease-in-out infinite;
 }
 
-@keyframes bracket-pulse {
-  0%, 100% {
-    filter: drop-shadow(0 0 4px var(--cyan));
-    opacity: 1;
-  }
-  50% {
-    filter: drop-shadow(0 0 12px var(--cyan)) drop-shadow(0 0 24px rgba(0,240,255,0.4));
-    opacity: 0.75;
-  }
+@keyframes bracket-muted-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 0.2; }
 }
 
 /* Aligned corners — switch to green glow (scanning + camera aligned) */
@@ -905,4 +899,1050 @@ button:active {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* ── Alignment (tilt) warning overlay ── */
+.alignment-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+  border-radius: var(--r-xl);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.alignment-icon {
+  font-size: 2.8rem;
+  animation: tilt-rock 1.6s ease-in-out infinite;
+  display: block;
+}
+
+@keyframes tilt-rock {
+  0%, 100% { transform: rotate(-18deg); }
+  50%       { transform: rotate(18deg);  }
+}
+
+.alignment-text {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--text-2);
+}
+
+/* ── Danger border — pulsing red glow around the whole viewport ── */
+.camera-viewport.danger-border {
+  border-color: var(--danger) !important;
+  animation: danger-pulse-border 0.75s ease-in-out infinite;
+}
+
+@keyframes danger-pulse-border {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 59, 48, 0.4),
+      0 0 32px rgba(255, 59, 48, 0.18),
+      inset 0 0 32px rgba(255, 59, 48, 0.06);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(255, 59, 48, 0.75),
+      0 0 64px rgba(255, 59, 48, 0.38),
+      inset 0 0 48px rgba(255, 59, 48, 0.14);
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   SUCCESS BANNER  (shared across pages)
+   ════════════════════════════════════════════════════════ */
+
+.success-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(0, 229, 160, 0.08);
+  border: 1px solid rgba(0, 229, 160, 0.35);
+  border-radius: var(--r-sm);
+  color: var(--safe);
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.45;
+  margin-bottom: 16px;
+}
+
+/* ── Auth sub-text ── */
+.auth-subtext {
+  font-size: 0.88rem;
+  color: var(--text-2);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+/* ── Numeric code input (centered, large) ── */
+.code-input {
+  text-align: center;
+  letter-spacing: 6px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+/* ════════════════════════════════════════════════════════
+   INNER PAGES  (Profile · EmergencyContacts)
+   Full-height scrollable layout with sticky header.
+   ════════════════════════════════════════════════════════ */
+
+.inner-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--bg-1);
+  padding-top: var(--sat);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Sticky top header ── */
+.inner-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  background: rgba(6, 10, 15, 0.88);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+/* RTL: ArrowRight points left visually, acting as "back" */
+.back-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+
+.back-btn:active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.inner-page-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
+
+/* ── Scrollable body ── */
+.inner-page-body {
+  flex: 1;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ════════════════════════════════════════════════════════
+   GLASS SECTIONS  (reusable cards on inner pages)
+   ════════════════════════════════════════════════════════ */
+
+.glass-section {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-top-color: var(--glass-shine);
+  border-radius: var(--r-lg);
+  padding: 20px 18px;
+}
+
+.glass-section.info-section {
+  border-color: rgba(0, 240, 255, 0.15);
+}
+
+/* ── Section header row ── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.section-label-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-3);
+}
+
+.section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-3);
+}
+
+/* ════════════════════════════════════════════════════════
+   PROFILE FIELDS
+   ════════════════════════════════════════════════════════ */
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.profile-field:last-of-type {
+  border-bottom: none;
+}
+
+.profile-field.readonly .field-value {
+  color: var(--text-3);
+}
+
+.field-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: var(--text-3);
+}
+
+.field-value {
+  font-size: 0.97rem;
+  font-weight: 500;
+  color: var(--text);
+  min-height: 22px;
+}
+
+.field-empty {
+  color: var(--text-3);
+}
+
+/* Input inside a profile field (smaller height than auth inputs) */
+.field-input {
+  height: 48px !important;
+  font-size: 0.95rem !important;
+}
+
+/* ── Info text ── */
+.info-text {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+/* ════════════════════════════════════════════════════════
+   BUTTONS  (ghost · accent · danger)
+   ════════════════════════════════════════════════════════ */
+
+/* Outlined secondary button */
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.ghost-btn:active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.ghost-btn.sm {
+  padding: 7px 12px;
+  font-size: 0.82rem;
+}
+
+/* Accent (cyan) button — smaller than auth-btn */
+.accent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: linear-gradient(135deg, #00C0CC, var(--cyan));
+  color: #000;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--glow-cyan);
+  transition: box-shadow 0.2s;
+}
+
+.accent-btn.sm {
+  padding: 7px 12px;
+  font-size: 0.82rem;
+}
+
+.accent-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Red destructive button */
+.danger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid rgba(255, 59, 48, 0.5);
+  border-radius: var(--r-sm);
+  background: rgba(255, 59, 48, 0.1);
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.danger-btn:active {
+  background: rgba(255, 59, 48, 0.2);
+  box-shadow: var(--glow-danger);
+}
+
+.danger-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.danger-btn.full {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* Small icon-only button */
+.icon-btn-sm {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.icon-btn-sm.danger:active {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ════════════════════════════════════════════════════════
+   NAVIGATION ROW BUTTON  (Profile → Contacts)
+   ════════════════════════════════════════════════════════ */
+
+.nav-row-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 18px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  color: var(--text);
+  font-size: 0.97rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: right;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.nav-row-btn:active {
+  border-color: var(--cyan);
+  background: rgba(0, 240, 255, 0.04);
+}
+
+.nav-row-arrow {
+  margin-right: auto; /* push arrow to the start (visual left in RTL) */
+  color: var(--text-3);
+  transform: scaleX(-1); /* flip: right arrow → points left (back direction in RTL = forward here) */
+}
+
+/* ════════════════════════════════════════════════════════
+   DANGER ZONE SECTION
+   ════════════════════════════════════════════════════════ */
+
+.danger-zone {
+  border-color: rgba(255, 59, 48, 0.2);
+}
+
+.danger-zone-text {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+
+/* ════════════════════════════════════════════════════════
+   MODAL  (delete confirmation)
+   ════════════════════════════════════════════════════════ */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-2);
+  border: 1px solid var(--glass-border);
+  border-top-color: var(--glass-shine);
+  border-radius: var(--r-xl);
+  padding: 28px 22px 22px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.modal-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-icon.danger {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(255, 59, 48, 0.3);
+}
+
+.modal-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.modal-body {
+  font-size: 0.88rem;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.modal-actions .ghost-btn,
+.modal-actions .danger-btn {
+  flex: 1;
+  justify-content: center;
+}
+
+/* ════════════════════════════════════════════════════════
+   EMERGENCY CONTACTS PAGE
+   ════════════════════════════════════════════════════════ */
+
+.contact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.contact-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+}
+
+.contact-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-name {
+  font-size: 0.97rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-meta {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.contact-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Status badges ── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 50px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.status-badge.verified {
+  background: rgba(0, 229, 160, 0.1);
+  color: var(--safe);
+  border: 1px solid rgba(0, 229, 160, 0.3);
+}
+
+.status-badge.pending {
+  background: rgba(255, 159, 10, 0.1);
+  color: var(--caution);
+  border: 1px solid rgba(255, 159, 10, 0.3);
+}
+
+.status-badge.clickable {
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s;
+}
+
+.status-badge.clickable:active {
+  background: rgba(255, 159, 10, 0.2);
+}
+
+/* ── Add contact button ── */
+.add-contact-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 16px;
+  border: 1.5px dashed rgba(0, 240, 255, 0.3);
+  border-radius: var(--r-md);
+  background: rgba(0, 240, 255, 0.03);
+  color: var(--cyan);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin-top: 4px;
+}
+
+.add-contact-btn:active {
+  border-color: var(--cyan);
+  background: rgba(0, 240, 255, 0.07);
+}
+
+/* ── Verify email display ── */
+.verify-email-display {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--cyan);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+/* ── Resend code button ── */
+.resend-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: color 0.2s;
+}
+
+.resend-btn:active {
+  color: var(--cyan);
+}
+
+.resend-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Hint text ── */
+.hint-text {
+  font-size: 0.8rem;
+  color: var(--text-3);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 16px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.empty-state p {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.empty-state span {
+  font-size: 0.82rem;
+}
+
+/* ════════════════════════════════════════════════════════
+   SOS EMERGENCY BUTTON
+   Absolute-positioned inside .camera-viewport (bottom-right).
+   Glassmorphism + pulsing red glow. Long-press interaction.
+   ════════════════════════════════════════════════════════ */
+
+.sos-btn {
+  position: absolute;
+  bottom: 18px;
+  right: 16px;
+  z-index: 10;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  /* Deep red glass core */
+  background: radial-gradient(circle at 38% 38%,
+    rgba(220, 30, 30, 0.95) 0%,
+    rgba(160, 0, 0, 0.9)   100%);
+  border: 1.5px solid rgba(255, 80, 80, 0.5);
+  box-shadow:
+    0 0 0 6px rgba(255, 59, 48, 0.18),
+    0 0 28px rgba(255, 59, 48, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  /* Prevent text selection and browser long-press menus */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  animation: sos-idle-pulse 2.4s ease-in-out infinite;
+  transition: background 0.3s, box-shadow 0.3s, transform 0.1s;
+}
+
+@keyframes sos-idle-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 0   rgba(255, 59, 48, 0.5),
+      0 0 24px  rgba(255, 59, 48, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 0 10px rgba(255, 59, 48, 0),
+      0 0 40px   rgba(255, 59, 48, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+}
+
+/* Pressing: stop idle pulse, compress scale, bright ring */
+.sos-btn.sos-pressing {
+  animation: none;
+  transform: scale(0.93);
+  box-shadow:
+    0 0 0 14px rgba(255, 59, 48, 0.12),
+    0 0 48px   rgba(255, 59, 48, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Sending: dim while awaiting GPS/network */
+.sos-btn.sos-sending {
+  animation: none;
+  opacity: 0.75;
+  transform: scale(0.96);
+}
+
+/* Sent: flip to green success state */
+.sos-btn.sos-sent {
+  animation: none;
+  background: radial-gradient(circle at 38% 38%,
+    rgba(0, 200, 140, 0.95) 0%,
+    rgba(0, 140, 90, 0.9)   100%);
+  border-color: rgba(0, 229, 160, 0.5);
+  box-shadow:
+    0 0 0 10px rgba(0, 229, 160, 0.1),
+    0 0 32px   rgba(0, 229, 160, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: scale(1.05);
+}
+
+/* SVG progress ring — sits just outside the button circle */
+.sos-ring {
+  position: absolute;
+  /* Extend 6px beyond all edges so the ring strokes outside the button */
+  top: -6px;
+  left: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* "SOS" / "✓" label */
+.sos-label {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 1.5px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.sos-btn.sos-sent .sos-label {
+  font-size: 1.4rem;
+  letter-spacing: 0;
+}
+
+/* ════════════════════════════════════════════════════════
+   SETTINGS PAGE
+   ════════════════════════════════════════════════════════ */
+
+/* ── Loading state ── */
+.settings-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 56px 0;
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+
+.settings-loading-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(0, 240, 255, 0.2);
+  border-top-color: var(--cyan);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Description text under section labels ── */
+.settings-desc {
+  font-size: 0.8rem;
+  color: var(--text-3);
+  line-height: 1.6;
+  margin-bottom: 4px;
+}
+
+/* ════════════════════════════════════════════════════════
+   SEGMENTED CONTROL  (Sensitivity · Alert Type)
+   ════════════════════════════════════════════════════════ */
+
+.seg-control {
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  margin-top: 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+}
+
+.seg-btn {
+  flex: 1;
+  padding: 11px 4px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  white-space: nowrap;
+}
+
+.seg-btn.active {
+  background: linear-gradient(135deg, #009BB5 0%, var(--cyan) 100%);
+  color: #000;
+  box-shadow:
+    var(--glow-cyan),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* ════════════════════════════════════════════════════════
+   HUD RANGE SLIDER  (Volume · Vibration)
+   ════════════════════════════════════════════════════════ */
+
+.slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slider-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 8px 0;
+}
+
+.slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slider-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.slider-emoji {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.slider-value {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--cyan);
+  font-family: var(--font-display);
+  min-width: 40px;
+  text-align: left; /* LTR so percentage reads left to right */
+}
+
+/* Native range input — cross-browser neon fill */
+.hud-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  direction: ltr; /* keep slider LTR inside RTL page */
+  background: linear-gradient(
+    to right,
+    var(--cyan) 0%,
+    var(--cyan) var(--fill, 80%),
+    rgba(255, 255, 255, 0.1) var(--fill, 80%),
+    rgba(255, 255, 255, 0.1) 100%
+  );
+}
+
+/* WebKit thumb */
+.hud-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow:
+    0 0 0 3px rgba(0, 240, 255, 0.2),
+    var(--glow-cyan);
+  cursor: pointer;
+  transition: box-shadow 0.18s;
+}
+
+.hud-slider:active::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 6px rgba(0, 240, 255, 0.15),
+    var(--glow-cyan-lg);
+}
+
+/* Firefox thumb */
+.hud-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: var(--cyan);
+  box-shadow: var(--glow-cyan);
+  cursor: pointer;
+}
+
+/* Firefox track — fallback (no fill trick in Firefox) */
+.hud-slider::-moz-range-track {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ════════════════════════════════════════════════════════
+   OBJECT FILTER  (High-Risk Class chips)
+   ════════════════════════════════════════════════════════ */
+
+.class-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.class-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  direction: rtl;
+  transition: border-color 0.18s, background 0.18s, color 0.18s, box-shadow 0.18s;
+}
+
+.class-chip.active {
+  border-color: var(--cyan);
+  background: rgba(0, 240, 255, 0.07);
+  color: var(--text);
+  box-shadow:
+    0 0 0 1px rgba(0, 240, 255, 0.2),
+    inset 0 0 16px rgba(0, 240, 255, 0.04);
+}
+
+.class-emoji {
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Select-all / clear-all shortcuts below chip grid */
+.chip-shortcuts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.chip-shortcut-btn {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 4px 0;
+}
+
+.chip-shortcut-btn:active {
+  color: var(--cyan);
+}
+
+/* ── Reset button ── */
+.reset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 15px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  margin-top: -4px;
+}
+
+.reset-btn:active {
+  border-color: var(--caution);
+  color: var(--caution);
+}
+
+.reset-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }

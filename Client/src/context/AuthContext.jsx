@@ -2,18 +2,43 @@ import { createContext, useState, useContext } from 'react';
 
 const AuthContext = createContext();
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+// Must match the key used in api/client.js interceptor
+const TOKEN_KEY = 'token';
+const USER_KEY  = 'seesense_user';
 
-  const login = (userData) => {
-    setUser(userData);
-    setIsAuthenticated(true);
+const loadStoredUser = () => {
+  try {
+    const stored = localStorage.getItem(USER_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const AuthProvider = ({ children }) => {
+  // Rehydrate from localStorage so the session survives a page refresh
+  const [user, setUser] = useState(loadStoredUser);
+
+  const isAuthenticated = !!user;
+
+  /**
+   * Call after a successful login or register.
+   * @param {object} userData  - The user object returned by the backend
+   *                             (must include user_id, name, email)
+   * @param {string} token     - JWT returned by the backend
+   */
+  const login = (userData, token) => {
+    // Normalise backend's user_id → id so all consumers can use user.id
+    const normalised = { ...userData, id: userData.user_id };
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(normalised));
+    setUser(normalised);
   };
 
   const logout = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
     setUser(null);
-    setIsAuthenticated(false);
   };
 
   return (

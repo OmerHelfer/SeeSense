@@ -37,13 +37,32 @@ const HEBREW_NAMES = {
   dog:           'כלב',
 };
 
-// Throttle: don't re-announce the same class within this window
+// Throttle: don't re-announce within this window
 const COOLDOWN_MS    = 3000;
 let   lastClassName  = null;
 let   lastAnnounceAt = 0;
+let   lastSpeakAt    = 0;
 
 /**
- * Speak the most prominent detected object in Hebrew.
+ * Speak an arbitrary text string (e.g. backend's pre-composed alert_message).
+ * Throttled by COOLDOWN_MS to prevent speech spam.
+ * @param {string} text
+ */
+export const speakMessage = (text) => {
+  if (!window.speechSynthesis || !text) return;
+  const now = Date.now();
+  if (now - lastSpeakAt < COOLDOWN_MS) return;
+  lastSpeakAt = now;
+  const utterance  = new SpeechSynthesisUtterance(text);
+  utterance.lang   = 'he-IL';
+  utterance.volume = 1;
+  utterance.rate   = 1.1;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+};
+
+/**
+ * Speak the most prominent detected object in Hebrew (class-name fallback).
  * Throttled per class to prevent speech spam.
  *
  * @param {Array<{class_name?: string, label?: string}>} objects
