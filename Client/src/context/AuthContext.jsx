@@ -35,11 +35,19 @@ export const AuthProvider = ({ children }) => {
     setUser(normalised);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const { disconnectStream } = await import('../services/visionService');
+    disconnectStream();
+
+    try {
+      const { default: apiClient } = await import('../api/client');
+      await apiClient.post('/users/logout');
+    } catch (e) {}
+
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setUser(null);
-  };
+};
 
   return (
     <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
