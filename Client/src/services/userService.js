@@ -116,6 +116,65 @@ export const emergencyAlert = async ({ user_id, gps_lat, gps_lon, message = 'Eme
   return data;
 };
 
+// ── History ───────────────────────────────────────────
+
+/**
+ * GET /users/history
+ * @param {{ limit?: number, period?: string, session_id?: string }} params
+ */
+export const getHistory = async ({ limit = 50, period = 'all', session_id } = {}) => {
+  const params = { limit, period };
+  if (session_id) params.session_id = session_id;
+  const { data } = await apiClient.get('/users/history', { params });
+  return data; // { history, count }
+};
+
+/**
+ * DELETE /users/history/{record_id}
+ */
+export const deleteHistoryRecord = async (record_id) => {
+  const { data } = await apiClient.delete(`/users/history/${record_id}`);
+  return data;
+};
+
+/**
+ * DELETE /users/history — clear all records
+ */
+export const clearHistory = async () => {
+  const { data } = await apiClient.delete('/users/history');
+  return data;
+};
+
+/**
+ * POST /users/feedback/from_history
+ * @param {{ record_id: string, feedback_type: string, notes?: string }} payload
+ */
+export const feedbackFromHistory = async ({ record_id, feedback_type, notes }) => {
+  const { data } = await apiClient.post('/users/feedback/from_history', {
+    record_id,
+    feedback_type,
+    ...(notes ? { notes } : {}),
+  });
+  return data;
+};
+
+// ── Feedback ──────────────────────────────────────────
+
+/**
+ * POST /users/feedback/quick
+ * Fired immediately after a detection event.
+ *
+ * Note: the WebSocket frame response does not include a record_id (the history
+ * write happens in a background thread after the WS response is sent).
+ * record_id is therefore omitted here; the backend accepts it as optional.
+ *
+ * @param {{ feedback_type: 'wrong_detection'|'missed_obstacle'|'general' }} payload
+ */
+export const quickFeedback = async ({ feedback_type }) => {
+  const { data } = await apiClient.post('/users/feedback/quick', { feedback_type });
+  return data;
+};
+
 // ── Password Recovery ─────────────────────────────────
 
 /**

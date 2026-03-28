@@ -1674,6 +1674,37 @@ button:active {
   letter-spacing: 0;
 }
 
+/* ── Quick Feedback Button ──────────────────────────── */
+.feedback-btn {
+  position: absolute;
+  top: 50px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  background: rgba(20, 20, 30, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.7rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+  z-index: 20;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.feedback-btn:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.feedback-btn.sent {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
 /* ════════════════════════════════════════════════════════
    SETTINGS PAGE
    ════════════════════════════════════════════════════════ */

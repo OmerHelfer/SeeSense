@@ -100,7 +100,7 @@ const CameraView = ({ isActive, onFrameCapture }) => {
     const startY   = (video.videoHeight - cropSize) / 2;
 
     ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, 640, 640);
-    onFrameCapture?.(canvas.toDataURL('image/jpeg', 0.8));
+    onFrameCapture?.(canvas.toDataURL('image/jpeg', 0.7));
   }, [onFrameCapture]);
 
   useEffect(() => {

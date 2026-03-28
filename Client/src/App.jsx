@@ -9,6 +9,7 @@ import Dashboard        from './pages/Dashboard';
 import Profile           from './pages/Profile';
 import Settings          from './pages/Settings';
 import EmergencyContacts from './pages/EmergencyContacts';
+import History           from './pages/History';
 import './styles/global.css';
 
 const ProtectedRoute = ({ children }) => {
@@ -50,6 +51,12 @@ const AnimatedRoutes = () => {
           path="/contacts"
           element={
             <ProtectedRoute><EmergencyContacts /></ProtectedRoute>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <ProtectedRoute><History /></ProtectedRoute>
           }
         />
       </Routes>

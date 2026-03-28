@@ -1,13 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Settings, Home, Scan, VideoOff } from 'lucide-react';
+import { LogOut, Settings, Home, Scan, VideoOff, Flag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CameraView      from '../components/CameraView';
 import useOrientation  from '../hooks/useOrientation';
-import { analyzeFrame }          from '../services/visionService';
+import { VisionStream }          from '../services/visionService';
 import { haptic, announceDetections, speakMessage } from '../services/feedbackService';
-import { emergencyAlert } from '../services/userService';
+import { emergencyAlert, quickFeedback } from '../services/userService';
 
 // ── Constants ────────────────────────────────────────────
 
@@ -71,9 +71,14 @@ const Dashboard = () => {
      without being re-created (which would reset the 500ms interval) ── */
   const isScanningRef  = useRef(isScanning);
   const isAlignedRef   = useRef(isAligned);
-  const isAnalyzingRef = useRef(false);       // prevent concurrent API calls
-  const userIdRef      = useRef(user?.id ?? 'default');
-  const prevAlignedRef = useRef(isAligned);
+  const userIdRef       = useRef(user?.id ?? 'default');
+  const visionStreamRef  = useRef(null);        // active VisionStream instance
+  const prevAlignedRef   = useRef(isAligned);
+
+  // ── Feedback state ──
+  // 'hidden' | 'visible' | 'sent'
+  const [feedbackState, setFeedbackState] = useState('hidden');
+  const feedbackTimerRef = useRef(null);        // auto-hide timer
 
   // ── SOS state ──
   // 'idle' | 'pressing' | 'sending' | 'sent'
@@ -94,52 +99,100 @@ const Dashboard = () => {
     prevAlignedRef.current = isAligned;
   }, [isAligned, isScanning]);
 
+  /* ── Show feedback button for 3.5 s after any detection ── */
+  const showFeedbackBriefly = useCallback(() => {
+    clearTimeout(feedbackTimerRef.current);
+    setFeedbackState('visible');
+    feedbackTimerRef.current = setTimeout(() => setFeedbackState('hidden'), 3500);
+  }, []);
+
+  /* ── Quick feedback submit ── */
+  const handleFeedback = useCallback(async () => {
+    if (feedbackState !== 'visible') return;
+    clearTimeout(feedbackTimerRef.current);
+    setFeedbackState('sent');
+    try {
+      await quickFeedback({ feedback_type: 'wrong_detection' });
+    } catch (err) {
+      console.warn('[SeeSense] Feedback failed:', err?.message);
+    }
+    feedbackTimerRef.current = setTimeout(() => setFeedbackState('hidden'), 1500);
+  }, [feedbackState]);
+
+  /* ── WebSocket result handler ──
+     Fires for every frame result pushed by the server.
+     TTS always uses Hebrew class-name mapping — backend alert_message is English.
+     Uses only stable references → safe with [] deps. */
+  const handleResult = useCallback((result) => {
+    if (!isScanningRef.current) return;
+    if (result.status === 'paused') return;
+
+    const level   = result.alert_level ?? 'none';
+    const objects = result.objects ?? [];
+
+    setAlertLevel(level);
+
+    // "Danger cleared" → one-shot Hebrew "Path Clear" announcement
+    if (result.danger_cleared) {
+      speakMessage('נתיב פנוי');
+      return;
+    }
+
+    if (result.danger) {
+      haptic('danger');
+      // Always speak in Hebrew using class-name mapping (backend message is English)
+      announceDetections(objects);
+      showFeedbackBriefly();
+    } else if (level === 'low') {
+      haptic('detection');
+      announceDetections(objects);
+      showFeedbackBriefly();
+    }
+  }, [showFeedbackBriefly]);
+
   /* ── Start / Stop scanning ── */
   const toggleScan = async () => {
     const next = !isScanning;
 
-    // On iOS 13+, gyroscope permission must be requested from a user gesture
-    if (next) await requestPermission();
+    if (next) {
+      // On iOS 13+, gyroscope permission must be requested from a user gesture
+      await requestPermission();
+
+      const token  = localStorage.getItem('token');
+      const stream = new VisionStream({
+        onResult:    handleResult,
+        onConnected: (msg) => console.info('[SeeSense] WS connected, session:', msg.session_id),
+        onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
+      });
+      stream.connect(token);
+      visionStreamRef.current = stream;
+    } else {
+      visionStreamRef.current?.disconnect();
+      visionStreamRef.current = null;
+      setAlertLevel('none');
+    }
 
     setIsScanning(next);
-    if (!next) setAlertLevel('none');
     haptic(next ? 'start' : 'stop');
   };
 
-  /* ── Frame analysis loop ──
+  /* ── Frame capture → WebSocket send ──
      Stable callback (empty deps) — reads live values via refs.
      Called by CameraView every 500 ms with a base64 JPEG data-URL. */
-  const handleFrameCapture = useCallback(async (base64Frame) => {
-    // Gate: only analyze when actively scanning AND camera is aligned
+  const handleFrameCapture = useCallback((base64Frame) => {
+    // Gate: only send when scanning, aligned, and socket is OPEN
     if (!isScanningRef.current || !isAlignedRef.current) return;
+    if (!visionStreamRef.current?.isOpen) return;
 
-    // Skip this frame if the previous API call hasn't resolved yet
-    if (isAnalyzingRef.current) return;
-    isAnalyzingRef.current = true;
+    // Convert base64 data-URL → raw Blob for binary WS send
+    const [header, b64] = base64Frame.split(',');
+    const mime          = header.match(/:(.*?);/)[1];
+    const binary        = atob(b64);
+    const bytes         = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mime });
 
-    try {
-      const result  = await analyzeFrame(base64Frame, userIdRef.current);
-      const level   = result.alert_level ?? 'none';
-      const objects = result.objects ?? [];
-
-      setAlertLevel(level);
-
-      if (result.danger) {
-        haptic('danger');
-        // Prefer the backend's pre-composed alert_message; fall back to class-name mapping
-        const alertMsg = objects[0]?.alert_message;
-        if (alertMsg) speakMessage(alertMsg);
-        else          announceDetections(objects);
-      } else if (level === 'low') {
-        haptic('detection');
-        announceDetections(objects);
-      }
-    } catch (err) {
-      // Network / server error — don't crash, just log
-      console.warn('[SeeSense] Frame analysis failed:', err?.message);
-    } finally {
-      isAnalyzingRef.current = false;
-    }
+    visionStreamRef.current?.sendFrame(blob);
   }, []); // stable reference — no deps, reads state through refs
 
   /* ── SOS: long-press handlers ──
@@ -266,6 +319,24 @@ const Dashboard = () => {
               {badgeLabel}
             </div>
           </div>
+
+          {/* Quick feedback button — appears 3.5 s after a detection */}
+          <AnimatePresence>
+            {feedbackState !== 'hidden' && (
+              <motion.button
+                className={`feedback-btn${feedbackState === 'sent' ? ' sent' : ''}`}
+                onClick={handleFeedback}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2 }}
+                aria-label="דווח על זיהוי שגוי"
+              >
+                <Flag size={13} />
+                {feedbackState === 'sent' ? 'תודה ✓' : 'זיהוי שגוי?'}
+              </motion.button>
+            )}
+          </AnimatePresence>
 
           {/* Scan sweep line — only shown when scanning AND aligned (frames are being sent) */}
           {isScanning && isAligned && <div className="scan-line" />}
