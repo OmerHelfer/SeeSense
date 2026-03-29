@@ -6,7 +6,7 @@ load_dotenv()
 
 # ==================== Model ====================
 MODEL_PATH = "ml_engine/weights/best.pt"
-MODEL_MODE = "pretrained"  # "mock" | "pretrained" | "custom"
+MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
 TARGET_SIZE = 640

@@ -44,12 +44,19 @@ def load_model(model_path: str, mode: str = "mock"):
         logger.info("Model loaded successfully")
         return model
 
+    # if mode == "custom":
+    #     logger.info(f"Loading custom PyTorch model from {model_path}...")
+    #     model = torch.load(model_path, map_location=DEVICE)
+    #     model.eval()
+    #     logger.info(f"Custom model loaded successfully on {DEVICE}")
+    #     return model
     if mode == "custom":
-        logger.info(f"Loading custom PyTorch model from {model_path}...")
-        model = torch.load(model_path, map_location=DEVICE)
-        model.eval()
+        from ultralytics import YOLO
+        logger.info(f"Loading custom YOLO model from {model_path}...")
+        model = YOLO(model_path)
         logger.info(f"Custom model loaded successfully on {DEVICE}")
         return model
+
 
     logger.error(f"Unknown mode: {mode}")
     raise ValueError(f"Unknown mode: {mode}")
