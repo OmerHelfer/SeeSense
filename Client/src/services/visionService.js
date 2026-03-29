@@ -124,3 +124,12 @@ export class VisionStream {
     this._reconnectTimer = setTimeout(() => this._open(), RECONNECT_DELAY_MS);
   }
 }
+
+// Module-level reference for logout cleanup
+let _activeStream = null;
+
+export const setActiveStream = (stream) => { _activeStream = stream; };
+export const disconnectStream = () => {
+  _activeStream?.disconnect();
+  _activeStream = null;
+};

@@ -5,7 +5,7 @@ import { LogOut, Settings, Home, Scan, VideoOff, Flag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CameraView      from '../components/CameraView';
 import useOrientation  from '../hooks/useOrientation';
-import { VisionStream }          from '../services/visionService';
+import { VisionStream, setActiveStream }          from '../services/visionService';
 import { haptic, announceDetections, speakMessage } from '../services/feedbackService';
 import { emergencyAlert, quickFeedback } from '../services/userService';
 
@@ -165,6 +165,7 @@ const Dashboard = () => {
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
       });
       stream.connect(token);
+      setActiveStream(stream);  
       visionStreamRef.current = stream;
     } else {
       visionStreamRef.current?.disconnect();
