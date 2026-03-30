@@ -8,11 +8,12 @@ logger = logging.getLogger(__name__)
 class PerformanceTracker:
     """
     Tracks server performance metrics:
-    - Request latency (per frame)
+    - Request latency (per frame — server-side processing only)
+    - Client RTT (end-to-end round trip reported by the client)
     - FPS (frames processed per second)
     - Total frames processed
     - Success/failure counts
-    
+
     Uses a sliding window (last 100 requests) for averages.
     """
 
@@ -23,6 +24,11 @@ class PerformanceTracker:
         self.success_count = 0
         self.failure_count = 0
         self._start_time = time.time()
+
+        # Client RTT — end-to-end latency reported by the client
+        self.client_rtts = deque(maxlen=window_size)
+        # Timestamped history for live chart (last 60 data points)
+        self.rtt_history = deque(maxlen=60)
 
     def start_timer(self) -> float:
         """Call at the beginning of a request. Returns timestamp."""
@@ -41,6 +47,28 @@ class PerformanceTracker:
 
         logger.info(f"Frame processed in {latency_ms:.1f}ms")
         return latency_ms
+
+    # ── Client RTT reporting ─────────────────────────────
+
+    def record_client_rtt(self, rtt_ms: float):
+        """Record a client-reported round-trip time measurement."""
+        self.client_rtts.append(rtt_ms)
+        self.rtt_history.append({
+            "ts": round(time.time() * 1000),  # epoch ms for JS
+            "rtt": round(rtt_ms, 1)
+        })
+
+    def get_client_rtt_stats(self) -> dict:
+        """Avg/min/max of client-reported RTT."""
+        if not self.client_rtts:
+            return {"avg_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0}
+        return {
+            "avg_ms": round(sum(self.client_rtts) / len(self.client_rtts), 2),
+            "min_ms": round(min(self.client_rtts), 2),
+            "max_ms": round(max(self.client_rtts), 2),
+        }
+
+    # ── Server latency stats ─────────────────────────────
 
     def get_avg_latency(self) -> float:
         """Average latency over sliding window (ms)."""
@@ -85,11 +113,13 @@ class PerformanceTracker:
             "total_frames": self.total_frames,
             "success_count": self.success_count,
             "failure_count": self.failure_count,
-            "latency": {
+            "server_latency": {
                 "avg_ms": self.get_avg_latency(),
                 "min_ms": self.get_min_latency(),
                 "max_ms": self.get_max_latency()
             },
+            "client_rtt": self.get_client_rtt_stats(),
+            "rtt_history": list(self.rtt_history),
             "fps": {
                 "overall": self.get_fps(),
                 "recent": self.get_recent_fps()

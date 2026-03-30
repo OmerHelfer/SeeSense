@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+import json
 import logging
 
 from core.auth import verify_token
@@ -77,15 +78,10 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
     Real-time video streaming via WebSocket.
 
     Connection: ws://host/stream/ws?token=JWT_TOKEN
-    Client sends: binary JPEG frames
+    Client sends:
+      - binary JPEG frames (for analysis)
+      - text JSON { "type": "rtt_report", "rtt_ms": 48.5 } (latency reporting)
     Server responds: JSON detection results per frame
-
-    Flow:
-    1. Client connects with JWT token as query param
-    2. Server authenticates, creates/resumes session, sends confirmation
-    3. Client sends binary image frames continuously
-    4. Server processes each frame and sends back JSON result
-    5. On disconnect — session is stopped automatically
     """
     # ── 1. Authenticate ──
     if not token:
@@ -114,13 +110,32 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
         "message": "Stream session active"
     })
 
-    # ── 3. Frame processing loop (zero DB calls per frame) ──
+    # ── 3. Frame processing loop ──
     model = websocket.app.state.model
     frame_count = 0
 
     try:
         while True:
-            image_bytes = await websocket.receive_bytes()
+            # Receive either binary (frame) or text (rtt report) messages
+            message = await websocket.receive()
+
+            # ── Text message: RTT report from client ──
+            if "text" in message:
+                try:
+                    data = json.loads(message["text"])
+                    if data.get("type") == "rtt_report" and "rtt_ms" in data:
+                        rtt = float(data["rtt_ms"])
+                        if 0 < rtt < 30000:  # sanity check
+                            tracker.record_client_rtt(rtt)
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    pass  # ignore malformed text messages
+                continue
+
+            # ── Binary message: JPEG frame for analysis ──
+            image_bytes = message.get("bytes")
+            if not image_bytes:
+                continue
+
             start = tracker.start_timer()
             frame_count += 1
 
@@ -140,8 +155,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 img = decode_image(image_bytes)
 
                 # Prepare model input
-                # model_input = process_image(image_bytes) if MODEL_MODE == "custom" else img
-                model_input = img
+                model_input = process_image(image_bytes) if MODEL_MODE == "custom" else img
 
                 # Run inference + motion tracking
                 detections = run_inference(model, model_input)
