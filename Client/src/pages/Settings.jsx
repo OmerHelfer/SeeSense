@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity } from 'lucide-react';
+import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity, Flag, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   getSettings,
@@ -188,6 +188,20 @@ const Settings = () => {
         <button className="nav-row-btn" onClick={() => navigate('/history')}>
           <Clock size={18} />
           <span>היסטוריית זיהויים</span>
+          <ArrowRight size={16} className="nav-row-arrow" />
+        </button>
+
+        {/* General feedback */}
+        <button className="nav-row-btn" onClick={() => navigate('/feedback/general')}>
+          <MessageSquare size={18} />
+          <span>שלח משוב כללי</span>
+          <ArrowRight size={16} className="nav-row-arrow" />
+        </button>
+
+        {/* Pending feedback */}
+        <button className="nav-row-btn" onClick={() => navigate('/feedback/pending')}>
+          <Flag size={18} />
+          <span>משובים ממתינים</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 

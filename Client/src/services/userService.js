@@ -171,6 +171,38 @@ export const quickFeedback = async ({ feedback_type }) => {
   return data;
 };
 
+/**
+ * POST /users/feedback/general — standalone feedback, not linked to a detection.
+ * @param {{ feedback_type: string, notes?: string }} payload
+ */
+export const generalFeedback = async ({ feedback_type, notes }) => {
+  const { data } = await apiClient.post('/users/feedback/general', {
+    feedback_type,
+    ...(notes ? { notes } : {}),
+  });
+  return data;
+};
+
+/**
+ * GET /users/feedback?status=pending — list pending (un-reviewed) feedbacks.
+ * NOTE: Requires a backend GET /users/feedback endpoint (not yet in plan).
+ */
+export const getPendingFeedback = async () => {
+  const { data } = await apiClient.get('/users/feedback', { params: { status: 'pending' } });
+  return data.feedbacks ?? [];
+};
+
+/**
+ * POST /users/feedback/{feedback_id}/submit — add notes and mark as submitted.
+ * NOTE: Requires a backend POST /users/feedback/:id/submit endpoint.
+ * @param {string} feedback_id
+ * @param {{ notes: string }} payload
+ */
+export const submitFeedback = async (feedback_id, { notes }) => {
+  const { data } = await apiClient.post(`/users/feedback/${feedback_id}/submit`, { notes });
+  return data;
+};
+
 // ── Password Recovery ─────────────────────────────────
 
 /**

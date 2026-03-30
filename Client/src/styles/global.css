@@ -1705,6 +1705,74 @@ button:active {
   color: var(--accent-cyan);
 }
 
+/* ── Direction Indicator (HUD center-bottom) ────────── */
+.direction-indicator {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.dir-arrow {
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--cyan);
+  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.7));
+}
+
+.dir-label {
+  font-size: 0.6rem;
+  color: var(--text-2);
+  font-family: var(--font-body);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+/* ── Quick Report Button (bottom-left of camera) ─────── */
+.quick-report-btn {
+  position: absolute;
+  bottom: 18px;
+  left: 18px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(14, 18, 28, 0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+  z-index: 20;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.quick-report-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.quick-report-btn.sent {
+  border-color: var(--safe);
+  color: var(--safe);
+}
+
+.quick-report-label {
+  font-size: 0.5rem;
+  font-family: var(--font-body);
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
 /* ════════════════════════════════════════════════════════
    SETTINGS PAGE
    ════════════════════════════════════════════════════════ */

@@ -11,6 +11,8 @@ import Settings          from './pages/Settings';
 import EmergencyContacts from './pages/EmergencyContacts';
 import History           from './pages/History';
 import AdminStatus       from './pages/AdminStatus';
+import GeneralFeedback  from './pages/GeneralFeedback';
+import PendingFeedback  from './pages/PendingFeedback';
 import './styles/global.css';
 
 const ProtectedRoute = ({ children }) => {
@@ -64,6 +66,18 @@ const AnimatedRoutes = () => {
           path="/admin/status"
           element={
             <ProtectedRoute><AdminStatus /></ProtectedRoute>
+          }
+        />
+        <Route
+          path="/feedback/general"
+          element={
+            <ProtectedRoute><GeneralFeedback /></ProtectedRoute>
+          }
+        />
+        <Route
+          path="/feedback/pending"
+          element={
+            <ProtectedRoute><PendingFeedback /></ProtectedRoute>
           }
         />
       </Routes>

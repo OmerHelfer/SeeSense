@@ -61,13 +61,19 @@ export const speakMessage = (text) => {
   window.speechSynthesis.speak(utterance);
 };
 
+/** Hebrew direction suffixes — appended after the object name. */
+const DIRECTION_LABELS = {
+  left:  'מצד שמאל',
+  right: 'מצד ימין',
+  // "center" intentionally omitted — no suffix, straight ahead is the default
+};
+
 /**
- * Speak the most prominent detected object in Hebrew.
- * If isDanger is true, prepends "סכנה!" before the object name.
- * Throttled per class to prevent speech spam.
+ * Speak the most prominent detected object in Hebrew, including direction.
+ * Examples: "סכנה! מכונית מצד ימין", "אדם מצד שמאל", "כלב"
  *
- * @param {Array<{class_name?: string, label?: string}>} objects
- * @param {boolean} isDanger — true for high-risk alerts
+ * @param {Array<{class_name?: string, label?: string, motion?: {direction?: string}}>} objects
+ * @param {boolean} isDanger — true for high-risk alerts (prepends "סכנה!")
  */
 export const announceDetections = (objects, isDanger = false) => {
   if (!window.speechSynthesis || !Array.isArray(objects) || objects.length === 0) return;
@@ -82,8 +88,10 @@ export const announceDetections = (objects, isDanger = false) => {
   lastClassName  = className;
   lastAnnounceAt = now;
 
-  const name = HEBREW_NAMES[className] || className;
-  const text = isDanger ? `סכנה! ${name}` : name;
+  const name     = HEBREW_NAMES[className] || className;
+  const dirLabel = DIRECTION_LABELS[topObj?.motion?.direction] ?? '';
+  const body     = dirLabel ? `${name} ${dirLabel}` : name;
+  const text     = isDanger ? `סכנה! ${body}` : body;
 
   const utterance  = new SpeechSynthesisUtterance(text);
   utterance.lang   = 'he-IL';

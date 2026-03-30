@@ -83,9 +83,11 @@ const HealthDot = ({ status }) => {
 const Dashboard = () => {
   const { logout, user }            = useAuth();
   const navigate                    = useNavigate();
-  const [isScanning, setIsScanning] = useState(false);
-  const [alertLevel, setAlertLevel] = useState('none'); // 'none' | 'low' | 'high'
-  const [healthStatus, setHealthStatus] = useState('idle'); // 'idle' | 'green' | 'yellow' | 'red'
+  const [isScanning, setIsScanning]       = useState(false);
+  const [alertLevel, setAlertLevel]       = useState('none');   // 'none' | 'low' | 'high'
+  const [healthStatus, setHealthStatus]   = useState('idle');   // 'idle' | 'green' | 'yellow' | 'red'
+  const [detectionDir, setDetectionDir]   = useState(null);     // 'left' | 'right' | 'center' | null
+  const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
@@ -95,8 +97,9 @@ const Dashboard = () => {
   const isScanningRef  = useRef(isScanning);
   const isAlignedRef   = useRef(isAligned);
   const userIdRef       = useRef(user?.id ?? 'default');
-  const visionStreamRef  = useRef(null);        // active VisionStream instance
-  const prevAlignedRef   = useRef(isAligned);
+  const visionStreamRef    = useRef(null);       // active VisionStream instance
+  const prevAlignedRef     = useRef(isAligned);
+  const quickReportTimerRef = useRef(null);      // quick-report reset timer
 
   // ── Feedback state ──
   // 'hidden' | 'visible' | 'sent'
@@ -121,6 +124,20 @@ const Dashboard = () => {
     }
     prevAlignedRef.current = isAligned;
   }, [isAligned, isScanning]);
+
+  /* ── Permanent quick-report button (bottom-left, always visible while scanning) ── */
+  const handleQuickReport = useCallback(async () => {
+    if (quickReportState === 'sent') return;
+    haptic('aligned');
+    speakMessage('פידבק מהיר נשמר בהצלחה');
+    setQuickReportState('sent');
+    try {
+      await quickFeedback({ feedback_type: 'wrong_detection' });
+    } catch (err) {
+      console.warn('[SeeSense] Quick report failed:', err?.message);
+    }
+    quickReportTimerRef.current = setTimeout(() => setQuickReportState('idle'), 2500);
+  }, [quickReportState]);
 
   /* ── Show feedback button for 3.5 s after any detection ── */
   const showFeedbackBriefly = useCallback(() => {
@@ -155,20 +172,24 @@ const Dashboard = () => {
 
     setAlertLevel(level);
 
+    // Track direction of leading object for HUD display
+    const dir = objects[0]?.motion?.direction ?? null;
+    setDetectionDir(level !== 'none' ? dir : null);
+
     // "Danger cleared" → one-shot Hebrew "Path Clear" announcement
     if (result.danger_cleared) {
       speakMessage('נתיב פנוי');
+      setDetectionDir(null);
       return;
     }
 
     if (result.danger) {
       haptic('danger');
-      // Always speak in Hebrew using class-name mapping (backend message is English)
-      announceDetections(objects, true);
+      announceDetections(objects, true);   // "סכנה! מכונית מצד ימין"
       showFeedbackBriefly();
     } else if (level === 'low') {
       haptic('detection');
-      announceDetections(objects, false);
+      announceDetections(objects, false);  // "כלב מצד שמאל"
       showFeedbackBriefly();
     }
   }, [showFeedbackBriefly]);
@@ -207,7 +228,10 @@ const Dashboard = () => {
       visionStreamRef.current?.disconnect();
       visionStreamRef.current = null;
       setAlertLevel('none');
+      setDetectionDir(null);
       setHealthStatus('idle');
+      setQuickReportState('idle');
+      clearTimeout(quickReportTimerRef.current);
       stopHealthWatch();
     }
 
@@ -400,6 +424,27 @@ const Dashboard = () => {
             )}
           </AnimatePresence>
 
+          {/* Direction indicator — shows while a detection is active */}
+          <AnimatePresence>
+            {isScanning && detectionDir && detectionDir !== 'unknown' && (
+              <motion.div
+                className="direction-indicator"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.18 }}
+                aria-hidden="true"
+              >
+                <span className="dir-arrow">
+                  {detectionDir === 'left' ? '←' : detectionDir === 'right' ? '→' : '↑'}
+                </span>
+                <span className="dir-label">
+                  {detectionDir === 'left' ? 'שמאל' : detectionDir === 'right' ? 'ימין' : 'מרכז'}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Gyroscope spirit level */}
           <SpiritLevel beta={beta} gamma={gamma} isAligned={isAligned} />
         </div>
@@ -435,6 +480,26 @@ const Dashboard = () => {
               <div className="idle-icon"><VideoOff size={38} /></div>
               <p>לחץ להפעלת הסריקה</p>
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Quick Report Button (bottom-left, visible while scanning) ── */}
+        <AnimatePresence>
+          {isScanning && (
+            <motion.button
+              className={`quick-report-btn${quickReportState === 'sent' ? ' sent' : ''}`}
+              onClick={handleQuickReport}
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.2 }}
+              aria-label="דיווח מהיר על זיהוי שגוי"
+            >
+              <Flag size={16} />
+              <span className="quick-report-label">
+                {quickReportState === 'sent' ? '✓' : 'דיווח'}
+              </span>
+            </motion.button>
           )}
         </AnimatePresence>
 
