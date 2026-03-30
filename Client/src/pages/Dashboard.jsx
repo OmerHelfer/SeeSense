@@ -57,17 +57,23 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
   );
 };
 
-/** Health status indicator dot */
+/** Health status indicator dot + label */
 const HealthDot = ({ status }) => {
   if (status === 'idle') return null;
   const colors = { green: '#22c55e', yellow: '#eab308', orange: '#f97316', red: '#ef4444' };
-  const labels = { green: 'חיבור תקין', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
+  const labels = { green: '', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
+  const showLabel = status !== 'green';
   return (
     <div className="health-dot-wrap" title={labels[status]}>
       <div
         className={`health-dot ${status}`}
         style={{ backgroundColor: colors[status] }}
       />
+      {showLabel && (
+        <span className="health-label" style={{ color: colors[status] }}>
+          {labels[status]}
+        </span>
+      )}
     </div>
   );
 };
