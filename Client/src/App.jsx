@@ -10,6 +10,7 @@ import Profile           from './pages/Profile';
 import Settings          from './pages/Settings';
 import EmergencyContacts from './pages/EmergencyContacts';
 import History           from './pages/History';
+import AdminStatus       from './pages/AdminStatus';
 import './styles/global.css';
 
 const ProtectedRoute = ({ children }) => {
@@ -57,6 +58,12 @@ const AnimatedRoutes = () => {
           path="/history"
           element={
             <ProtectedRoute><History /></ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/status"
+          element={
+            <ProtectedRoute><AdminStatus /></ProtectedRoute>
           }
         />
       </Routes>

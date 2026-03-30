@@ -8,6 +8,7 @@ import useOrientation  from '../hooks/useOrientation';
 import { VisionStream, setActiveStream }          from '../services/visionService';
 import { haptic, announceDetections, speakMessage } from '../services/feedbackService';
 import { emergencyAlert, quickFeedback } from '../services/userService';
+import { startHealthWatch, stopHealthWatch } from '../services/healthService';
 
 // ── Constants ────────────────────────────────────────────
 
@@ -56,6 +57,21 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
   );
 };
 
+/** Health status indicator dot */
+const HealthDot = ({ status }) => {
+  if (status === 'idle') return null;
+  const colors = { green: '#22c55e', yellow: '#eab308', orange: '#f97316', red: '#ef4444' };
+  const labels = { green: 'חיבור תקין', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
+  return (
+    <div className="health-dot-wrap" title={labels[status]}>
+      <div
+        className={`health-dot ${status}`}
+        style={{ backgroundColor: colors[status] }}
+      />
+    </div>
+  );
+};
+
 // ── Dashboard ────────────────────────────────────────────
 
 const Dashboard = () => {
@@ -63,6 +79,7 @@ const Dashboard = () => {
   const navigate                    = useNavigate();
   const [isScanning, setIsScanning] = useState(false);
   const [alertLevel, setAlertLevel] = useState('none'); // 'none' | 'low' | 'high'
+  const [healthStatus, setHealthStatus] = useState('idle'); // 'idle' | 'green' | 'yellow' | 'red'
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
@@ -165,12 +182,27 @@ const Dashboard = () => {
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
       });
       stream.connect(token);
-      setActiveStream(stream);  
+      setActiveStream(stream);
       visionStreamRef.current = stream;
+
+      // ── Start Health Watchdog ──
+      startHealthWatch({
+        onStatusChange: (status, _rtt) => setHealthStatus(status),
+        onDisconnect: () => {
+          // Health RED → pause scanning visually (WebSocket may still be open but unusable)
+          console.warn('[SeeSense] Health watchdog: connection lost');
+        },
+        onReconnect: () => {
+          // Health recovered from RED → log recovery
+          console.info('[SeeSense] Health watchdog: connection restored');
+        },
+      });
     } else {
       visionStreamRef.current?.disconnect();
       visionStreamRef.current = null;
       setAlertLevel('none');
+      setHealthStatus('idle');
+      stopHealthWatch();
     }
 
     setIsScanning(next);
@@ -287,6 +319,7 @@ const Dashboard = () => {
       <header className="dashboard-header">
         <span className="header-brand">SEE<span>SENSE</span></span>
         <div className="header-actions">
+          <HealthDot status={healthStatus} />
           <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
           </button>

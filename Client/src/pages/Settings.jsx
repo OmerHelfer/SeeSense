@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock } from 'lucide-react';
+import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   getSettings,
@@ -331,6 +331,17 @@ const Settings = () => {
               <RotateCcw size={16} />
               {resetting ? 'מאפס...' : 'שחזר ברירות מחדל'}
             </button>
+
+            {/* ── Admin: System Status (visible only for admins) ── */}
+            {user?.is_admin && (
+              <button
+                className="admin-status-btn"
+                onClick={() => navigate('/admin/status')}
+              >
+                <Activity size={16} />
+                ביצועי מערכת
+              </button>
+            )}
           </>
         )}
 

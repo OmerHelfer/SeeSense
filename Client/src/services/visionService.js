@@ -1,7 +1,10 @@
 /**
  * VisionStream — WebSocket-based real-time frame analysis client.
  *
- * Replaces the legacy REST POST /inference/analyze_frame.
+ * Features:
+ *   - Binary frame streaming with per-frame RTT measurement
+ *   - Periodic RTT reporting back to the server
+ *   - Auto-reconnect on unexpected disconnection
  *
  * Usage:
  *   const stream = new VisionStream({ onResult, onError, onConnected });
@@ -19,6 +22,7 @@ const WS_BASE = (import.meta.env.VITE_API_URL ?? '')
 
 const RECONNECT_DELAY_MS     = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
+const RTT_REPORT_INTERVAL_MS = 5000; // report avg RTT to server every 5s
 
 export class VisionStream {
   /**
@@ -34,6 +38,13 @@ export class VisionStream {
     this._active            = false;
     this._reconnectAttempts = 0;
     this._reconnectTimer    = null;
+
+    // ── RTT measurement ──
+    this._frameSendTime     = null;   // performance.now() when last frame was sent
+    this._rttBuffer         = [];     // recent RTT measurements (for averaging)
+    this._rttReportTimer    = null;   // interval for periodic reporting
+    this._lastRtt           = null;   // most recent single RTT value
+    this._rttStats          = { avg: 0, min: 0, max: 0 }; // rolling stats
   }
 
   /** Open the WebSocket connection and begin the session. */
@@ -41,6 +52,7 @@ export class VisionStream {
     this._token             = token;
     this._active            = true;
     this._reconnectAttempts = 0;
+    this._rttBuffer         = [];
     this._open();
   }
 
@@ -48,6 +60,7 @@ export class VisionStream {
   disconnect() {
     this._active = false;
     clearTimeout(this._reconnectTimer);
+    clearInterval(this._rttReportTimer);
     if (this._socket) {
       this._socket.close(1000, 'Client disconnect');
       this._socket = null;
@@ -59,13 +72,24 @@ export class VisionStream {
     return this._socket?.readyState === WebSocket.OPEN;
   }
 
+  /** Most recent RTT measurement in ms (or null if none yet). */
+  get lastRtt() {
+    return this._lastRtt;
+  }
+
+  /** Rolling RTT stats: { avg, min, max } in ms. */
+  get rttStats() {
+    return { ...this._rttStats };
+  }
+
   /**
    * Send a raw JPEG Blob to the server for analysis.
-   * Silently dropped if the socket is not OPEN.
+   * Records send timestamp for RTT measurement.
    * @param {Blob} blob  JPEG image blob
    */
   sendFrame(blob) {
     if (this.isOpen) {
+      this._frameSendTime = performance.now();
       this._socket.send(blob);
     }
   }
@@ -82,7 +106,7 @@ export class VisionStream {
 
     socket.onopen = () => {
       this._reconnectAttempts = 0;
-      // Server sends { type: "connected" } as the first text message
+      this._startRttReporting();
     };
 
     socket.onmessage = (event) => {
@@ -91,8 +115,19 @@ export class VisionStream {
         if (msg.type === 'connected') {
           this._onConnected(msg);
         } else if (msg.type === 'result') {
+          // ── Measure RTT ──
+          if (this._frameSendTime !== null) {
+            const rtt = performance.now() - this._frameSendTime;
+            this._lastRtt = Math.round(rtt * 10) / 10; // 1 decimal
+            this._rttBuffer.push(this._lastRtt);
+            // Keep buffer to last 50 measurements
+            if (this._rttBuffer.length > 50) this._rttBuffer.shift();
+            this._updateRttStats();
+            this._frameSendTime = null;
+          }
           this._onResult(msg);
         } else if (msg.type === 'error') {
+          this._frameSendTime = null;
           this._onError(new Error(msg.detail ?? 'Server processing error'));
         }
       } catch {
@@ -101,12 +136,12 @@ export class VisionStream {
     };
 
     socket.onerror = () => {
-      // onerror fires before onclose; the reconnect is handled in onclose
       this._onError(new Error('WebSocket connection error'));
     };
 
     socket.onclose = (event) => {
       this._socket = null;
+      clearInterval(this._rttReportTimer);
       // Only reconnect on unexpected closure (code !== 1000)
       if (this._active && event.code !== 1000) {
         this._scheduleReconnect();
@@ -123,6 +158,34 @@ export class VisionStream {
     this._reconnectAttempts++;
     this._reconnectTimer = setTimeout(() => this._open(), RECONNECT_DELAY_MS);
   }
+
+  /** Compute rolling avg/min/max from the RTT buffer. */
+  _updateRttStats() {
+    if (this._rttBuffer.length === 0) return;
+    const sum = this._rttBuffer.reduce((a, b) => a + b, 0);
+    this._rttStats = {
+      avg: Math.round(sum / this._rttBuffer.length),
+      min: Math.round(Math.min(...this._rttBuffer)),
+      max: Math.round(Math.max(...this._rttBuffer)),
+    };
+  }
+
+  /** Send average RTT to server every 5 seconds for admin dashboard. */
+  _startRttReporting() {
+    clearInterval(this._rttReportTimer);
+    this._rttReportTimer = setInterval(() => {
+      if (!this.isOpen || this._rttBuffer.length === 0) return;
+      const avg = this._rttBuffer.reduce((a, b) => a + b, 0) / this._rttBuffer.length;
+      try {
+        this._socket.send(JSON.stringify({
+          type: 'rtt_report',
+          rtt_ms: Math.round(avg * 10) / 10
+        }));
+      } catch {
+        // socket may have closed between check and send — ignore
+      }
+    }, RTT_REPORT_INTERVAL_MS);
+  }
 }
 
 // Module-level reference for logout cleanup
@@ -133,3 +196,6 @@ export const disconnectStream = () => {
   _activeStream?.disconnect();
   _activeStream = null;
 };
+
+/** Get current RTT stats from the active stream (if any). */
+export const getActiveStreamRtt = () => _activeStream?.rttStats ?? null;
