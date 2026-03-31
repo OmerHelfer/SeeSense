@@ -159,15 +159,14 @@
    /**
     * POST /users/feedback/quick
     * Fired immediately after a detection event.
+    * Now includes record_id from the WebSocket response for frame linking.
     *
-    * Note: the WebSocket frame response does not include a record_id (the history
-    * write happens in a background thread after the WS response is sent).
-    * record_id is therefore omitted here; the backend accepts it as optional.
-    *
-    * @param {{ feedback_type: 'wrong_detection'|'missed_obstacle'|'general' }} payload
+    * @param {{ feedback_type: string, record_id?: string }} payload
     */
-   export const quickFeedback = async ({ feedback_type }) => {
-     const { data } = await apiClient.post('/users/feedback/quick', { feedback_type });
+   export const quickFeedback = async ({ feedback_type, record_id }) => {
+     const body = { feedback_type };
+     if (record_id) body.record_id = record_id;
+     const { data } = await apiClient.post('/users/feedback/quick', body);
      return data;
    };
    

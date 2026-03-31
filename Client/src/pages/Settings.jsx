@@ -177,40 +177,59 @@ const Settings = () => {
 
       <div className="inner-page-body">
 
-        {/* Profile shortcut */}
+        {/* ═══ כללי ═══ */}
+        <p className="settings-category-header">כללי</p>
+
         <button className="nav-row-btn" onClick={() => navigate('/profile')}>
           <User size={18} />
           <span>פרופיל אישי</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {/* History shortcut */}
         <button className="nav-row-btn" onClick={() => navigate('/history')}>
           <Clock size={18} />
           <span>היסטוריית זיהויים</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {/* General feedback */}
+        {/* ═══ משוב ═══ */}
+        <p className="settings-category-header">משוב</p>
+
         <button className="nav-row-btn" onClick={() => navigate('/feedback/general')}>
           <MessageSquare size={18} />
           <span>שלח משוב כללי</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {/* Pending feedback */}
         <button className="nav-row-btn" onClick={() => navigate('/feedback/pending')}>
           <Flag size={18} />
           <span>משובים ממתינים</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {/* Sent feedback */}
         <button className="nav-row-btn" onClick={() => navigate('/feedback/sent')}>
           <CheckCircle size={18} />
           <span>משובים שנשלחו</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
+
+        {/* ═══ ניהול (Admin only) ═══ */}
+        {user?.is_admin && (
+          <>
+            <p className="settings-category-header">ניהול</p>
+            <button
+              className="nav-row-btn"
+              onClick={() => navigate('/admin/status')}
+            >
+              <Activity size={16} />
+              <span>ביצועי מערכת</span>
+              <ArrowRight size={16} className="nav-row-arrow" />
+            </button>
+          </>
+        )}
+
+        {/* ═══ הגדרות סריקה ═══ */}
+        <p className="settings-category-header">הגדרות סריקה</p>
 
         {/* Feedback banners */}
         <AnimatePresence>
@@ -352,17 +371,6 @@ const Settings = () => {
               <RotateCcw size={16} />
               {resetting ? 'מאפס...' : 'שחזר ברירות מחדל'}
             </button>
-
-            {/* ── Admin: System Status (visible only for admins) ── */}
-            {user?.is_admin && (
-              <button
-                className="admin-status-btn"
-                onClick={() => navigate('/admin/status')}
-              >
-                <Activity size={16} />
-                ביצועי מערכת
-              </button>
-            )}
           </>
         )}
 

@@ -100,6 +100,7 @@ const Dashboard = () => {
   const visionStreamRef    = useRef(null);       // active VisionStream instance
   const prevAlignedRef     = useRef(isAligned);
   const quickReportTimerRef = useRef(null);      // quick-report reset timer
+  const lastRecordIdRef    = useRef(null);       // record_id from last detection
 
   // ── Feedback state ──
   // 'hidden' | 'visible' | 'sent'
@@ -132,7 +133,7 @@ const Dashboard = () => {
     speakMessage('פידבק מהיר נשמר בהצלחה');
     setQuickReportState('sent');
     try {
-      await quickFeedback({ feedback_type: 'wrong_detection' });
+      await quickFeedback({ feedback_type: 'wrong_detection', record_id: lastRecordIdRef.current });
     } catch (err) {
       console.warn('[SeeSense] Quick report failed:', err?.message);
     }
@@ -152,7 +153,7 @@ const Dashboard = () => {
     clearTimeout(feedbackTimerRef.current);
     setFeedbackState('sent');
     try {
-      await quickFeedback({ feedback_type: 'wrong_detection' });
+      await quickFeedback({ feedback_type: 'wrong_detection', record_id: lastRecordIdRef.current });
     } catch (err) {
       console.warn('[SeeSense] Feedback failed:', err?.message);
     }
@@ -169,6 +170,9 @@ const Dashboard = () => {
 
     const level   = result.alert_level ?? 'none';
     const objects = result.objects ?? [];
+
+    // Track last record_id for quick feedback linking
+    if (result.record_id) lastRecordIdRef.current = result.record_id;
 
     setAlertLevel(level);
 

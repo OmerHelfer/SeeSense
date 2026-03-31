@@ -15,7 +15,7 @@ from services.session_service import (
     update_cache,
     clear_cache,
     check_danger_cleared,
-    save_frame_data_background,
+    save_frame_count_background,
 )
 from ml_engine.model_loader import run_inference
 from api.settings import get_user_settings
@@ -179,11 +179,16 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
 
                 latency = tracker.end_timer(start, success=True)
 
-                # ── Send result FIRST (fast) ──
+                # ── Write detection record BEFORE response (need record_id) ──
+                from services.user_service import add_detection_record
+                record_id = add_detection_record(user_id, result, session_id=session_id)
+
+                # ── Send result with record_id ──
                 await websocket.send_json({
                     "type": "result",
                     "status": "success",
                     "frame": frame_count,
+                    "record_id": record_id,
                     "latency_ms": round(latency, 1),
                     "danger": is_danger,
                     "danger_cleared": danger_cleared,
@@ -193,8 +198,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     "objects": result["objects"]
                 })
 
-                # ── DB writes AFTER response (background — non-blocking) ──
-                save_frame_data_background(session_id, user_id, result, frame_count)
+                # ── Frame count update in background ──
+                save_frame_count_background(session_id, frame_count)
 
             except ValueError as e:
                 tracker.end_timer(start, success=False)

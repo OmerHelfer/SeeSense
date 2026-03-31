@@ -259,6 +259,8 @@ const History = () => {
         notes:         fbNotes.trim() || undefined,
       });
       setModalView('feedbackDone');
+      // Mark this frame as having feedback
+      setFeedbackIds((prev) => new Set([...prev, activeRecord.record_id]));
       setTimeout(() => closeModal(), 1500);
     } catch (err) {
       const detail = err?.response?.data?.detail;

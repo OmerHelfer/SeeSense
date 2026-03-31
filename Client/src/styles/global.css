@@ -2301,3 +2301,21 @@ button:active {
   height: 100%;
   display: block;
 }
+/* ═══════════════════════════════════════════════════
+   Settings Category Headers
+   ═══════════════════════════════════════════════════ */
+
+.settings-category-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 20px 0 8px 0;
+  padding: 0 4px;
+  font-family: var(--font-body);
+}
+
+.settings-category-header:first-of-type {
+  margin-top: 4px;
+}
