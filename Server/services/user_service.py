@@ -200,6 +200,8 @@ def clear_user_history(user_id: str) -> int:
 
 def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = None) -> str:
     """Quick feedback from user during walk — no notes, status is pending."""
+    detection_snapshot = None
+
     if record_id:
         try:
             record = _detection_history().find_one({"_id": ObjectId(record_id), "user_id": user_id})
@@ -213,6 +215,16 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
         if existing:
             raise ValueError("Feedback already exists for this record")
 
+        # Save snapshot of detection data for later review
+        detection_snapshot = {
+            "timestamp": record.get("timestamp"),
+            "danger": record.get("danger", False),
+            "alert_level": record.get("alert_level", "none"),
+            "distance": record.get("distance", "Far"),
+            "objects": record.get("objects", []),
+            "objects_detected": record.get("objects_detected", 0),
+        }
+
     # Find active session
     from core.database import get_db
     session = get_db()["sessions"].find_one({"user_id": user_id, "status": "active"})
@@ -223,6 +235,7 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
         "feedback_type": feedback_type,
         "record_id": record_id,
         "session_id": session_id,
+        "detection_snapshot": detection_snapshot,
         "notes": None,
         "status": "pending",
         "created_at": datetime.now().isoformat(),
@@ -235,7 +248,6 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
 
 def create_feedback_from_history(user_id: str, record_id: str, feedback_type: str, notes: str = None) -> str:
     """Companion creates feedback from a specific history record."""
-    # Validate record exists and belongs to user
     try:
         record = _detection_history().find_one({"_id": ObjectId(record_id), "user_id": user_id})
     except Exception:
@@ -243,15 +255,26 @@ def create_feedback_from_history(user_id: str, record_id: str, feedback_type: st
 
     if not record:
         raise ValueError("Detection record not found")
- 
+
     existing = _feedback().find_one({"user_id": user_id, "record_id": record_id})
     if existing:
         raise ValueError("Feedback already exists for this record")
+
+    # Save snapshot of detection data for review
+    detection_snapshot = {
+        "timestamp": record.get("timestamp"),
+        "danger": record.get("danger", False),
+        "alert_level": record.get("alert_level", "none"),
+        "distance": record.get("distance", "Far"),
+        "objects": record.get("objects", []),
+        "objects_detected": record.get("objects_detected", 0),
+    }
 
     entry = {
         "user_id": user_id,
         "feedback_type": feedback_type,
         "record_id": record_id,
+        "detection_snapshot": detection_snapshot,
         "notes": notes,
         "status": "submitted",
         "created_at": datetime.now().isoformat(),
