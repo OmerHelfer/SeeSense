@@ -242,7 +242,7 @@ def create_feedback_from_history(user_id: str, record_id: str, feedback_type: st
         "feedback_type": feedback_type,
         "record_id": record_id,
         "notes": notes,
-        "status": "submitted" if notes else "pending",
+        "status": "pending",
         "created_at": datetime.now().isoformat(),
         "updated_at": None
     }
@@ -298,8 +298,8 @@ def get_all_feedback(user_id: str) -> list[dict]:
 
 
 def update_feedback(user_id: str, feedback_id: str, notes: str = None, feedback_type: str = None) -> dict:
-    """Companion updates a feedback — adds notes and/or changes type."""
-    updates = {"updated_at": datetime.now().isoformat()}
+    """Companion updates a feedback — adds notes and/or changes type. Marks as submitted."""
+    updates = {"updated_at": datetime.now().isoformat(), "status": "submitted"}
     if notes is not None:
         updates["notes"] = notes
     if feedback_type is not None:

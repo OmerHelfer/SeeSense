@@ -25,10 +25,13 @@ const modalVariants = {
 // ── Helpers ───────────────────────────────────────────
 
 const PERIODS = [
-  { key: 'all',   label: 'הכל'   },
-  { key: 'today', label: 'היום'  },
-  { key: 'week',  label: 'שבוע'  },
-  { key: 'month', label: 'חודש'  },
+  { key: 'all',          label: 'הכל'       },
+  { key: 'today',        label: 'היום'      },
+  { key: 'week',         label: 'שבוע'      },
+  { key: 'month',        label: 'חודש'      },
+  { key: 'three_months', label: '3 חודשים'  },
+  { key: 'half_year',    label: 'חצי שנה'   },
+  { key: 'older',        label: 'ישן יותר'  },
 ];
 
 const FEEDBACK_TYPES = [
@@ -70,6 +73,33 @@ function safetyScoreColor(score) {
   if (score >= 80) return 'var(--safe)';
   if (score >= 60) return 'var(--caution)';
   return 'var(--danger)';
+}
+
+/** Group records by session_id, preserving order. */
+function groupBySession(records) {
+  const groups = [];
+  const map = new Map();
+  for (const r of records) {
+    const sid = r.session_id ?? 'unknown';
+    if (!map.has(sid)) {
+      const group = { session_id: sid, records: [] };
+      map.set(sid, group);
+      groups.push(group);
+    }
+    map.get(sid).records.push(r);
+  }
+  return groups;
+}
+
+function formatSessionHeader(records) {
+  if (!records.length) return '';
+  const first = new Date(records[records.length - 1].timestamp);
+  const last  = new Date(records[0].timestamp);
+  const date  = first.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
+  const t1    = first.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  const t2    = last.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  const dangers = records.filter(r => r.danger).length;
+  return { date, time: `${t1} – ${t2}`, count: records.length, dangers };
 }
 
 // ── Component ─────────────────────────────────────────
@@ -168,8 +198,9 @@ const History = () => {
       setTimeout(() => {
         closeModal();
       }, 1500);
-    } catch {
-      setFbError('שליחת המשוב נכשלה. נסה שוב.');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setFbError(typeof detail === 'string' ? detail : 'שליחת המשוב נכשלה. נסה שוב.');
     } finally {
       setFbLoading(false);
     }
@@ -307,87 +338,132 @@ const History = () => {
           </div>
         )}
 
-        {/* ── Detection list ── */}
+        {/* ── Detection list — grouped by sessions ── */}
         {!loading && !loadError && records.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <AnimatePresence initial={false}>
-              {records.map((record) => (
-                <motion.div
-                  key={record.record_id}
-                  className="history-item"
-                  layout
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0  }}
-                  exit={{    opacity: 0, x: 40  }}
-                  transition={{ duration: 0.22 }}
-                  onPointerDown={() => handlePointerDown(record)}
-                  onPointerUp={handlePointerUp}
-                  onPointerLeave={handlePointerUp}
-                  style={{
-                    background: 'var(--glass-bg)',
-                    border: '1px solid var(--glass-border)',
-                    borderRadius: 'var(--r-md)',
-                    padding: '12px 14px',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    WebkitUserSelect: 'none',
-                    direction: 'rtl',
-                  }}
-                >
-                  {/* Top row: timestamp + danger badge */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)' }}>
-                      {formatDate(record.timestamp)}
-                    </span>
-                    {record.danger && (
-                      <span style={{
-                        background: 'rgba(255,59,48,0.15)',
-                        border: '1px solid var(--danger)',
-                        color: 'var(--danger)',
-                        borderRadius: 999,
-                        padding: '2px 10px',
-                        fontSize: 12,
-                        fontFamily: 'var(--font-body)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}>
-                        <AlertTriangle size={11} />
-                        סכנה !
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {groupBySession(records).map((group) => {
+              const info = formatSessionHeader(group.records);
+              return (
+                <div key={group.session_id}>
+                  {/* Session header */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 8,
+                    padding: '0 4px',
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
+                        {info.date}
                       </span>
-                    )}
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
+                        {info.time}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
+                        {info.count} סריקות
+                      </span>
+                      {info.dangers > 0 && (
+                        <span style={{
+                          background: 'rgba(255,59,48,0.12)',
+                          color: 'var(--danger)',
+                          borderRadius: 999,
+                          padding: '1px 8px',
+                          fontSize: 11,
+                          fontFamily: 'var(--font-body)',
+                        }}>
+                          {info.dangers} התראות
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Middle row: alert level chip */}
-                  <div style={{ marginBottom: 8 }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      background: `${alertLevelColor(record.alert_level)}18`,
-                      border: `1px solid ${alertLevelColor(record.alert_level)}`,
-                      color: alertLevelColor(record.alert_level),
-                      borderRadius: 999,
-                      padding: '2px 10px',
-                      fontSize: 12,
-                      fontFamily: 'var(--font-body)',
-                    }}>
-                      {alertLevelLabel(record.alert_level)}
-                    </span>
-                  </div>
+                  {/* Session records */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <AnimatePresence initial={false}>
+                      {group.records.map((record) => (
+                        <motion.div
+                          key={record.record_id}
+                          className="history-item"
+                          layout
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0  }}
+                          exit={{    opacity: 0, x: 40  }}
+                          transition={{ duration: 0.22 }}
+                          onPointerDown={() => handlePointerDown(record)}
+                          onPointerUp={handlePointerUp}
+                          onPointerLeave={handlePointerUp}
+                          style={{
+                            background: 'var(--glass-bg)',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: 'var(--r-md)',
+                            padding: '12px 14px',
+                            cursor: 'pointer',
+                            userSelect: 'none',
+                            WebkitUserSelect: 'none',
+                            direction: 'rtl',
+                          }}
+                        >
+                          {/* Top row: timestamp + danger badge */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <span style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)' }}>
+                              {formatDate(record.timestamp)}
+                            </span>
+                            {record.danger && (
+                              <span style={{
+                                background: 'rgba(255,59,48,0.15)',
+                                border: '1px solid var(--danger)',
+                                color: 'var(--danger)',
+                                borderRadius: 999,
+                                padding: '2px 10px',
+                                fontSize: 12,
+                                fontFamily: 'var(--font-body)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}>
+                                <AlertTriangle size={11} />
+                                סכנה !
+                              </span>
+                            )}
+                          </div>
 
-                  {/* Bottom row: distance + objects count */}
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
-                      מרחק: {record.distance}
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
-                      {record.objects_detected} עצמים
-                    </span>
+                          {/* Middle row: alert level chip */}
+                          <div style={{ marginBottom: 8 }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              background: `${alertLevelColor(record.alert_level)}18`,
+                              border: `1px solid ${alertLevelColor(record.alert_level)}`,
+                              color: alertLevelColor(record.alert_level),
+                              borderRadius: 999,
+                              padding: '2px 10px',
+                              fontSize: 12,
+                              fontFamily: 'var(--font-body)',
+                            }}>
+                              {alertLevelLabel(record.alert_level)}
+                            </span>
+                          </div>
+
+                          {/* Bottom row: distance + objects count */}
+                          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
+                              מרחק: {record.distance}
+                            </span>
+                            <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
+                              {record.objects_detected} עצמים
+                            </span>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
                   </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                </div>
+              );
+            })}
           </div>
         )}
 
