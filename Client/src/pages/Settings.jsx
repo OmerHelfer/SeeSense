@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity, Flag, MessageSquare, CheckCircle, ChevronDown, AlertTriangle, Users, Sliders } from 'lucide-react';
+import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity, Flag, MessageSquare, CheckCircle, ChevronDown, AlertTriangle, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   getSettings,
@@ -186,12 +186,6 @@ const Settings = () => {
         <button className="nav-row-btn" onClick={() => navigate('/profile')}>
           <User size={18} />
           <span>פרופיל אישי</span>
-          <ArrowRight size={16} className="nav-row-arrow" />
-        </button>
-
-        <button className="nav-row-btn" onClick={() => navigate('/contacts')}>
-          <Users size={18} />
-          <span>אנשי קשר לחירום</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 

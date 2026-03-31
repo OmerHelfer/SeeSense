@@ -2319,3 +2319,161 @@ button:active {
 .settings-category-header:first-of-type {
   margin-top: 4px;
 }
+
+/* ════════════════════════════════════════════════════════
+   COLLAPSIBLE ACCORDION (Scan settings under כללי)
+   ════════════════════════════════════════════════════════ */
+
+.collapsible-toggle .nav-row-arrow {
+  transform-origin: center;
+}
+
+.collapsible-body {
+  padding: 4px 0 0 0;
+}
+
+/* ════════════════════════════════════════════════════════
+   SOS HISTORY CARDS
+   ════════════════════════════════════════════════════════ */
+
+.sos-history-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+.sos-history-card:hover {
+  border-color: rgba(255, 100, 80, 0.35);
+}
+
+.sos-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sos-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #ef4444;
+}
+
+.sos-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sos-card-date,
+.sos-card-contacts-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--text-2);
+}
+
+.sos-card-contacts-count {
+  font-size: 0.78rem;
+  color: var(--text-3);
+}
+
+.sos-card-details {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sos-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--text-2);
+}
+.sos-detail-row.sub {
+  padding-right: 22px;
+  font-size: 0.78rem;
+  color: var(--text-3);
+  font-family: var(--font-mono, monospace);
+}
+
+.sos-map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--cyan);
+  text-decoration: none;
+  font-size: 0.84rem;
+  transition: opacity 0.15s;
+}
+.sos-map-link:hover {
+  opacity: 0.8;
+}
+
+.sos-detail-section {
+  margin-top: 4px;
+}
+
+.sos-detail-section-title {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.sos-contacts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.sos-contact-chip {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  gap: 6px;
+}
+
+.sos-contact-name {
+  font-size: 0.88rem;
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.sos-contact-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sos-contact-email,
+.sos-contact-phone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-3);
+  direction: ltr;
+  text-align: left;
+}

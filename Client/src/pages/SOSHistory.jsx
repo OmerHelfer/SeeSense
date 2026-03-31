@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, AlertTriangle, MapPin, Users, Clock, ExternalLink } from 'lucide-react';
+import { ArrowRight, AlertTriangle, MapPin, Users, Clock, ExternalLink, Phone, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEmergencyAlerts } from '../services/userService';
 
@@ -17,7 +17,14 @@ const formatDate = (iso) => {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
-  } catch { return iso; }
+  } catch (e) {
+    return iso || '—';
+  }
+};
+
+const formatCoord = (val) => {
+  if (val === 0 || val === null || val === undefined) return null;
+  return val.toFixed(5);
 };
 
 const SOSHistory = () => {
@@ -25,13 +32,23 @@ const SOSHistory = () => {
   const [alerts, setAlerts]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
-  const [expanded, setExpanded] = useState(null); // alert_id of expanded card
+  const [expanded, setExpanded] = useState(null);
 
   useEffect(() => {
-    getEmergencyAlerts()
-      .then((list) => setAlerts(list))
-      .catch(() => setError('לא ניתן לטעון היסטוריית קריאות חירום.'))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const list = await getEmergencyAlerts();
+        if (!cancelled) setAlerts(Array.isArray(list) ? list : []);
+      } catch (err) {
+        console.warn('[SOSHistory] Failed to load alerts:', err?.message);
+        if (!cancelled) setError('לא ניתן לטעון היסטוריית קריאות חירום.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   return (
@@ -84,95 +101,121 @@ const SOSHistory = () => {
         )}
 
         {/* Alert list */}
-        <div className="contact-list">
-          <AnimatePresence>
-            {alerts.map((alert) => {
-              const isOpen = expanded === alert.alert_id;
-              return (
-                <motion.div
-                  key={alert.alert_id}
-                  className="sos-history-card"
-                  layout
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, x: 40 }}
-                  transition={{ duration: 0.22 }}
-                  onClick={() => setExpanded(isOpen ? null : alert.alert_id)}
-                >
-                  {/* Card header row */}
-                  <div className="sos-card-header">
-                    <div className="sos-card-icon">
-                      <AlertTriangle size={18} />
-                    </div>
-                    <div className="sos-card-info">
-                      <div className="sos-card-date">
-                        <Clock size={13} />
-                        <span>{formatDate(alert.timestamp)}</span>
-                      </div>
-                      <div className="sos-card-contacts-count">
-                        <Users size={13} />
-                        <span>{alert.notified_contacts?.length ?? 0} אנשי קשר קיבלו התראה</span>
-                      </div>
-                    </div>
-                    <ArrowRight
-                      size={16}
-                      className="nav-row-arrow"
-                      style={{
-                        transform: isOpen ? 'rotate(-90deg)' : 'rotate(0deg)',
-                        transition: 'transform 0.2s ease',
-                      }}
-                    />
-                  </div>
+        {!loading && !error && alerts.length > 0 && (
+          <div className="contact-list">
+            <AnimatePresence>
+              {alerts.map((alert, idx) => {
+                const key = alert.alert_id || `sos-${idx}`;
+                const isOpen = expanded === key;
+                const contactCount = alert.notified_contacts?.length ?? 0;
+                const hasRealGps = alert.gps && (alert.gps.lat !== 0 || alert.gps.lon !== 0);
 
-                  {/* Expandable details */}
-                  <AnimatePresence>
-                    {isOpen && (
-                      <motion.div
-                        className="sos-card-details"
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {/* GPS */}
-                        <div className="sos-detail-row">
-                          <MapPin size={14} />
-                          <span>מיקום:</span>
-                          <a
-                            href={alert.google_maps_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="sos-map-link"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            פתח במפות <ExternalLink size={12} />
-                          </a>
+                return (
+                  <motion.div
+                    key={key}
+                    className="sos-history-card"
+                    layout
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: 40 }}
+                    transition={{ duration: 0.22 }}
+                    onClick={() => setExpanded(isOpen ? null : key)}
+                  >
+                    {/* ── Card header ── */}
+                    <div className="sos-card-header">
+                      <div className="sos-card-icon">
+                        <AlertTriangle size={18} />
+                      </div>
+                      <div className="sos-card-info">
+                        <div className="sos-card-date">
+                          <Clock size={13} />
+                          <span>{formatDate(alert.timestamp)}</span>
                         </div>
-
-                        {/* GPS coords */}
-                        <div className="sos-detail-row sub">
+                        <div className="sos-card-contacts-count">
+                          <Users size={13} />
                           <span>
-                            {alert.gps?.lat?.toFixed(5)}, {alert.gps?.lon?.toFixed(5)}
+                            {contactCount} {contactCount === 1 ? 'איש קשר קיבל' : 'אנשי קשר קיבלו'} התראה
                           </span>
                         </div>
+                      </div>
+                      <ArrowRight
+                        size={16}
+                        className="nav-row-arrow"
+                        style={{
+                          transform: isOpen ? 'rotate(-90deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease',
+                        }}
+                      />
+                    </div>
 
-                        {/* Contacts notified */}
-                        <div className="sos-contacts-list">
-                          {(alert.notified_contacts ?? []).map((c, i) => (
-                            <div key={i} className="sos-contact-chip">
-                              <span className="sos-contact-name">{c.name}</span>
-                              <span className="sos-contact-email">{c.email}</span>
+                    {/* ── Expandable details ── */}
+                    <AnimatePresence>
+                      {isOpen && (
+                        <motion.div
+                          className="sos-card-details"
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          {/* ── Location section ── */}
+                          <div className="sos-detail-section">
+                            <div className="sos-detail-section-title">מיקום</div>
+                            <div className="sos-detail-row">
+                              <MapPin size={14} />
+                              {hasRealGps ? (
+                                <>
+                                  <span>{formatCoord(alert.gps.lat)}, {formatCoord(alert.gps.lon)}</span>
+                                  {alert.google_maps_link && (
+                                    <a
+                                      href={alert.google_maps_link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="sos-map-link"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      פתח במפות <ExternalLink size={12} />
+                                    </a>
+                                  )}
+                                </>
+                              ) : (
+                                <span style={{ color: 'var(--text-3)' }}>מיקום לא זמין (GPS כבוי)</span>
+                              )}
                             </div>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
+                          </div>
+
+                          {/* ── Contacts section ── */}
+                          {contactCount > 0 && (
+                            <div className="sos-detail-section">
+                              <div className="sos-detail-section-title">אנשי קשר שקיבלו התראה</div>
+                              <div className="sos-contacts-list">
+                                {alert.notified_contacts.map((c, i) => (
+                                  <div key={i} className="sos-contact-chip">
+                                    <span className="sos-contact-name">{c.name}</span>
+                                    <div className="sos-contact-details">
+                                      <span className="sos-contact-email">
+                                        <Mail size={11} /> {c.email}
+                                      </span>
+                                      {c.phone && (
+                                        <span className="sos-contact-phone">
+                                          <Phone size={11} /> {c.phone}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        )}
 
         <div style={{ height: 40 }} />
       </div>
