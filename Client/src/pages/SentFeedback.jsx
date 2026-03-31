@@ -204,7 +204,8 @@ const SentFeedback = () => {
               {loading && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
                   <div className="settings-loading">
-                    <div className="settings-loading-dot" /><div className="settings-loading-dot" /><div className="settings-loading-dot" />
+                    <div className="settings-loading-dot" />
+                    <span>טוען משובים...</span>
                   </div>
                 </div>
               )}

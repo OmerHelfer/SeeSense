@@ -11,6 +11,7 @@ import Settings          from './pages/Settings';
 import EmergencyContacts from './pages/EmergencyContacts';
 import History           from './pages/History';
 import AdminStatus       from './pages/AdminStatus';
+import SOSHistory        from './pages/SOSHistory';
 import GeneralFeedback  from './pages/GeneralFeedback';
 import PendingFeedback  from './pages/PendingFeedback';
 import SentFeedback     from './pages/SentFeedback';
@@ -67,6 +68,12 @@ const AnimatedRoutes = () => {
           path="/admin/status"
           element={
             <ProtectedRoute><AdminStatus /></ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sos-history"
+          element={
+            <ProtectedRoute><SOSHistory /></ProtectedRoute>
           }
         />
         <Route

@@ -385,8 +385,7 @@ const History = () => {
           <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
             <div className="settings-loading">
               <div className="settings-loading-dot" />
-              <div className="settings-loading-dot" />
-              <div className="settings-loading-dot" />
+              <span>טוען היסטוריה...</span>
             </div>
           </div>
         )}

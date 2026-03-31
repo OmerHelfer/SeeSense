@@ -112,6 +112,14 @@
      });
      return data;
    };
+
+   /**
+    * GET /users/emergency_alerts — returns SOS alert history (newest first).
+    */
+   export const getEmergencyAlerts = async () => {
+     const { data } = await apiClient.get('/users/emergency_alerts');
+     return data.alerts ?? [];
+   };
    // ── History ───────────────────────────────────────────
    
    /**

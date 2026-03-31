@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity, Flag, MessageSquare, CheckCircle } from 'lucide-react';
+import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity, Flag, MessageSquare, CheckCircle, ChevronDown, AlertTriangle, Users, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   getSettings,
@@ -81,6 +81,9 @@ const Settings = () => {
   const [resetting, setResetting]           = useState(false);
   const [saveOk, setSaveOk]                 = useState(false);
   const [error, setError]                   = useState('');
+
+  // ── Collapsible state ──
+  const [scanOpen, setScanOpen] = useState(false);
 
   // ── Load settings + class list in parallel ──
   useEffect(() => {
@@ -186,11 +189,196 @@ const Settings = () => {
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
+        <button className="nav-row-btn" onClick={() => navigate('/contacts')}>
+          <Users size={18} />
+          <span>אנשי קשר לחירום</span>
+          <ArrowRight size={16} className="nav-row-arrow" />
+        </button>
+
+        <button className="nav-row-btn" onClick={() => navigate('/sos-history')}>
+          <AlertTriangle size={18} />
+          <span>קריאות חירום</span>
+          <ArrowRight size={16} className="nav-row-arrow" />
+        </button>
+
         <button className="nav-row-btn" onClick={() => navigate('/history')}>
           <Clock size={18} />
           <span>היסטוריית זיהויים</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
+
+        {/* ── Scan settings: collapsible accordion ── */}
+        <button
+          className="nav-row-btn collapsible-toggle"
+          onClick={() => setScanOpen((o) => !o)}
+        >
+          <Sliders size={18} />
+          <span>הגדרות סריקה</span>
+          <ChevronDown
+            size={16}
+            className="nav-row-arrow"
+            style={{
+              transform: scanOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.25s ease',
+            }}
+          />
+        </button>
+
+        <AnimatePresence initial={false}>
+          {scanOpen && (
+            <motion.div
+              className="collapsible-body"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              style={{ overflow: 'hidden' }}
+            >
+              {/* Feedback banners */}
+              <AnimatePresence>
+                {error && (
+                  <motion.div className="error-banner"
+                    initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
+                  >{error}</motion.div>
+                )}
+                {saveOk && (
+                  <motion.div className="success-banner"
+                    initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
+                  >ההגדרות נשמרו בהצלחה!</motion.div>
+                )}
+              </AnimatePresence>
+
+              {loading ? (
+                <div className="settings-loading">
+                  <div className="settings-loading-dot" />
+                  <span>טוען הגדרות...</span>
+                </div>
+              ) : settings && (
+                <>
+                  {/* ── Detection Sensitivity ── */}
+                  <div className="glass-section">
+                    <div className="section-label-row" style={{ marginBottom: 6 }}>
+                      <Target size={15} />
+                      <span className="section-label">רגישות זיהוי</span>
+                    </div>
+                    <p className="settings-desc">
+                      גבוהה — מזהה עצמים גם ממרחק. נמוכה — מתריע רק על עצמים קרובים מאוד.
+                    </p>
+                    <SegControl
+                      options={sensOptions}
+                      value={settings.detection_sensitivity}
+                      onChange={set('detection_sensitivity')}
+                    />
+                  </div>
+
+                  {/* ── Alert Type ── */}
+                  <div className="glass-section">
+                    <div className="section-label-row" style={{ marginBottom: 6 }}>
+                      <Bell size={15} />
+                      <span className="section-label">סוג התראה</span>
+                    </div>
+                    <p className="settings-desc">
+                      בחר כיצד SeeSense יתריע בזמן זיהוי עצם בסיכון גבוה.
+                    </p>
+                    <SegControl
+                      options={alertOptions}
+                      value={settings.alert_type}
+                      onChange={set('alert_type')}
+                    />
+                  </div>
+
+                  {/* ── Volume + Vibration ── */}
+                  <div className="glass-section">
+                    <div className="section-label-row" style={{ marginBottom: 18 }}>
+                      <span className="section-label">עוצמת התראות</span>
+                    </div>
+                    <HudSlider
+                      emoji="🔊"
+                      label="עוצמת שמע"
+                      value={settings.volume_intensity}
+                      onChange={set('volume_intensity')}
+                    />
+                    <div className="slider-divider" />
+                    <HudSlider
+                      emoji="📳"
+                      label="עוצמת רטט"
+                      value={settings.vibration_intensity}
+                      onChange={set('vibration_intensity')}
+                    />
+                  </div>
+
+                  {/* ── High-Risk Object Filter ── */}
+                  <div className="glass-section">
+                    <div className="section-label-row" style={{ marginBottom: 6 }}>
+                      <span className="section-label">עצמים בסיכון גבוה</span>
+                    </div>
+                    <p className="settings-desc">
+                      עצמים מסומנים יפעילו התראת חירום (רטט + קול). לא מסומנים — יזוהו אך לא יסומנו כסכנה.
+                    </p>
+
+                    <div className="class-grid">
+                      {availableClasses.map((cls) => {
+                        const meta   = CLASS_META[cls] ?? { label: cls, emoji: '●' };
+                        const active = (settings.high_risk_classes ?? []).includes(cls);
+                        return (
+                          <button
+                            key={cls}
+                            type="button"
+                            className={`class-chip${active ? ' active' : ''}`}
+                            onClick={() => toggleClass(cls)}
+                          >
+                            <span className="class-emoji">{meta.emoji}</span>
+                            <span>{meta.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Select all / none shortcuts */}
+                    <div className="chip-shortcuts">
+                      <button
+                        type="button"
+                        className="chip-shortcut-btn"
+                        onClick={() => setSettings((s) => ({ ...s, high_risk_classes: [...availableClasses] }))}
+                      >
+                        בחר הכל
+                      </button>
+                      <button
+                        type="button"
+                        className="chip-shortcut-btn"
+                        onClick={() => setSettings((s) => ({ ...s, high_risk_classes: [] }))}
+                      >
+                        נקה הכל
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── Actions ── */}
+                  <motion.button
+                    className="auth-btn"
+                    onClick={handleSave}
+                    disabled={saving || resetting}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    <Save size={20} />
+                    {saving ? 'שומר...' : 'שמור שינויים'}
+                  </motion.button>
+
+                  <button
+                    className="reset-btn"
+                    onClick={handleReset}
+                    disabled={saving || resetting}
+                  >
+                    <RotateCcw size={16} />
+                    {resetting ? 'מאפס...' : 'שחזר ברירות מחדל'}
+                  </button>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ═══ משוב ═══ */}
         <p className="settings-category-header">משוב</p>
@@ -224,152 +412,6 @@ const Settings = () => {
               <Activity size={16} />
               <span>ביצועי מערכת</span>
               <ArrowRight size={16} className="nav-row-arrow" />
-            </button>
-          </>
-        )}
-
-        {/* ═══ הגדרות סריקה ═══ */}
-        <p className="settings-category-header">הגדרות סריקה</p>
-
-        {/* Feedback banners */}
-        <AnimatePresence>
-          {error && (
-            <motion.div className="error-banner"
-              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
-            >{error}</motion.div>
-          )}
-          {saveOk && (
-            <motion.div className="success-banner"
-              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
-            >ההגדרות נשמרו בהצלחה!</motion.div>
-          )}
-        </AnimatePresence>
-
-        {loading ? (
-          <div className="settings-loading">
-            <div className="settings-loading-dot" />
-            <span>טוען הגדרות...</span>
-          </div>
-        ) : settings && (
-          <>
-            {/* ── Detection Sensitivity ── */}
-            <div className="glass-section">
-              <div className="section-label-row" style={{ marginBottom: 6 }}>
-                <Target size={15} />
-                <span className="section-label">רגישות זיהוי</span>
-              </div>
-              <p className="settings-desc">
-                גבוהה — מזהה עצמים גם ממרחק. נמוכה — מתריע רק על עצמים קרובים מאוד.
-              </p>
-              <SegControl
-                options={sensOptions}
-                value={settings.detection_sensitivity}
-                onChange={set('detection_sensitivity')}
-              />
-            </div>
-
-            {/* ── Alert Type ── */}
-            <div className="glass-section">
-              <div className="section-label-row" style={{ marginBottom: 6 }}>
-                <Bell size={15} />
-                <span className="section-label">סוג התראה</span>
-              </div>
-              <p className="settings-desc">
-                בחר כיצד SeeSense יתריע בזמן זיהוי עצם בסיכון גבוה.
-              </p>
-              <SegControl
-                options={alertOptions}
-                value={settings.alert_type}
-                onChange={set('alert_type')}
-              />
-            </div>
-
-            {/* ── Volume + Vibration ── */}
-            <div className="glass-section">
-              <div className="section-label-row" style={{ marginBottom: 18 }}>
-                <span className="section-label">עוצמת התראות</span>
-              </div>
-              <HudSlider
-                emoji="🔊"
-                label="עוצמת שמע"
-                value={settings.volume_intensity}
-                onChange={set('volume_intensity')}
-              />
-              <div className="slider-divider" />
-              <HudSlider
-                emoji="📳"
-                label="עוצמת רטט"
-                value={settings.vibration_intensity}
-                onChange={set('vibration_intensity')}
-              />
-            </div>
-
-            {/* ── High-Risk Object Filter ── */}
-            <div className="glass-section">
-              <div className="section-label-row" style={{ marginBottom: 6 }}>
-                <span className="section-label">עצמים בסיכון גבוה</span>
-              </div>
-              <p className="settings-desc">
-                עצמים מסומנים יפעילו התראת חירום (רטט + קול). לא מסומנים — יזוהו אך לא יסומנו כסכנה.
-              </p>
-
-              <div className="class-grid">
-                {availableClasses.map((cls) => {
-                  const meta   = CLASS_META[cls] ?? { label: cls, emoji: '●' };
-                  const active = (settings.high_risk_classes ?? []).includes(cls);
-                  return (
-                    <button
-                      key={cls}
-                      type="button"
-                      className={`class-chip${active ? ' active' : ''}`}
-                      onClick={() => toggleClass(cls)}
-                    >
-                      <span className="class-emoji">{meta.emoji}</span>
-                      <span>{meta.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Select all / none shortcuts */}
-              <div className="chip-shortcuts">
-                <button
-                  type="button"
-                  className="chip-shortcut-btn"
-                  onClick={() => setSettings((s) => ({ ...s, high_risk_classes: [...availableClasses] }))}
-                >
-                  בחר הכל
-                </button>
-                <button
-                  type="button"
-                  className="chip-shortcut-btn"
-                  onClick={() => setSettings((s) => ({ ...s, high_risk_classes: [] }))}
-                >
-                  נקה הכל
-                </button>
-              </div>
-            </div>
-
-            {/* ── Actions ── */}
-            <motion.button
-              className="auth-btn"
-              onClick={handleSave}
-              disabled={saving || resetting}
-              whileTap={{ scale: 0.97 }}
-            >
-              <Save size={20} />
-              {saving ? 'שומר...' : 'שמור שינויים'}
-            </motion.button>
-
-            <button
-              className="reset-btn"
-              onClick={handleReset}
-              disabled={saving || resetting}
-            >
-              <RotateCcw size={16} />
-              {resetting ? 'מאפס...' : 'שחזר ברירות מחדל'}
             </button>
           </>
         )}

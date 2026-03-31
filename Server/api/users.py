@@ -48,6 +48,7 @@ from services.user_service import (
     remove_emergency_contact,
     get_emergency_contacts,
     trigger_emergency,
+    get_emergency_alert_history,
     MAX_EMERGENCY_CONTACTS,
     delete_user_account,
 )
@@ -466,3 +467,11 @@ async def emergency_alert(alert: EmergencyAlertRequest, current_user: dict = Dep
         return {"status": "Alert Sent", "alert": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/emergency_alerts")
+async def list_emergency_alerts(current_user: dict = Depends(verify_token)):
+    """Get the user's SOS alert history (newest first, max 50)."""
+    user_id = current_user["user_id"]
+    alerts = get_emergency_alert_history(user_id)
+    return {"status": "success", "alerts": alerts, "count": len(alerts)}

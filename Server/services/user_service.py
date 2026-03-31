@@ -603,6 +603,10 @@ def _cleanup_expired_contacts(user_id: str) -> list[str]:
 
 # ==================== Emergency Alert ====================
 
+def _emergency_alerts():
+    return get_db()["emergency_alerts"]
+
+
 def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
     from services.email_service import send_emergency_alert_email
 
@@ -617,13 +621,20 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
     maps_link = f"https://maps.google.com/?q={gps_lat},{gps_lon}"
 
     alert = {
+        "alert_id": str(uuid.uuid4()),
         "user_id": user_id,
         "user_name": profile["name"],
         "gps": {"lat": gps_lat, "lon": gps_lon},
         "google_maps_link": maps_link,
         "timestamp": datetime.now().isoformat(),
-        "notified_contacts": contacts
+        "notified_contacts": [
+            {"name": c["name"], "email": c["email"], "phone": c.get("phone", "")}
+            for c in contacts
+        ],
     }
+
+    # Persist alert to DB
+    _emergency_alerts().insert_one(alert.copy())
 
     # Send email to each verified contact
     for contact in contacts:
@@ -636,6 +647,17 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
         logger.warning(f"EMERGENCY ALERT to {contact['name']} ({contact['email']}): {maps_link}")
 
     return alert
+
+
+def get_emergency_alert_history(user_id: str, limit: int = 50) -> list:
+    """Return emergency alerts for a user, newest first."""
+    alerts = list(
+        _emergency_alerts()
+        .find({"user_id": user_id}, {"_id": 0})
+        .sort("timestamp", -1)
+        .limit(limit)
+    )
+    return alerts
 
 def delete_user_account(user_id: str) -> bool:
     """
@@ -650,6 +672,7 @@ def delete_user_account(user_id: str) -> bool:
     _users().delete_one({"user_id": user_id})
     _detection_history().delete_many({"user_id": user_id})
     _feedback().delete_many({"user_id": user_id})
+    _emergency_alerts().delete_many({"user_id": user_id})
     get_db()["sessions"].delete_many({"user_id": user_id})
     get_db()["settings"].delete_many({"user_id": user_id})
 

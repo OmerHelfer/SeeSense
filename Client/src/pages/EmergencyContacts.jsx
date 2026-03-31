@@ -147,7 +147,7 @@ const EmergencyContacts = () => {
       <header className="inner-page-header">
         <button
           className="back-btn"
-          onClick={() => mode === 'list' ? navigate('/profile') : setMode('list')}
+          onClick={() => mode === 'list' ? navigate('/settings') : setMode('list')}
           aria-label="חזרה"
         >
           <ArrowRight size={22} />
