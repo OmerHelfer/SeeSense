@@ -253,7 +253,7 @@ def create_feedback_from_history(user_id: str, record_id: str, feedback_type: st
         "feedback_type": feedback_type,
         "record_id": record_id,
         "notes": notes,
-        "status": "pending",
+        "status": "submitted",
         "created_at": datetime.now().isoformat(),
         "updated_at": None
     }
