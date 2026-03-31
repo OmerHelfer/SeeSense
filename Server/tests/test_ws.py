@@ -68,7 +68,7 @@ latency_tracker = LatencyTracker()
 
 
 # ── Configuration ──
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhjZGI4NjUiLCJlbWFpbCI6Im9tZXJoZWxmZXJAZ21haWwuY29tIiwiZXhwIjoxNzc0OTQyMTExLCJpYXQiOjE3NzQ4NTU3MTF9.6qT-mRRGjhYS_e423UOvTEKPnslE06FlJDA7_B1AHXs"
+TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhjZGI4NjUiLCJlbWFpbCI6Im9tZXJoZWxmZXJAZ21haWwuY29tIiwiZXhwIjoxNzc1MDQ3OTI3LCJpYXQiOjE3NzQ5NjE1Mjd9.MTx7k2PRokFVayHfMxBccYu_b2hYVeljX99XCNt2fdk"
 SERVER = "ws://localhost:8000/stream/ws"
 IMAGES_DIR = "tests/test_images"
 VIDEOS_DIR = "tests/test_videos"
@@ -147,7 +147,7 @@ def print_result(result, round_trip_ms=None):
         return
 
     danger_icon = "[DANGER]" if result.get("danger") else "[SAFE]"
-    cleared = " ✅ PATH CLEAR" if result.get("danger_cleared") else ""
+    cleared = " PATH CLEAR" if result.get("danger_cleared") else ""
     server_ms = result.get("latency_ms", 0)
 
     # Timing info

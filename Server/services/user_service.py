@@ -123,6 +123,16 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
 
 def add_detection_record(user_id: str, record: dict, session_id: str = None) -> str:
     """Store a detection result in user history. Returns record ID."""
+    # Extract object summaries (class_name, confidence, distance) for history display
+    raw_objects = record.get("objects", [])
+    objects_summary = []
+    for obj in raw_objects:
+        objects_summary.append({
+            "class_name": obj.get("class_name", "unknown"),
+            "confidence": round(obj.get("confidence", 0), 2),
+            "distance": obj.get("distance", "Far"),
+        })
+
     entry = {
         "user_id": user_id,
         "session_id": session_id,
@@ -130,7 +140,8 @@ def add_detection_record(user_id: str, record: dict, session_id: str = None) -> 
         "danger": record.get("danger", False),
         "alert_level": record.get("alert_level", "none"),
         "distance": record.get("distance", "Far"),
-        "objects_detected": len(record.get("objects", []))
+        "objects_detected": len(raw_objects),
+        "objects": objects_summary
     }
     result = _detection_history().insert_one(entry)
     return str(result.inserted_id)

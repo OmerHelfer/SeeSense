@@ -155,7 +155,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 img = decode_image(image_bytes)
 
                 # Prepare model input
-                model_input = process_image(image_bytes) if MODEL_MODE == "custom" else img
+                # model_input = process_image(image_bytes) if MODEL_MODE == "custom" else img
+                model_input = img
 
                 # Run inference + motion tracking
                 detections = run_inference(model, model_input)
