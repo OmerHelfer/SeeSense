@@ -193,25 +193,68 @@
    };
    
    /**
+    * GET /users/feedback/all — all feedback, filtered to submitted only.
+    */
+   export const getSubmittedFeedback = async () => {
+     const { data } = await apiClient.get('/users/feedback/all');
+     return (data.feedback ?? []).filter((f) => f.status === 'submitted');
+   };
+   
+   /**
     * POST /users/feedback/{feedback_id}/update — add notes and mark as submitted.
     * @param {string} feedback_id
-    * @param {{ notes: string }} payload
+    * @param {{ notes?: string, feedback_type?: string }} payload
     */
-   export const submitFeedback = async (feedback_id, { notes }) => {
-     if (notes && notes.trim()) {
-       // Has notes → use /update which accepts notes and marks as submitted
-       const { data } = await apiClient.post(`/users/feedback/${feedback_id}/update`, {
-         notes: notes.trim()
-       });
+   export const submitFeedback = async (feedback_id, { notes, feedback_type } = {}) => {
+     if ((notes && notes.trim()) || feedback_type) {
+       // Has notes or type change → use /update
+       const body = {};
+       if (notes && notes.trim()) body.notes = notes.trim();
+       if (feedback_type) body.feedback_type = feedback_type;
+       const { data } = await apiClient.post(`/users/feedback/${feedback_id}/update`, body);
        return data;
      } else {
-       // No notes → use /submit which just marks as submitted
+       // No changes → just mark as submitted
        const { data } = await apiClient.post(`/users/feedback/${feedback_id}/submit`);
        return data;
      }
    };
+
+   /**
+    * POST /users/feedback/{feedback_id}/update — edit type and/or notes on any feedback.
+    * @param {string} feedback_id
+    * @param {{ feedback_type?: string, notes?: string }} payload
+    */
+   export const updateFeedback = async (feedback_id, { feedback_type, notes }) => {
+     const body = {};
+     if (feedback_type) body.feedback_type = feedback_type;
+     if (notes !== undefined) body.notes = notes;
+     const { data } = await apiClient.post(`/users/feedback/${feedback_id}/update`, body);
+     return data;
+   };
+
+   /**
+    * GET /users/feedback/all — returns Set of record_ids that have feedback.
+    * Used by History page to mark frames.
+    */
+   export const getFeedbackRecordIds = async () => {
+     const { data } = await apiClient.get('/users/feedback/all');
+     const ids = new Set();
+     for (const fb of (data.feedback ?? [])) {
+       if (fb.record_id) ids.add(fb.record_id);
+     }
+     return ids;
+   };
    
    // ── Password Recovery ─────────────────────────────────
+   
+   /**
+    * DELETE /users/feedback/{feedback_id}
+    */
+   export const deleteFeedback = async (feedback_id) => {
+     const { data } = await apiClient.delete(`/users/feedback/${feedback_id}`);
+     return data;
+   };
    
    /**
     * POST /users/forgot_password (rate-limited: 3/min)

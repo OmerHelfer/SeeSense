@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity, Flag, MessageSquare } from 'lucide-react';
+import { ArrowRight, Save, RotateCcw, Target, Bell, User, Clock, Activity, Flag, MessageSquare, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   getSettings,
@@ -202,6 +202,13 @@ const Settings = () => {
         <button className="nav-row-btn" onClick={() => navigate('/feedback/pending')}>
           <Flag size={18} />
           <span>משובים ממתינים</span>
+          <ArrowRight size={16} className="nav-row-arrow" />
+        </button>
+
+        {/* Sent feedback */}
+        <button className="nav-row-btn" onClick={() => navigate('/feedback/sent')}>
+          <CheckCircle size={18} />
+          <span>משובים שנשלחו</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 

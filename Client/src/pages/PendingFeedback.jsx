@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Flag, ChevronLeft } from 'lucide-react';
+import { ArrowRight, Flag, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPendingFeedback, submitFeedback } from '../services/userService';
 
@@ -16,23 +16,84 @@ const FEEDBACK_TYPE_LABELS = {
   general:         'כללי',
 };
 
+const FEEDBACK_TYPES = [
+  { key: 'wrong_detection', label: 'זיהוי שגוי'  },
+  { key: 'missed_obstacle', label: 'פספוס מכשול' },
+  { key: 'general',         label: 'כללי'         },
+];
+
+const HEBREW_NAMES = {
+  person: 'אדם', car: 'מכונית', bicycle: 'אופניים', motorcycle: 'אופנוע',
+  bench: 'ספסל', fire_hydrant: 'ברז כיבוי', traffic_light: 'רמזור',
+  stairs: 'מדרגות', pole: 'עמוד', dog: 'כלב', bus: 'אוטובוס', truck: 'משאית',
+};
+
 function formatDate(ts) {
+  if (!ts) return '';
   const d = new Date(ts);
   return `${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-// ── Selected item view — shows notes form ─────────────
+function hebrewName(cls) { return HEBREW_NAMES[cls] || cls || '?'; }
+
+/** Detection snapshot card — shows what was detected in the frame. */
+const DetectionCard = ({ snapshot }) => {
+  if (!snapshot) return null;
+  const objs = snapshot.objects ?? [];
+  const names = objs.length > 0
+    ? objs.map((o) => hebrewName(o.class_name)).join(', ')
+    : `${snapshot.objects_detected ?? 0} עצמים`;
+
+  return (
+    <div className="glass-section" style={{ marginBottom: 16 }}>
+      <p style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)', marginBottom: 8 }}>
+        מה זוהה בפריים:
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {/* Objects */}
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
+          {names}
+        </span>
+        {/* Alert + distance */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {snapshot.danger && (
+            <span style={{
+              background: 'rgba(255,59,48,0.12)', color: 'var(--danger)', borderRadius: 999,
+              padding: '2px 8px', fontSize: 11, fontFamily: 'var(--font-body)',
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              <AlertTriangle size={10} /> סכנה
+            </span>
+          )}
+          <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
+            מרחק: {snapshot.distance}
+          </span>
+          {snapshot.timestamp && (
+            <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
+              {formatDate(snapshot.timestamp)}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Form view — edit type, add notes, submit ──────────
 const FeedbackForm = ({ item, onBack, onSubmitted }) => {
+  const [fbType,  setFbType]  = useState(item.feedback_type || 'wrong_detection');
   const [notes,   setNotes]   = useState('');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
   const handleSubmit = async () => {
-    if (!notes.trim()) { setError('יש להוסיף הערה לפני השליחה.'); return; }
     setError('');
     setLoading(true);
     try {
-      await submitFeedback(item.feedback_id ?? item._id, { notes: notes.trim() });
+      await submitFeedback(item.feedback_id ?? item._id, {
+        notes: notes.trim() || undefined,
+        feedback_type: fbType !== item.feedback_type ? fbType : undefined,
+      });
       onSubmitted(item.feedback_id ?? item._id);
     } catch (err) {
       const detail = err?.response?.data?.detail;
@@ -50,7 +111,6 @@ const FeedbackForm = ({ item, onBack, onSubmitted }) => {
       exit={{ opacity: 0, x: 30 }}
       transition={{ duration: 0.22 }}
     >
-      {/* Back to list */}
       <button
         className="back-btn"
         onClick={onBack}
@@ -60,34 +120,36 @@ const FeedbackForm = ({ item, onBack, onSubmitted }) => {
         <span style={{ fontSize: 14, color: 'var(--text-2)' }}>חזרה לרשימה</span>
       </button>
 
-      {/* Item summary */}
+      {/* Detection snapshot */}
+      <DetectionCard snapshot={item.detection_snapshot} />
+
+      {/* Feedback type selector */}
       <div className="glass-section" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <span style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)' }}>
-            {formatDate(item.created_at)}
-          </span>
-          <span style={{
-            background: 'rgba(0,240,255,0.1)',
-            border: '1px solid var(--cyan-dim)',
-            color: 'var(--cyan)',
-            borderRadius: 999,
-            padding: '2px 10px',
-            fontSize: 12,
-            fontFamily: 'var(--font-body)',
-          }}>
-            {FEEDBACK_TYPE_LABELS[item.feedback_type] ?? item.feedback_type}
-          </span>
+        <p style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>
+          סוג משוב:
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {FEEDBACK_TYPES.map((ft) => (
+            <button
+              key={ft.key}
+              onClick={() => setFbType(ft.key)}
+              style={{
+                padding: '6px 14px', borderRadius: 999, fontSize: 13,
+                fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all 0.15s',
+                border: fbType === ft.key ? '1.5px solid var(--cyan)' : '1.5px solid var(--glass-border)',
+                background: fbType === ft.key ? 'rgba(0,240,255,0.10)' : 'var(--glass-bg)',
+                color: fbType === ft.key ? 'var(--cyan)' : 'var(--text-2)',
+              }}
+            >
+              {ft.label}
+            </button>
+          ))}
         </div>
-        {item.record_id && (
-          <p style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-body)', margin: 0 }}>
-            מזהה רשומה: {item.record_id}
-          </p>
-        )}
       </div>
 
       {/* Notes textarea */}
       <div className="glass-section">
-        <p className="section-label" style={{ marginBottom: 10 }}>הוסף הערה</p>
+        <p className="section-label" style={{ marginBottom: 10 }}>הוסף הערה (אופציונלי)</p>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -95,18 +157,10 @@ const FeedbackForm = ({ item, onBack, onSubmitted }) => {
           rows={4}
           disabled={loading}
           style={{
-            width: '100%',
-            background: 'var(--glass-bg)',
-            border: '1px solid var(--glass-border)',
-            borderRadius: 'var(--r-sm)',
-            color: 'var(--text)',
-            fontFamily: 'var(--font-body)',
-            fontSize: 14,
-            padding: '12px 14px',
-            resize: 'vertical',
-            outline: 'none',
-            direction: 'rtl',
-            lineHeight: 1.6,
+            width: '100%', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
+            borderRadius: 'var(--r-sm)', color: 'var(--text)', fontFamily: 'var(--font-body)',
+            fontSize: 14, padding: '12px 14px', resize: 'vertical', outline: 'none',
+            direction: 'rtl', lineHeight: 1.6,
           }}
         />
       </div>
@@ -138,42 +192,31 @@ const FeedbackForm = ({ item, onBack, onSubmitted }) => {
 // ── Main page ─────────────────────────────────────────
 const PendingFeedback = () => {
   const navigate = useNavigate();
-
   const [items,     setItems]     = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [selected,  setSelected]  = useState(null); // feedback item being edited
+  const [selected,  setSelected]  = useState(null);
 
   const loadFeedback = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
+    setLoading(true); setLoadError('');
     try {
       const feedbacks = await getPendingFeedback();
       setItems(feedbacks);
     } catch (err) {
       const detail = err?.response?.data?.detail;
       setLoadError(typeof detail === 'string' ? detail : 'לא ניתן לטעון משובים ממתינים.');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { loadFeedback(); }, [loadFeedback]);
 
   const handleSubmitted = (feedback_id) => {
-    // Remove from list and return to list view
     setItems((prev) => prev.filter((f) => (f.feedback_id ?? f._id) !== feedback_id));
     setSelected(null);
   };
 
   return (
-    <motion.div
-      className="inner-page"
-      variants={pageVariants}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-    >
+    <motion.div className="inner-page" variants={pageVariants} initial="hidden" animate="visible" exit="exit">
       <header className="inner-page-header">
         <button className="back-btn" onClick={() => navigate('/settings')} aria-label="חזרה">
           <ArrowRight size={22} />
@@ -183,41 +226,22 @@ const PendingFeedback = () => {
       </header>
 
       <div className="inner-page-body">
-
         <AnimatePresence mode="wait">
-          {/* ── Form view ── */}
           {selected ? (
-            <FeedbackForm
-              key="form"
-              item={selected}
-              onBack={() => setSelected(null)}
-              onSubmitted={handleSubmitted}
-            />
+            <FeedbackForm key="form" item={selected} onBack={() => setSelected(null)} onSubmitted={handleSubmitted} />
           ) : (
-            <motion.div
-              key="list"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-            >
-              {/* ── Loading ── */}
+            <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+
               {loading && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
                   <div className="settings-loading">
-                    <div className="settings-loading-dot" />
-                    <div className="settings-loading-dot" />
-                    <div className="settings-loading-dot" />
+                    <div className="settings-loading-dot" /><div className="settings-loading-dot" /><div className="settings-loading-dot" />
                   </div>
                 </div>
               )}
 
-              {/* ── Error ── */}
-              {!loading && loadError && (
-                <div className="error-banner">{loadError}</div>
-              )}
+              {!loading && loadError && <div className="error-banner">{loadError}</div>}
 
-              {/* ── Empty ── */}
               {!loading && !loadError && items.length === 0 && (
                 <div className="empty-state">
                   <span style={{ fontSize: 36 }}>✅</span>
@@ -225,72 +249,65 @@ const PendingFeedback = () => {
                 </div>
               )}
 
-              {/* ── Feedback list ── */}
               {!loading && !loadError && items.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <p style={{ fontSize: 13, color: 'var(--text-3)', fontFamily: 'var(--font-body)', marginBottom: 4 }}>
-                    {items.length} משוב{items.length !== 1 ? 'ים' : ''} ממתין{items.length !== 1 ? 'ים' : ''} — לחץ כדי להוסיף הערה
+                    {items.length} משובים ממתינים — לחץ כדי לערוך ולשלוח
                   </p>
                   <AnimatePresence initial={false}>
-                    {items.map((item) => (
-                      <motion.div
-                        key={item.feedback_id ?? item._id}
-                        layout
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: 40 }}
-                        transition={{ duration: 0.2 }}
-                        onClick={() => setSelected(item)}
-                        style={{
-                          background: 'var(--glass-bg)',
-                          border: '1px solid var(--glass-border)',
-                          borderRadius: 'var(--r-md)',
-                          padding: '14px 16px',
-                          cursor: 'pointer',
-                          direction: 'rtl',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <span style={{
-                            fontSize: 14,
-                            fontWeight: 600,
-                            color: 'var(--text)',
-                            fontFamily: 'var(--font-body)',
-                          }}>
-                            {FEEDBACK_TYPE_LABELS[item.feedback_type] ?? item.feedback_type}
-                          </span>
-                          <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
-                            {formatDate(item.created_at)}
-                          </span>
-                        </div>
+                    {items.map((item) => {
+                      const snap = item.detection_snapshot;
+                      const objs = snap?.objects ?? [];
+                      const names = objs.length > 0 ? objs.map((o) => hebrewName(o.class_name)).join(', ') : null;
 
-                        {/* Pending badge + chevron */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{
-                            background: 'rgba(234,255,0,0.1)',
-                            border: '1px solid var(--yellow)',
-                            color: 'var(--yellow)',
-                            borderRadius: 999,
-                            padding: '2px 10px',
-                            fontSize: 11,
-                            fontFamily: 'var(--font-body)',
-                          }}>
-                            ממתין
-                          </span>
-                          <ChevronLeft size={16} style={{ color: 'var(--text-3)' }} />
-                        </div>
-                      </motion.div>
-                    ))}
+                      return (
+                        <motion.div
+                          key={item.feedback_id ?? item._id}
+                          layout
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: 40 }}
+                          transition={{ duration: 0.2 }}
+                          onClick={() => setSelected(item)}
+                          style={{
+                            background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
+                            borderRadius: 'var(--r-md)', padding: '14px 16px', cursor: 'pointer',
+                            direction: 'rtl', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
+                              {FEEDBACK_TYPE_LABELS[item.feedback_type] ?? item.feedback_type}
+                            </span>
+                            {names && (
+                              <span style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'var(--font-body)' }}>
+                                {names} — {snap.distance}
+                              </span>
+                            )}
+                            <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
+                              {formatDate(item.created_at)}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{
+                              background: 'rgba(234,255,0,0.1)', border: '1px solid var(--yellow)',
+                              color: 'var(--yellow)', borderRadius: 999, padding: '2px 10px',
+                              fontSize: 11, fontFamily: 'var(--font-body)',
+                            }}>
+                              ממתין
+                            </span>
+                            <ChevronLeft size={16} style={{ color: 'var(--text-3)' }} />
+                          </div>
+                        </motion.div>
+                      );
+                    })}
                   </AnimatePresence>
                 </div>
               )}
             </motion.div>
           )}
         </AnimatePresence>
-
         <div style={{ height: 40 }} />
       </div>
     </motion.div>

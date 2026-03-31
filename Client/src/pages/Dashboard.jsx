@@ -237,6 +237,7 @@ const Dashboard = () => {
 
     setIsScanning(next);
     haptic(next ? 'start' : 'stop');
+    speakMessage(next ? 'סריקה הופעלה' : 'סריקה הופסקה');
   };
 
   /* ── Frame capture → WebSocket send ──

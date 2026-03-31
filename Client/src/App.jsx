@@ -13,6 +13,7 @@ import History           from './pages/History';
 import AdminStatus       from './pages/AdminStatus';
 import GeneralFeedback  from './pages/GeneralFeedback';
 import PendingFeedback  from './pages/PendingFeedback';
+import SentFeedback     from './pages/SentFeedback';
 import './styles/global.css';
 
 const ProtectedRoute = ({ children }) => {
@@ -78,6 +79,12 @@ const AnimatedRoutes = () => {
           path="/feedback/pending"
           element={
             <ProtectedRoute><PendingFeedback /></ProtectedRoute>
+          }
+        />
+        <Route
+          path="/feedback/sent"
+          element={
+            <ProtectedRoute><SentFeedback /></ProtectedRoute>
           }
         />
       </Routes>
