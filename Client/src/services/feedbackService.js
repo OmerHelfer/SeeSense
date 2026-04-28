@@ -35,6 +35,10 @@ const HEBREW_NAMES = {
   stairs:        'מדרגות',
   pole:          'עמוד',
   dog:           'כלב',
+  bollard:       'עמוד חסימה',
+  crosswalk:     'מעבר חצייה',
+  pothole:       'בור בכביש',
+  scooter:       'קורקינט',
 };
 
 // Throttle: don't re-announce within this window

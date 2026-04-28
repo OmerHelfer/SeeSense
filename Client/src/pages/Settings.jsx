@@ -12,18 +12,21 @@ import {
 
 // ── Hebrew labels + emoji for each detectable class ──────
 const CLASS_META = {
-  person:        { label: 'אדם',        emoji: '🧑' },
-  car:           { label: 'מכונית',     emoji: '🚗' },
-  bicycle:       { label: 'אופניים',    emoji: '🚲' },
-  motorcycle:    { label: 'אופנוע',     emoji: '🏍️' },
-  bench:         { label: 'ספסל',       emoji: '🪑' },
-  fire_hydrant:  { label: 'ברז כיבוי',  emoji: '🚒' },
-  traffic_light: { label: 'רמזור',      emoji: '🚦' },
-  stairs:        { label: 'מדרגות',     emoji: '🪜' },
-  pole:          { label: 'עמוד',       emoji: '🏛️' },
-  dog:           { label: 'כלב',        emoji: '🐕' },
+  person:        { label: 'אדם',          emoji: '🧑' },
+  car:           { label: 'מכונית',       emoji: '🚗' },
+  bicycle:       { label: 'אופניים',      emoji: '🚲' },
+  motorcycle:    { label: 'אופנוע',       emoji: '🏍️' },
+  bench:         { label: 'ספסל',         emoji: '🪑' },
+  fire_hydrant:  { label: 'ברז כיבוי',    emoji: '🚒' },
+  traffic_light: { label: 'רמזור',        emoji: '🚦' },
+  stairs:        { label: 'מדרגות',       emoji: '🪜' },
+  pole:          { label: 'עמוד',         emoji: '🏛️' },
+  dog:           { label: 'כלב',          emoji: '🐕' },
+  bollard:       { label: 'עמוד חסימה',   emoji: '🚧' },
+  crosswalk:     { label: 'מעבר חצייה',   emoji: '🚸' },
+  pothole:       { label: 'בור בכביש',    emoji: '🕳️' },
+  scooter:       { label: 'קורקינט',      emoji: '🛴' },
 };
-
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
   visible: { opacity: 1, x: 0,  transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
