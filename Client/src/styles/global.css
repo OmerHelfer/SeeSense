@@ -1708,7 +1708,7 @@ button:active {
 /* ── Direction Indicator (HUD center-bottom) ────────── */
 .direction-indicator {
   position: absolute;
-  top: 25%;
+  top: 15%;
   left: 49%;
   transform: translateX(-50%);
   display: flex;
@@ -2518,3 +2518,34 @@ button:active {
     font-size: 1rem;
     color: var(--safe);
   }
+
+  /* ════════════════════════════════════════════════════════
+   DETECTED CLASS LABEL (next to direction arrow)
+   ════════════════════════════════════════════════════════ */
+
+.dir-class {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 12px currentColor, 0 1px 4px rgba(0, 0, 0, 0.6);
+  margin-top: 2px;
+}
+
+/* High alert (danger) — red */
+.direction-indicator.alert-high .dir-class {
+  color: var(--danger);
+}
+.direction-indicator.alert-high .dir-arrow {
+  color: var(--danger);
+  filter: drop-shadow(0 0 8px rgba(255, 59, 48, 0.7));
+}
+
+/* Low alert (caution) — orange */
+.direction-indicator.alert-low .dir-class {
+  color: var(--caution);
+}
+.direction-indicator.alert-low .dir-arrow {
+  color: var(--caution);
+  filter: drop-shadow(0 0 8px rgba(255, 159, 10, 0.7));
+}

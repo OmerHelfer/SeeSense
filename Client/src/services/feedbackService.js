@@ -24,7 +24,7 @@ export const haptic = (name) => {
 // ── Audio: Web Speech API ────────────────────────────
 
 /** Hebrew names for detected object classes returned by the backend. */
-const HEBREW_NAMES = {
+export const HEBREW_NAMES = {
   person:        'אדם',
   car:           'מכונית',
   bicycle:       'אופניים',
@@ -105,4 +105,3 @@ export const announceDetections = (objects, isDanger = false) => {
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
 };
-

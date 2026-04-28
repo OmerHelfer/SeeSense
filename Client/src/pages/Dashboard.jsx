@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import CameraView      from '../components/CameraView';
 import useOrientation  from '../hooks/useOrientation';
 import { VisionStream, setActiveStream }          from '../services/visionService';
-import { haptic, announceDetections, speakMessage } from '../services/feedbackService';
+import { haptic, announceDetections, speakMessage, HEBREW_NAMES } from '../services/feedbackService';
 import { emergencyAlert, quickFeedback } from '../services/userService';
 import { startHealthWatch, stopHealthWatch } from '../services/healthService';
 
@@ -87,6 +87,7 @@ const Dashboard = () => {
   const [alertLevel, setAlertLevel]       = useState('none');   // 'none' | 'low' | 'high'
   const [healthStatus, setHealthStatus]   = useState('idle');   // 'idle' | 'green' | 'yellow' | 'red'
   const [detectionDir, setDetectionDir]   = useState(null);     // 'left' | 'right' | 'center' | null
+  const [detectedClass, setDetectedClass] = useState(null);     // hebrew class name of leading object
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
@@ -176,14 +177,17 @@ const Dashboard = () => {
 
     setAlertLevel(level);
 
-    // Track direction of leading object for HUD display
+    // Track direction and class of leading object for HUD display
     const dir = objects[0]?.motion?.direction ?? null;
+    const cls = objects[0]?.class_name ?? null;
     setDetectionDir(level !== 'none' ? dir : null);
+    setDetectedClass(level !== 'none' && cls ? (HEBREW_NAMES[cls] ?? cls) : null);
 
     // "Danger cleared" → one-shot Hebrew "Path Clear" announcement
     if (result.danger_cleared) {
       speakMessage('נתיב פנוי');
       setDetectionDir(null);
+      setDetectedClass(null);
       return;
     }
 
@@ -233,6 +237,7 @@ const Dashboard = () => {
       visionStreamRef.current = null;
       setAlertLevel('none');
       setDetectionDir(null);
+      setDetectedClass(null);
       setHealthStatus('idle');
       setQuickReportState('idle');
       clearTimeout(quickReportTimerRef.current);
@@ -433,7 +438,7 @@ const Dashboard = () => {
           <AnimatePresence>
             {isScanning && detectionDir && detectionDir !== 'unknown' && (
               <motion.div
-                className="direction-indicator"
+                className={`direction-indicator alert-${alertLevel}`}
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
@@ -443,6 +448,9 @@ const Dashboard = () => {
                 <span className="dir-arrow">
                   {detectionDir === 'left' ? '←' : detectionDir === 'right' ? '→' : '↑'}
                 </span>
+                {detectedClass && (
+                  <span className="dir-class">{detectedClass}</span>
+                )}
                 <span className="dir-label">
                   {detectionDir === 'left' ? 'שמאל' : detectionDir === 'right' ? 'ימין' : 'מרכז'}
                 </span>
