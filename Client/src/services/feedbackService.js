@@ -69,7 +69,7 @@ export const speakMessage = (text) => {
 const DIRECTION_LABELS = {
   left:  'מצד שמאל',
   right: 'מצד ימין',
-  // "center" intentionally omitted — no suffix, straight ahead is the default
+  center: "ממול"
 };
 
 /**
