@@ -30,9 +30,16 @@ class PerformanceTracker:
         # Timestamped history for live chart (last 60 data points)
         self.rtt_history = deque(maxlen=60)
 
+        # Frame arrival timestamps (last 100) — for actual FPS calculation
+        self.frame_arrival_times = deque(maxlen=window_size)
+        # Client-reported FPS (capture rate at the client side)
+        self.client_fps_reports = deque(maxlen=window_size)
+
     def start_timer(self) -> float:
         """Call at the beginning of a request. Returns timestamp."""
-        return time.time()
+        now = time.time()
+        self.frame_arrival_times.append(now)
+        return now
 
     def end_timer(self, start: float, success: bool = True):
         """Call at the end of a request. Records latency and status."""
@@ -47,6 +54,30 @@ class PerformanceTracker:
 
         logger.info(f"Frame processed in {latency_ms:.1f}ms")
         return latency_ms
+
+    # ── Client FPS reporting ─────────────────────────────
+
+    def record_client_fps(self, fps: float):
+        """Record the actual capture rate reported by the client."""
+        self.client_fps_reports.append(fps)
+
+    def get_client_fps(self) -> dict:
+        """Average client capture FPS (sliding window)."""
+        if not self.client_fps_reports:
+            return {"avg": 0.0, "current": 0.0}
+        return {
+            "avg": round(sum(self.client_fps_reports) / len(self.client_fps_reports), 2),
+            "current": round(self.client_fps_reports[-1], 2),
+        }
+
+    def get_actual_server_fps(self) -> float:
+        """Real server processing rate based on frame arrival timestamps in window."""
+        if len(self.frame_arrival_times) < 2:
+            return 0.0
+        time_span = self.frame_arrival_times[-1] - self.frame_arrival_times[0]
+        if time_span <= 0:
+            return 0.0
+        return round((len(self.frame_arrival_times) - 1) / time_span, 2)
 
     # ── Client RTT reporting ─────────────────────────────
 
@@ -121,8 +152,10 @@ class PerformanceTracker:
             "client_rtt": self.get_client_rtt_stats(),
             "rtt_history": list(self.rtt_history),
             "fps": {
-                "overall": self.get_fps(),
-                "recent": self.get_recent_fps()
+                "server_capacity": self.get_recent_fps(),       # תיאורטי - יכולת
+                "server_actual":   self.get_actual_server_fps(), # בפועל - מה שנכנס
+                "client_actual":   self.get_client_fps()["avg"], # מה שהלקוח שולח
+                "overall":         self.get_fps()                # ממוצע על כל הריצה
             }
         }
 

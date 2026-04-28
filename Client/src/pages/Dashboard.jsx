@@ -94,7 +94,7 @@ const Dashboard = () => {
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
 
   /* ── Refs: let handleFrameCapture read latest state
-     without being re-created (which would reset the 500ms interval) ── */
+     without being re-created (which would reset the 250ms interval) ── */
   const isScanningRef  = useRef(isScanning);
   const isAlignedRef   = useRef(isAligned);
   const userIdRef       = useRef(user?.id ?? 'default');
@@ -251,7 +251,7 @@ const Dashboard = () => {
 
   /* ── Frame capture → WebSocket send ──
      Stable callback (empty deps) — reads live values via refs.
-     Called by CameraView every 500 ms with a base64 JPEG data-URL. */
+     Called by CameraView every 250 ms with a base64 JPEG data-URL. */
   const handleFrameCapture = useCallback((base64Frame) => {
     // Gate: only send when scanning, aligned, and socket is OPEN
     if (!isScanningRef.current || !isAlignedRef.current) return;

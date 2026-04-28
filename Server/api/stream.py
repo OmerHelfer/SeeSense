@@ -119,16 +119,20 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
             # Receive either binary (frame) or text (rtt report) messages
             message = await websocket.receive()
 
-            # ── Text message: RTT report from client ──
+            # ── Text message: RTT or FPS report from client ──
             if "text" in message:
                 try:
                     data = json.loads(message["text"])
                     if data.get("type") == "rtt_report" and "rtt_ms" in data:
                         rtt = float(data["rtt_ms"])
-                        if 0 < rtt < 30000:  # sanity check
+                        if 0 < rtt < 30000:
                             tracker.record_client_rtt(rtt)
+                    elif data.get("type") == "fps_report" and "fps" in data:
+                        fps = float(data["fps"])
+                        if 0 < fps < 100:
+                            tracker.record_client_fps(fps)
                 except (json.JSONDecodeError, ValueError, TypeError):
-                    pass  # ignore malformed text messages
+                    pass
                 continue
 
             # ── Binary message: JPEG frame for analysis ──

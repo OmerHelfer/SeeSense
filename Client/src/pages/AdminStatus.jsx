@@ -228,9 +228,9 @@ const AdminStatus = () => {
             />
             <StatCard
               icon={Zap}
-              label="FPS"
-              value={data.fps?.recent ?? 0}
-              sub={`ממוצע כללי: ${data.fps?.overall ?? 0}`}
+              label="FPS שרת (יכולת)"
+              value={data.fps?.server_capacity ?? 0}
+              sub={`בפועל: ${data.fps?.server_actual ?? 0} | לקוח: ${data.fps?.client_actual ?? 0}`}
               color="#a78bfa"
             />
             <StatCard
@@ -240,6 +240,46 @@ const AdminStatus = () => {
               sub={`${data.success_count} ✓  ${data.failure_count} ✗`}
               color="#22c55e"
             />
+          </div>
+
+          {/* ── FPS comparison ── */}
+          <div className="admin-section">
+            <h2 className="admin-section-title">
+              <Zap size={16} />
+              השוואת קצב פריימים (FPS)
+            </h2>
+
+            <div className="admin-latency-row">
+              <span className="admin-latency-label" style={{ borderRightColor: '#22c55e' }}>
+                לקוח (שולח)
+              </span>
+              <div className="admin-latency-values">
+                <div className="admin-latency-cell">
+                  <span className="admin-latency-num">{data.fps?.client_actual ?? 0}</span>
+                  <span className="admin-latency-tag">בפועל</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="admin-latency-row">
+              <span className="admin-latency-label" style={{ borderRightColor: '#a78bfa' }}>
+                שרת (מעבד)
+              </span>
+              <div className="admin-latency-values">
+                <div className="admin-latency-cell">
+                  <span className="admin-latency-num">{data.fps?.server_actual ?? 0}</span>
+                  <span className="admin-latency-tag">בפועל</span>
+                </div>
+                <div className="admin-latency-cell">
+                  <span className="admin-latency-num">{data.fps?.server_capacity ?? 0}</span>
+                  <span className="admin-latency-tag">יכולת</span>
+                </div>
+                <div className="admin-latency-cell">
+                  <span className="admin-latency-num">{data.fps?.overall ?? 0}</span>
+                  <span className="admin-latency-tag">מאז התחלה</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ── Latency comparison ── */}
