@@ -195,19 +195,22 @@ const AdminStatus = () => {
 
   return (
     <motion.div
-      className="page-container admin-status-page"
+      className="inner-page admin-status-page"
       variants={pageVariants}
       initial="hidden"
       animate="visible"
       exit="exit"
     >
       {/* Header */}
-      <header className="page-header">
+      <header className="inner-page-header">
         <button className="back-btn" onClick={() => navigate('/settings')} aria-label="חזור">
           <ArrowRight size={22} />
         </button>
-        <h1>ביצועי מערכת</h1>
+        <span className="inner-page-title">ביצועי מערכת</span>
+        <div style={{ width: 46 }} />
       </header>
+
+      <div className="inner-page-body">
 
       {loading && <div className="admin-loading">טוען נתוני ביצועים...</div>}
       {error   && <div className="admin-error">{error}</div>}
@@ -280,6 +283,7 @@ const AdminStatus = () => {
           )}
         </div>
       )}
+      </div>
     </motion.div>
   );
 };
