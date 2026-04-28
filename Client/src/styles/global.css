@@ -2477,3 +2477,44 @@ button:active {
   direction: ltr;
   text-align: left;
 }
+
+/* ════════════════════════════════════════════════════════
+   SAVE TOAST (centered success message)
+   ════════════════════════════════════════════════════════ */
+
+   .save-toast-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    pointer-events: none;
+  }
+  
+  .save-toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 32px;
+    background: rgba(0, 30, 20, 0.92);
+    border: 1px solid rgba(0, 229, 160, 0.5);
+    border-radius: var(--r-md);
+    color: var(--safe);
+    font-size: 1rem;
+    font-weight: 600;
+    box-shadow: 0 0 30px rgba(0, 229, 160, 0.15);
+    backdrop-filter: blur(12px);
+  }
+  
+  .save-toast-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(0, 229, 160, 0.2);
+    font-size: 1rem;
+    color: var(--safe);
+  }

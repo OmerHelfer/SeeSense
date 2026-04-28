@@ -12,21 +12,18 @@ import {
 
 // ── Hebrew labels + emoji for each detectable class ──────
 const CLASS_META = {
-  person:        { label: 'אדם',          emoji: '🧑' },
-  car:           { label: 'מכונית',       emoji: '🚗' },
-  bicycle:       { label: 'אופניים',      emoji: '🚲' },
-  motorcycle:    { label: 'אופנוע',       emoji: '🏍️' },
-  bench:         { label: 'ספסל',         emoji: '🪑' },
-  fire_hydrant:  { label: 'ברז כיבוי',    emoji: '🚒' },
-  traffic_light: { label: 'רמזור',        emoji: '🚦' },
-  stairs:        { label: 'מדרגות',       emoji: '🪜' },
-  pole:          { label: 'עמוד',         emoji: '🏛️' },
-  dog:           { label: 'כלב',          emoji: '🐕' },
-  bollard:       { label: 'עמוד חסימה',   emoji: '🚧' },
-  crosswalk:     { label: 'מעבר חצייה',   emoji: '🚸' },
-  pothole:       { label: 'בור בכביש',    emoji: '🕳️' },
-  scooter:       { label: 'קורקינט',      emoji: '🛴' },
+  person:        { label: 'אדם',        emoji: '🧑' },
+  car:           { label: 'מכונית',     emoji: '🚗' },
+  bicycle:       { label: 'אופניים',    emoji: '🚲' },
+  motorcycle:    { label: 'אופנוע',     emoji: '🏍️' },
+  bench:         { label: 'ספסל',       emoji: '🪑' },
+  fire_hydrant:  { label: 'ברז כיבוי',  emoji: '🚒' },
+  traffic_light: { label: 'רמזור',      emoji: '🚦' },
+  stairs:        { label: 'מדרגות',     emoji: '🪜' },
+  pole:          { label: 'עמוד',       emoji: '🏛️' },
+  dog:           { label: 'כלב',        emoji: '🐕' },
 };
+
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
   visible: { opacity: 1, x: 0,  transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
@@ -183,6 +180,38 @@ const Settings = () => {
 
       <div className="inner-page-body">
 
+        {/* Error banner */}
+        <AnimatePresence>
+          {error && (
+            <motion.div className="error-banner"
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
+            >{error}</motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Success toast — centered on screen */}
+        <AnimatePresence>
+          {saveOk && (
+            <motion.div className="save-toast-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <motion.div className="save-toast"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.25 }}
+              >
+                <span className="save-toast-icon">✓</span>
+                <span>השינויים נשמרו בהצלחה</span>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ═══ כללי ═══ */}
         <p className="settings-category-header">כללי</p>
 
@@ -231,22 +260,6 @@ const Settings = () => {
               transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
               style={{ overflow: 'hidden' }}
             >
-              {/* Feedback banners */}
-              <AnimatePresence>
-                {error && (
-                  <motion.div className="error-banner"
-                    initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
-                  >{error}</motion.div>
-                )}
-                {saveOk && (
-                  <motion.div className="success-banner"
-                    initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
-                  >ההגדרות נשמרו בהצלחה!</motion.div>
-                )}
-              </AnimatePresence>
-
               {loading ? (
                 <div className="settings-loading">
                   <div className="settings-loading-dot" />
