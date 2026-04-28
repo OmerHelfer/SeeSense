@@ -207,10 +207,14 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
 
             except ValueError as e:
                 tracker.end_timer(start, success=False)
+                # Even on bad frames, check if danger state changed (e.g. user moved away)
+                danger_cleared = check_danger_cleared(user_id, False)
                 await websocket.send_json({
                     "type": "error",
                     "frame": frame_count,
-                    "detail": str(e)
+                    "detail": str(e),
+                    "danger_cleared": danger_cleared,
+                    "clearance_message": "Path Clear" if danger_cleared else None
                 })
 
             except Exception as e:
