@@ -1708,8 +1708,8 @@ button:active {
 /* ── Direction Indicator (HUD center-bottom) ────────── */
 .direction-indicator {
   position: absolute;
-  bottom: 90px;
-  left: 50%;
+  top: 15%;
+  left: 49%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -2300,4 +2300,252 @@ button:active {
   width: 100%;
   height: 100%;
   display: block;
+}
+/* ═══════════════════════════════════════════════════
+   Settings Category Headers
+   ═══════════════════════════════════════════════════ */
+
+.settings-category-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 20px 0 8px 0;
+  padding: 0 4px;
+  font-family: var(--font-body);
+}
+
+.settings-category-header:first-of-type {
+  margin-top: 4px;
+}
+
+/* ════════════════════════════════════════════════════════
+   COLLAPSIBLE ACCORDION (Scan settings under כללי)
+   ════════════════════════════════════════════════════════ */
+
+.collapsible-toggle .nav-row-arrow {
+  transform-origin: center;
+}
+
+.collapsible-body {
+  padding: 4px 0 0 0;
+}
+
+/* ════════════════════════════════════════════════════════
+   SOS HISTORY CARDS
+   ════════════════════════════════════════════════════════ */
+
+.sos-history-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+.sos-history-card:hover {
+  border-color: rgba(255, 100, 80, 0.35);
+}
+
+.sos-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sos-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #ef4444;
+}
+
+.sos-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sos-card-date,
+.sos-card-contacts-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--text-2);
+}
+
+.sos-card-contacts-count {
+  font-size: 0.78rem;
+  color: var(--text-3);
+}
+
+.sos-card-details {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sos-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--text-2);
+}
+.sos-detail-row.sub {
+  padding-right: 22px;
+  font-size: 0.78rem;
+  color: var(--text-3);
+  font-family: var(--font-mono, monospace);
+}
+
+.sos-map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--cyan);
+  text-decoration: none;
+  font-size: 0.84rem;
+  transition: opacity 0.15s;
+}
+.sos-map-link:hover {
+  opacity: 0.8;
+}
+
+.sos-detail-section {
+  margin-top: 4px;
+}
+
+.sos-detail-section-title {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.sos-contacts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.sos-contact-chip {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  gap: 6px;
+}
+
+.sos-contact-name {
+  font-size: 0.88rem;
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.sos-contact-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sos-contact-email,
+.sos-contact-phone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-3);
+  direction: ltr;
+  text-align: left;
+}
+
+/* ════════════════════════════════════════════════════════
+   SAVE TOAST (centered success message)
+   ════════════════════════════════════════════════════════ */
+
+   .save-toast-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    pointer-events: none;
+  }
+  
+  .save-toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 32px;
+    background: rgba(0, 30, 20, 0.92);
+    border: 1px solid rgba(0, 229, 160, 0.5);
+    border-radius: var(--r-md);
+    color: var(--safe);
+    font-size: 1rem;
+    font-weight: 600;
+    box-shadow: 0 0 30px rgba(0, 229, 160, 0.15);
+    backdrop-filter: blur(12px);
+  }
+  
+  .save-toast-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(0, 229, 160, 0.2);
+    font-size: 1rem;
+    color: var(--safe);
+  }
+
+  /* ════════════════════════════════════════════════════════
+   DETECTED CLASS LABEL (next to direction arrow)
+   ════════════════════════════════════════════════════════ */
+
+.dir-class {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 12px currentColor, 0 1px 4px rgba(0, 0, 0, 0.6);
+  margin-top: 2px;
+}
+
+/* High alert (danger) — red */
+.direction-indicator.alert-high .dir-class {
+  color: var(--danger);
+}
+.direction-indicator.alert-high .dir-arrow {
+  color: var(--danger);
+  filter: drop-shadow(0 0 8px rgba(255, 59, 48, 0.7));
+}
+
+/* Low alert (caution) — orange */
+.direction-indicator.alert-low .dir-class {
+  color: var(--caution);
+}
+.direction-indicator.alert-low .dir-arrow {
+  color: var(--caution);
+  filter: drop-shadow(0 0 8px rgba(255, 159, 10, 0.7));
 }

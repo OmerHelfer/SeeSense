@@ -9,11 +9,11 @@ const MAX_ZOOM = 5;
  * Renders the rear-facing camera feed with:
  * - Pinch-to-zoom via PointerEvents (tries native MediaTrack zoom first,
  *   falls back to CSS transform + adjusted canvas crop)
- * - Periodic frame capture (640×640 JPEG) at 500 ms intervals when active
+ * - Periodic frame capture (640×640 JPEG) at 250 ms intervals when active
  *
  * Props:
  *   isActive       {boolean}   Start/stop the camera
- *   onFrameCapture {function}  Called with a base64 JPEG data-URL every 500 ms
+ *   onFrameCapture {function}  Called with a base64 JPEG data-URL every 250 ms
  */
 const CameraView = ({ isActive, onFrameCapture }) => {
   const videoRef  = useRef(null);
@@ -105,7 +105,7 @@ const CameraView = ({ isActive, onFrameCapture }) => {
 
   useEffect(() => {
     if (!isActive) return;
-    const id = setInterval(captureFrame, 500);
+    const id = setInterval(captureFrame, 250);
     return () => clearInterval(id);
   }, [isActive, captureFrame]);
 

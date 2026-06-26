@@ -111,8 +111,9 @@ const RttChart = ({ history }) => {
       ctx.textAlign = 'left';
       ctx.fillText(label, w - pad.right - 40, y - 4);
     };
-    drawThreshold(150, 'rgba(234,179,8,0.5)', '150ms');
-    drawThreshold(300, 'rgba(239,68,68,0.5)', '300ms');
+    drawThreshold(250, 'rgba(234,179,8,0.5)',  '250ms');  // yellow — unstable
+    drawThreshold(400, 'rgba(249,115,22,0.5)', '400ms');  // orange — severe
+    drawThreshold(600, 'rgba(239,68,68,0.5)',  '600ms');  // red — disconnect
 
     // Data line
     ctx.beginPath();
@@ -195,19 +196,22 @@ const AdminStatus = () => {
 
   return (
     <motion.div
-      className="page-container admin-status-page"
+      className="inner-page admin-status-page"
       variants={pageVariants}
       initial="hidden"
       animate="visible"
       exit="exit"
     >
       {/* Header */}
-      <header className="page-header">
+      <header className="inner-page-header">
         <button className="back-btn" onClick={() => navigate('/settings')} aria-label="חזור">
           <ArrowRight size={22} />
         </button>
-        <h1>ביצועי מערכת</h1>
+        <span className="inner-page-title">ביצועי מערכת</span>
+        <div style={{ width: 46 }} />
       </header>
+
+      <div className="inner-page-body">
 
       {loading && <div className="admin-loading">טוען נתוני ביצועים...</div>}
       {error   && <div className="admin-error">{error}</div>}
@@ -224,9 +228,9 @@ const AdminStatus = () => {
             />
             <StatCard
               icon={Zap}
-              label="FPS"
-              value={data.fps?.recent ?? 0}
-              sub={`ממוצע כללי: ${data.fps?.overall ?? 0}`}
+              label="FPS שרת (יכולת)"
+              value={data.fps?.server_capacity ?? 0}
+              sub={`בפועל: ${data.fps?.server_actual ?? 0} | לקוח: ${data.fps?.client_actual ?? 0}`}
               color="#a78bfa"
             />
             <StatCard
@@ -236,6 +240,46 @@ const AdminStatus = () => {
               sub={`${data.success_count} ✓  ${data.failure_count} ✗`}
               color="#22c55e"
             />
+          </div>
+
+          {/* ── FPS comparison ── */}
+          <div className="admin-section">
+            <h2 className="admin-section-title">
+              <Zap size={16} />
+              השוואת קצב פריימים (FPS)
+            </h2>
+
+            <div className="admin-latency-row">
+              <span className="admin-latency-label" style={{ borderRightColor: '#22c55e' }}>
+                לקוח (שולח)
+              </span>
+              <div className="admin-latency-values">
+                <div className="admin-latency-cell">
+                  <span className="admin-latency-num">{data.fps?.client_actual ?? 0}</span>
+                  <span className="admin-latency-tag">בפועל</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="admin-latency-row">
+              <span className="admin-latency-label" style={{ borderRightColor: '#a78bfa' }}>
+                שרת (מעבד)
+              </span>
+              <div className="admin-latency-values">
+                <div className="admin-latency-cell">
+                  <span className="admin-latency-num">{data.fps?.server_actual ?? 0}</span>
+                  <span className="admin-latency-tag">בפועל</span>
+                </div>
+                <div className="admin-latency-cell">
+                  <span className="admin-latency-num">{data.fps?.server_capacity ?? 0}</span>
+                  <span className="admin-latency-tag">יכולת</span>
+                </div>
+                <div className="admin-latency-cell">
+                  <span className="admin-latency-num">{data.fps?.overall ?? 0}</span>
+                  <span className="admin-latency-tag">מאז התחלה</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ── Latency comparison ── */}
@@ -280,6 +324,7 @@ const AdminStatus = () => {
           )}
         </div>
       )}
+      </div>
     </motion.div>
   );
 };

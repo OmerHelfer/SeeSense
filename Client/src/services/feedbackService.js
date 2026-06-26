@@ -24,7 +24,7 @@ export const haptic = (name) => {
 // ── Audio: Web Speech API ────────────────────────────
 
 /** Hebrew names for detected object classes returned by the backend. */
-const HEBREW_NAMES = {
+export const HEBREW_NAMES = {
   person:        'אדם',
   car:           'מכונית',
   bicycle:       'אופניים',
@@ -35,6 +35,10 @@ const HEBREW_NAMES = {
   stairs:        'מדרגות',
   pole:          'עמוד',
   dog:           'כלב',
+  bollard:       'עמוד חסימה',
+  crosswalk:     'מעבר חצייה',
+  pothole:       'בור בכביש',
+  scooter:       'קורקינט',
 };
 
 // Throttle: don't re-announce within this window
@@ -65,7 +69,7 @@ export const speakMessage = (text) => {
 const DIRECTION_LABELS = {
   left:  'מצד שמאל',
   right: 'מצד ימין',
-  // "center" intentionally omitted — no suffix, straight ahead is the default
+  center: "ממול"
 };
 
 /**
@@ -101,4 +105,3 @@ export const announceDetections = (objects, isDanger = false) => {
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
 };
-

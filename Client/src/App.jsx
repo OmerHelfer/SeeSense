@@ -11,8 +11,10 @@ import Settings          from './pages/Settings';
 import EmergencyContacts from './pages/EmergencyContacts';
 import History           from './pages/History';
 import AdminStatus       from './pages/AdminStatus';
+import SOSHistory        from './pages/SOSHistory';
 import GeneralFeedback  from './pages/GeneralFeedback';
 import PendingFeedback  from './pages/PendingFeedback';
+import SentFeedback     from './pages/SentFeedback';
 import './styles/global.css';
 
 const ProtectedRoute = ({ children }) => {
@@ -69,6 +71,12 @@ const AnimatedRoutes = () => {
           }
         />
         <Route
+          path="/sos-history"
+          element={
+            <ProtectedRoute><SOSHistory /></ProtectedRoute>
+          }
+        />
+        <Route
           path="/feedback/general"
           element={
             <ProtectedRoute><GeneralFeedback /></ProtectedRoute>
@@ -78,6 +86,12 @@ const AnimatedRoutes = () => {
           path="/feedback/pending"
           element={
             <ProtectedRoute><PendingFeedback /></ProtectedRoute>
+          }
+        />
+        <Route
+          path="/feedback/sent"
+          element={
+            <ProtectedRoute><SentFeedback /></ProtectedRoute>
           }
         />
       </Routes>

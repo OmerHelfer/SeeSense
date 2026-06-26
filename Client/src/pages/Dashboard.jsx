@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import CameraView      from '../components/CameraView';
 import useOrientation  from '../hooks/useOrientation';
 import { VisionStream, setActiveStream }          from '../services/visionService';
-import { haptic, announceDetections, speakMessage } from '../services/feedbackService';
+import { haptic, announceDetections, speakMessage, HEBREW_NAMES } from '../services/feedbackService';
 import { emergencyAlert, quickFeedback } from '../services/userService';
 import { startHealthWatch, stopHealthWatch } from '../services/healthService';
 
@@ -87,19 +87,21 @@ const Dashboard = () => {
   const [alertLevel, setAlertLevel]       = useState('none');   // 'none' | 'low' | 'high'
   const [healthStatus, setHealthStatus]   = useState('idle');   // 'idle' | 'green' | 'yellow' | 'red'
   const [detectionDir, setDetectionDir]   = useState(null);     // 'left' | 'right' | 'center' | null
+  const [detectedClass, setDetectedClass] = useState(null);     // hebrew class name of leading object
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
 
   /* ── Refs: let handleFrameCapture read latest state
-     without being re-created (which would reset the 500ms interval) ── */
+     without being re-created (which would reset the 250ms interval) ── */
   const isScanningRef  = useRef(isScanning);
   const isAlignedRef   = useRef(isAligned);
   const userIdRef       = useRef(user?.id ?? 'default');
   const visionStreamRef    = useRef(null);       // active VisionStream instance
   const prevAlignedRef     = useRef(isAligned);
   const quickReportTimerRef = useRef(null);      // quick-report reset timer
+  const lastRecordIdRef    = useRef(null);       // record_id from last detection
 
   // ── Feedback state ──
   // 'hidden' | 'visible' | 'sent'
@@ -132,7 +134,7 @@ const Dashboard = () => {
     speakMessage('פידבק מהיר נשמר בהצלחה');
     setQuickReportState('sent');
     try {
-      await quickFeedback({ feedback_type: 'wrong_detection' });
+      await quickFeedback({ feedback_type: 'wrong_detection', record_id: lastRecordIdRef.current });
     } catch (err) {
       console.warn('[SeeSense] Quick report failed:', err?.message);
     }
@@ -152,7 +154,7 @@ const Dashboard = () => {
     clearTimeout(feedbackTimerRef.current);
     setFeedbackState('sent');
     try {
-      await quickFeedback({ feedback_type: 'wrong_detection' });
+      await quickFeedback({ feedback_type: 'wrong_detection', record_id: lastRecordIdRef.current });
     } catch (err) {
       console.warn('[SeeSense] Feedback failed:', err?.message);
     }
@@ -170,16 +172,22 @@ const Dashboard = () => {
     const level   = result.alert_level ?? 'none';
     const objects = result.objects ?? [];
 
+    // Track last record_id for quick feedback linking
+    if (result.record_id) lastRecordIdRef.current = result.record_id;
+
     setAlertLevel(level);
 
-    // Track direction of leading object for HUD display
+    // Track direction and class of leading object for HUD display
     const dir = objects[0]?.motion?.direction ?? null;
+    const cls = objects[0]?.class_name ?? null;
     setDetectionDir(level !== 'none' ? dir : null);
+    setDetectedClass(level !== 'none' && cls ? (HEBREW_NAMES[cls] ?? cls) : null);
 
     // "Danger cleared" → one-shot Hebrew "Path Clear" announcement
     if (result.danger_cleared) {
       speakMessage('נתיב פנוי');
       setDetectionDir(null);
+      setDetectedClass(null);
       return;
     }
 
@@ -229,6 +237,7 @@ const Dashboard = () => {
       visionStreamRef.current = null;
       setAlertLevel('none');
       setDetectionDir(null);
+      setDetectedClass(null);
       setHealthStatus('idle');
       setQuickReportState('idle');
       clearTimeout(quickReportTimerRef.current);
@@ -237,11 +246,12 @@ const Dashboard = () => {
 
     setIsScanning(next);
     haptic(next ? 'start' : 'stop');
+    speakMessage(next ? 'סריקה הופעלה' : 'סריקה הופסקה');
   };
 
   /* ── Frame capture → WebSocket send ──
      Stable callback (empty deps) — reads live values via refs.
-     Called by CameraView every 500 ms with a base64 JPEG data-URL. */
+     Called by CameraView every 250 ms with a base64 JPEG data-URL. */
   const handleFrameCapture = useCallback((base64Frame) => {
     // Gate: only send when scanning, aligned, and socket is OPEN
     if (!isScanningRef.current || !isAlignedRef.current) return;
@@ -428,7 +438,7 @@ const Dashboard = () => {
           <AnimatePresence>
             {isScanning && detectionDir && detectionDir !== 'unknown' && (
               <motion.div
-                className="direction-indicator"
+                className={`direction-indicator alert-${alertLevel}`}
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
@@ -438,6 +448,9 @@ const Dashboard = () => {
                 <span className="dir-arrow">
                   {detectionDir === 'left' ? '←' : detectionDir === 'right' ? '→' : '↑'}
                 </span>
+                {detectedClass && (
+                  <span className="dir-class">{detectedClass}</span>
+                )}
                 <span className="dir-label">
                   {detectionDir === 'left' ? 'שמאל' : detectionDir === 'right' ? 'ימין' : 'מרכז'}
                 </span>

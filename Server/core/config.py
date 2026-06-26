@@ -5,7 +5,7 @@ load_dotenv()
 
 
 # ==================== Model ====================
-MODEL_PATH = "ml_engine/weights/best.pt"
+MODEL_PATH = "ml_engine/weights/model_14_classes.pt"
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
@@ -50,13 +50,17 @@ CLASS_NAMES = {
     6: "traffic_light",
     7: "stairs",
     8: "pole",
-    9: "dog"
+    9: "dog",
+    10: "bollard",
+    11: "crosswalk",
+    12: "pothole",
+    13: "scooter"
 }
 
 ALL_CLASSES = set(CLASS_NAMES.values())
 
 # Default high risk classes (used when user hasn't customized)
-HIGH_RISK_CLASSES = {"car", "motorcycle", "bicycle", "person", "stairs", "dog"}
+HIGH_RISK_CLASSES = {"car", "motorcycle", "bicycle", "person", "stairs", "dog", "bollard", "pothole", "scooter"}
 
 # ==================== Edge Cases ====================
 DARK_IMAGE_THRESHOLD = 25

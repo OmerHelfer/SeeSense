@@ -123,6 +123,16 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
 
 def add_detection_record(user_id: str, record: dict, session_id: str = None) -> str:
     """Store a detection result in user history. Returns record ID."""
+    # Extract object summaries (class_name, confidence, distance) for history display
+    raw_objects = record.get("objects", [])
+    objects_summary = []
+    for obj in raw_objects:
+        objects_summary.append({
+            "class_name": obj.get("class_name", "unknown"),
+            "confidence": round(obj.get("confidence", 0), 2),
+            "distance": obj.get("distance", "Far"),
+        })
+
     entry = {
         "user_id": user_id,
         "session_id": session_id,
@@ -130,7 +140,8 @@ def add_detection_record(user_id: str, record: dict, session_id: str = None) -> 
         "danger": record.get("danger", False),
         "alert_level": record.get("alert_level", "none"),
         "distance": record.get("distance", "Far"),
-        "objects_detected": len(record.get("objects", []))
+        "objects_detected": len(raw_objects),
+        "objects": objects_summary
     }
     result = _detection_history().insert_one(entry)
     return str(result.inserted_id)
@@ -189,6 +200,8 @@ def clear_user_history(user_id: str) -> int:
 
 def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = None) -> str:
     """Quick feedback from user during walk — no notes, status is pending."""
+    detection_snapshot = None
+
     if record_id:
         try:
             record = _detection_history().find_one({"_id": ObjectId(record_id), "user_id": user_id})
@@ -202,6 +215,16 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
         if existing:
             raise ValueError("Feedback already exists for this record")
 
+        # Save snapshot of detection data for later review
+        detection_snapshot = {
+            "timestamp": record.get("timestamp"),
+            "danger": record.get("danger", False),
+            "alert_level": record.get("alert_level", "none"),
+            "distance": record.get("distance", "Far"),
+            "objects": record.get("objects", []),
+            "objects_detected": record.get("objects_detected", 0),
+        }
+
     # Find active session
     from core.database import get_db
     session = get_db()["sessions"].find_one({"user_id": user_id, "status": "active"})
@@ -212,6 +235,7 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
         "feedback_type": feedback_type,
         "record_id": record_id,
         "session_id": session_id,
+        "detection_snapshot": detection_snapshot,
         "notes": None,
         "status": "pending",
         "created_at": datetime.now().isoformat(),
@@ -224,7 +248,6 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
 
 def create_feedback_from_history(user_id: str, record_id: str, feedback_type: str, notes: str = None) -> str:
     """Companion creates feedback from a specific history record."""
-    # Validate record exists and belongs to user
     try:
         record = _detection_history().find_one({"_id": ObjectId(record_id), "user_id": user_id})
     except Exception:
@@ -232,17 +255,28 @@ def create_feedback_from_history(user_id: str, record_id: str, feedback_type: st
 
     if not record:
         raise ValueError("Detection record not found")
- 
+
     existing = _feedback().find_one({"user_id": user_id, "record_id": record_id})
     if existing:
         raise ValueError("Feedback already exists for this record")
+
+    # Save snapshot of detection data for review
+    detection_snapshot = {
+        "timestamp": record.get("timestamp"),
+        "danger": record.get("danger", False),
+        "alert_level": record.get("alert_level", "none"),
+        "distance": record.get("distance", "Far"),
+        "objects": record.get("objects", []),
+        "objects_detected": record.get("objects_detected", 0),
+    }
 
     entry = {
         "user_id": user_id,
         "feedback_type": feedback_type,
         "record_id": record_id,
+        "detection_snapshot": detection_snapshot,
         "notes": notes,
-        "status": "submitted" if notes else "pending",
+        "status": "submitted",
         "created_at": datetime.now().isoformat(),
         "updated_at": None
     }
@@ -298,8 +332,8 @@ def get_all_feedback(user_id: str) -> list[dict]:
 
 
 def update_feedback(user_id: str, feedback_id: str, notes: str = None, feedback_type: str = None) -> dict:
-    """Companion updates a feedback — adds notes and/or changes type."""
-    updates = {"updated_at": datetime.now().isoformat()}
+    """Companion updates a feedback — adds notes and/or changes type. Marks as submitted."""
+    updates = {"updated_at": datetime.now().isoformat(), "status": "submitted"}
     if notes is not None:
         updates["notes"] = notes
     if feedback_type is not None:
@@ -569,6 +603,10 @@ def _cleanup_expired_contacts(user_id: str) -> list[str]:
 
 # ==================== Emergency Alert ====================
 
+def _emergency_alerts():
+    return get_db()["emergency_alerts"]
+
+
 def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
     from services.email_service import send_emergency_alert_email
 
@@ -583,13 +621,20 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
     maps_link = f"https://maps.google.com/?q={gps_lat},{gps_lon}"
 
     alert = {
+        "alert_id": str(uuid.uuid4()),
         "user_id": user_id,
         "user_name": profile["name"],
         "gps": {"lat": gps_lat, "lon": gps_lon},
         "google_maps_link": maps_link,
         "timestamp": datetime.now().isoformat(),
-        "notified_contacts": contacts
+        "notified_contacts": [
+            {"name": c["name"], "email": c["email"], "phone": c.get("phone", "")}
+            for c in contacts
+        ],
     }
+
+    # Persist alert to DB
+    _emergency_alerts().insert_one(alert.copy())
 
     # Send email to each verified contact
     for contact in contacts:
@@ -602,6 +647,17 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
         logger.warning(f"EMERGENCY ALERT to {contact['name']} ({contact['email']}): {maps_link}")
 
     return alert
+
+
+def get_emergency_alert_history(user_id: str, limit: int = 50) -> list:
+    """Return emergency alerts for a user, newest first."""
+    alerts = list(
+        _emergency_alerts()
+        .find({"user_id": user_id}, {"_id": 0})
+        .sort("timestamp", -1)
+        .limit(limit)
+    )
+    return alerts
 
 def delete_user_account(user_id: str) -> bool:
     """
@@ -616,6 +672,7 @@ def delete_user_account(user_id: str) -> bool:
     _users().delete_one({"user_id": user_id})
     _detection_history().delete_many({"user_id": user_id})
     _feedback().delete_many({"user_id": user_id})
+    _emergency_alerts().delete_many({"user_id": user_id})
     get_db()["sessions"].delete_many({"user_id": user_id})
     get_db()["settings"].delete_many({"user_id": user_id})
 

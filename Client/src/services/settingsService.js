@@ -40,7 +40,7 @@ export const updateSettings = async (userId, settings) => {
 
 /**
  * GET /settings/available_classes
- * Returns all 10 supported class name strings.
+ * Returns all 14 supported class name strings.
  */
 export const getAvailableClasses = async () => {
   const { data } = await apiClient.get('/settings/available_classes');

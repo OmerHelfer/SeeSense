@@ -4,10 +4,10 @@
  *
  * Pings GET /health every PING_INTERVAL_MS and measures RTT.
  * Four levels:
- *   - GREEN   (< 150ms)      → connection healthy, no feedback
- *   - YELLOW  (150–250ms)    → "החיבור לא יציב" (spoken once)
- *   - ORANGE  (250–300ms)    → "החיבור חלש מאוד, מומלץ לעבור למקום עם קליטה טובה יותר" (spoken once)
- *   - RED     (300ms+ × 3 consecutive) → disconnect + "החיבור אבד, הסריקה הופסקה"
+ *   - GREEN   (< 250ms)      → connection healthy, no feedback
+ *   - YELLOW  (250-400ms)    → "החיבור לא יציב" (spoken once)
+ *   - ORANGE  (400-600ms)    → "החיבור חלש מאוד, מומלץ לעבור למקום עם קליטה טובה יותר" (spoken once)
+ *   - RED     (600ms+ × 3 consecutive) → disconnect + "החיבור אבד, הסריקה הופסקה"
  *
  * Recovery: 2 consecutive pings below 300ms → reconnect + "החיבור חזר, הסריקה ממשיכה"
  */
@@ -18,11 +18,11 @@ import { haptic, speakMessage } from './feedbackService';
 // ── Configuration ────────────────────────────────────────
 const PING_INTERVAL_MS    = 5000;   // ping every 5 seconds
 const PING_TIMEOUT_MS     = 4000;   // give up after 4s
-const THRESHOLD_YELLOW    = 150;    // ms — unstable warning
-const THRESHOLD_ORANGE    = 250;    // ms — severe warning
-const THRESHOLD_RED       = 300;    // ms — disconnect threshold
-const RED_CONSECUTIVE     = 3;      // pings above 300ms before disconnect
-const RECOVER_CONSECUTIVE = 2;      // pings below 300ms before reconnect
+const THRESHOLD_YELLOW    = 250;    // ms — unstable warning
+const THRESHOLD_ORANGE    = 400;    // ms — severe warning
+const THRESHOLD_RED       = 600;    // ms — disconnect threshold
+const RED_CONSECUTIVE     = 3;      // pings above 600ms before disconnect
+const RECOVER_CONSECUTIVE = 2;      // pings below 600ms before reconnect
 
 // ── State ────────────────────────────────────────────────
 let _intervalId        = null;
@@ -30,8 +30,8 @@ let _currentStatus     = 'idle';    // 'idle' | 'green' | 'yellow' | 'orange' | 
 let _lastPingRtt       = null;
 let _announcedYellow   = false;     // only announce once until it recovers
 let _announcedOrange   = false;     // only announce once until it recovers
-let _failStreak        = 0;         // consecutive pings >= 300ms
-let _recoverStreak     = 0;         // consecutive pings < 300ms (while in red)
+let _failStreak        = 0;         // consecutive pings >= 600ms
+let _recoverStreak     = 0;         // consecutive pings < 600ms (while in red)
 let _onStatusChange    = null;      // callback: (status, rtt) => void
 let _onDisconnect      = null;      // callback: () => void  — called on RED
 let _onReconnect       = null;      // callback: () => void  — called when RED clears
@@ -96,7 +96,7 @@ async function _ping() {
 
     _handleRtt(rtt);
   } catch {
-    // Timeout or network error — treat as 300ms+
+    // Timeout or network error — treat as 600ms+
     _lastPingRtt = null;
     _handleRtt(Infinity);
   }
@@ -157,7 +157,7 @@ function _handleRtt(rtt) {
     _recoverStreak = 0;
 
     if (rtt >= THRESHOLD_ORANGE) {
-      // 250–300ms — orange warning
+      // 400-600ms — orange warning
       _setStatus('orange', rtt);
       if (!_announcedOrange) {
         _announcedOrange = true;
@@ -165,7 +165,7 @@ function _handleRtt(rtt) {
         speakMessage('החיבור חלש מאוד, מומלץ לעבור למקום עם קליטה טובה יותר');
       }
     } else if (rtt >= THRESHOLD_YELLOW) {
-      // 150–250ms — yellow warning
+      // 250-400ms — yellow warning
       _setStatus('yellow', rtt);
       _announcedOrange = false;
       if (!_announcedYellow) {
@@ -174,7 +174,7 @@ function _handleRtt(rtt) {
         speakMessage('החיבור לא יציב');
       }
     } else {
-      // < 150ms — green
+      // < 250ms — green
       _setStatus('green', rtt);
       _announcedYellow = false;
       _announcedOrange = false;

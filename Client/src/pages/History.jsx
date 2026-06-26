@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Trash2, Flag, AlertTriangle, Clock } from 'lucide-react';
+import { ArrowRight, Trash2, Flag, AlertTriangle, Clock, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import {
   getHistory,
   deleteHistoryRecord,
   feedbackFromHistory,
+  getFeedbackRecordIds,
 } from '../services/userService';
 
 // ── Page transition variants ──────────────────────────
@@ -25,10 +26,13 @@ const modalVariants = {
 // ── Helpers ───────────────────────────────────────────
 
 const PERIODS = [
-  { key: 'all',   label: 'הכל'   },
-  { key: 'today', label: 'היום'  },
-  { key: 'week',  label: 'שבוע'  },
-  { key: 'month', label: 'חודש'  },
+  { key: 'all',          label: 'הכל'       },
+  { key: 'today',        label: 'היום'      },
+  { key: 'week',         label: 'שבוע'      },
+  { key: 'month',        label: 'חודש'      },
+  { key: 'three_months', label: '3 חודשים'  },
+  { key: 'half_year',    label: 'חצי שנה'   },
+  { key: 'older',        label: 'ישן יותר'  },
 ];
 
 const FEEDBACK_TYPES = [
@@ -36,6 +40,34 @@ const FEEDBACK_TYPES = [
   { key: 'missed_obstacle', label: 'פספוס מכשול'   },
   { key: 'general',         label: 'כללי'           },
 ];
+
+/** Hebrew names for detected object classes. */
+const HEBREW_NAMES = {
+  person:        'אדם',
+  car:           'מכונית',
+  bicycle:       'אופניים',
+  motorcycle:    'אופנוע',
+  bench:         'ספסל',
+  fire_hydrant:  'ברז כיבוי אש',
+  traffic_light: 'רמזור',
+  stairs:        'מדרגות',
+  pole:          'עמוד',
+  dog:           'כלב',
+  bus:           'אוטובוס',
+  truck:         'משאית',
+};
+
+function hebrewName(className) {
+  return HEBREW_NAMES[className] || className || '?';
+}
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString('he-IL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
 
 function formatDate(ts) {
   const d = new Date(ts);
@@ -72,6 +104,51 @@ function safetyScoreColor(score) {
   return 'var(--danger)';
 }
 
+/** Group records by session_id, preserving order. */
+function groupBySession(records) {
+  const groups = [];
+  const map = new Map();
+  for (const r of records) {
+    const sid = r.session_id ?? 'unknown';
+    if (!map.has(sid)) {
+      const group = { session_id: sid, records: [] };
+      map.set(sid, group);
+      groups.push(group);
+    }
+    map.get(sid).records.push(r);
+  }
+  return groups;
+}
+
+/** Build display info for a session header. */
+function sessionInfo(records) {
+  if (!records.length) return {};
+  const first = new Date(records[records.length - 1].timestamp);
+  const last  = new Date(records[0].timestamp);
+  const date  = first.toLocaleDateString('he-IL', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+  const t1 = first.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  const t2 = last.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  const dangers = records.filter((r) => r.danger).length;
+  return { date, time: `${t1} – ${t2}`, count: records.length, dangers };
+}
+
+/** Build display string for detected objects in a frame. */
+function objectsLabel(record) {
+  const objs = record.objects ?? [];
+  if (objs.length > 0) {
+    return objs.map((o) => hebrewName(o.class_name)).join(', ');
+  }
+  // Fallback for old records that don't have object names
+  if (record.objects_detected > 0) {
+    return `${record.objects_detected} עצמים`;
+  }
+  return 'ללא זיהוי';
+}
+
 // ── Component ─────────────────────────────────────────
 
 const History = () => {
@@ -83,9 +160,15 @@ const History = () => {
   const [loadError,   setLoadError]   = useState('');
   const [period,      setPeriod]      = useState('all');
 
+  // Which sessions are expanded
+  const [expandedSessions, setExpandedSessions] = useState(new Set());
+
+  // Record IDs that already have feedback
+  const [feedbackIds, setFeedbackIds] = useState(new Set());
+
   // modal
-  const [activeRecord, setActiveRecord] = useState(null); // the record whose sheet is open
-  const [modalView,    setModalView]    = useState('menu'); // 'menu' | 'feedback' | 'confirmDelete' | 'feedbackDone'
+  const [activeRecord, setActiveRecord] = useState(null);
+  const [modalView,    setModalView]    = useState('menu');
 
   // feedback form
   const [fbType,    setFbType]    = useState('wrong_detection');
@@ -97,15 +180,12 @@ const History = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError,   setDeleteError]   = useState('');
 
-  // long-press timer per card
-  const pointerdownTimerRef = useRef(null);
-
   // ── Fetch history ──────────────────────────────────
   const loadHistory = useCallback(async (p = period) => {
     setLoading(true);
     setLoadError('');
     try {
-      const { history } = await getHistory({ limit: 50, period: p });
+      const { history } = await getHistory({ limit: 200, period: p });
       setRecords(history ?? []);
     } catch {
       setLoadError('לא ניתן לטעון היסטוריה. נסה שוב.');
@@ -118,24 +198,38 @@ const History = () => {
     loadHistory(period);
   }, [period, loadHistory]);
 
+  // Load which records already have feedback
+  useEffect(() => {
+    getFeedbackRecordIds().then(setFeedbackIds).catch(() => {});
+  }, [records]);
+
+  // Auto-expand first session on initial load
+  useEffect(() => {
+    if (records.length > 0) {
+      const groups = groupBySession(records);
+      if (groups.length > 0 && expandedSessions.size === 0) {
+        setExpandedSessions(new Set([groups[0].session_id]));
+      }
+    }
+  }, [records]);
+
   // ── Summary stats ──────────────────────────────────
   const total        = records.length;
   const todayDanger  = records.filter((r) => r.danger && isToday(r.timestamp)).length;
   const dangerCount  = records.filter((r) => r.danger).length;
   const safetyScore  = total > 0 ? Math.round((1 - dangerCount / total) * 100) : 100;
 
-  // ── Long-press handlers ────────────────────────────
-  const handlePointerDown = (record) => {
-    pointerdownTimerRef.current = setTimeout(() => {
-      openActionSheet(record);
-    }, 500);
-  };
-
-  const handlePointerUp = () => {
-    if (pointerdownTimerRef.current) {
-      clearTimeout(pointerdownTimerRef.current);
-      pointerdownTimerRef.current = null;
-    }
+  // ── Session expand/collapse ─────────────────────────
+  const toggleSession = (sessionId) => {
+    setExpandedSessions((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
   };
 
   // ── Modal helpers ──────────────────────────────────
@@ -165,11 +259,12 @@ const History = () => {
         notes:         fbNotes.trim() || undefined,
       });
       setModalView('feedbackDone');
-      setTimeout(() => {
-        closeModal();
-      }, 1500);
-    } catch {
-      setFbError('שליחת המשוב נכשלה. נסה שוב.');
+      // Mark this frame as having feedback
+      setFeedbackIds((prev) => new Set([...prev, activeRecord.record_id]));
+      setTimeout(() => closeModal(), 1500);
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setFbError(typeof detail === 'string' ? detail : 'שליחת המשוב נכשלה. נסה שוב.');
     } finally {
       setFbLoading(false);
     }
@@ -190,6 +285,8 @@ const History = () => {
       setDeleteLoading(false);
     }
   };
+
+  const sessionGroups = groupBySession(records);
 
   // ── Render ─────────────────────────────────────────
   return (
@@ -288,8 +385,7 @@ const History = () => {
           <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
             <div className="settings-loading">
               <div className="settings-loading-dot" />
-              <div className="settings-loading-dot" />
-              <div className="settings-loading-dot" />
+              <span>טוען היסטוריה...</span>
             </div>
           </div>
         )}
@@ -307,87 +403,190 @@ const History = () => {
           </div>
         )}
 
-        {/* ── Detection list ── */}
-        {!loading && !loadError && records.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <AnimatePresence initial={false}>
-              {records.map((record) => (
-                <motion.div
-                  key={record.record_id}
-                  className="history-item"
-                  layout
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0  }}
-                  exit={{    opacity: 0, x: 40  }}
-                  transition={{ duration: 0.22 }}
-                  onPointerDown={() => handlePointerDown(record)}
-                  onPointerUp={handlePointerUp}
-                  onPointerLeave={handlePointerUp}
+        {/* ── Sessions list ── */}
+        {!loading && !loadError && sessionGroups.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {sessionGroups.map((group) => {
+              const info = sessionInfo(group.records);
+              const isExpanded = expandedSessions.has(group.session_id);
+
+              return (
+                <div
+                  key={group.session_id}
                   style={{
                     background: 'var(--glass-bg)',
                     border: '1px solid var(--glass-border)',
                     borderRadius: 'var(--r-md)',
-                    padding: '12px 14px',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    WebkitUserSelect: 'none',
-                    direction: 'rtl',
+                    overflow: 'hidden',
                   }}
                 >
-                  {/* Top row: timestamp + danger badge */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)' }}>
-                      {formatDate(record.timestamp)}
-                    </span>
-                    {record.danger && (
-                      <span style={{
-                        background: 'rgba(255,59,48,0.15)',
-                        border: '1px solid var(--danger)',
-                        color: 'var(--danger)',
-                        borderRadius: 999,
-                        padding: '2px 10px',
-                        fontSize: 12,
-                        fontFamily: 'var(--font-body)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}>
-                        <AlertTriangle size={11} />
-                        סכנה !
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Middle row: alert level chip */}
-                  <div style={{ marginBottom: 8 }}>
-                    <span style={{
-                      display: 'inline-flex',
+                  {/* ── Session header — tap to expand/collapse ── */}
+                  <button
+                    onClick={() => toggleSession(group.session_id)}
+                    style={{
+                      width: '100%',
+                      padding: '14px 16px',
+                      border: 'none',
+                      background: 'none',
+                      cursor: 'pointer',
+                      direction: 'rtl',
+                      display: 'flex',
+                      justifyContent: 'space-between',
                       alignItems: 'center',
-                      gap: 4,
-                      background: `${alertLevelColor(record.alert_level)}18`,
-                      border: `1px solid ${alertLevelColor(record.alert_level)}`,
-                      color: alertLevelColor(record.alert_level),
-                      borderRadius: 999,
-                      padding: '2px 10px',
-                      fontSize: 12,
-                      fontFamily: 'var(--font-body)',
-                    }}>
-                      {alertLevelLabel(record.alert_level)}
-                    </span>
-                  </div>
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                      <span style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                        fontFamily: 'var(--font-body)',
+                      }}>
+                        {info.date}
+                      </span>
+                      <span style={{
+                        fontSize: 12,
+                        color: 'var(--text-3)',
+                        fontFamily: 'var(--font-body)',
+                      }}>
+                        {info.time} • {info.count} פריימים
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {info.dangers > 0 && (
+                        <span style={{
+                          background: 'rgba(255,59,48,0.12)',
+                          color: 'var(--danger)',
+                          borderRadius: 999,
+                          padding: '2px 8px',
+                          fontSize: 11,
+                          fontFamily: 'var(--font-body)',
+                        }}>
+                          {info.dangers} התראות
+                        </span>
+                      )}
+                      {isExpanded
+                        ? <ChevronUp size={18} color="var(--text-3)" />
+                        : <ChevronDown size={18} color="var(--text-3)" />
+                      }
+                    </div>
+                  </button>
 
-                  {/* Bottom row: distance + objects count */}
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
-                      מרחק: {record.distance}
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
-                      {record.objects_detected} עצמים
-                    </span>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                  {/* ── Expanded frames ── */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <div style={{
+                          padding: '0 12px 12px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6,
+                        }}>
+                          {group.records.map((record) => (
+                            <div
+                              key={record.record_id}
+                              onClick={() => openActionSheet(record)}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '10px 12px',
+                                borderRadius: 'var(--r-sm)',
+                                cursor: 'pointer',
+                                direction: 'rtl',
+                                transition: 'background 0.15s',
+                                background: record.danger
+                                  ? 'rgba(255,59,48,0.06)'
+                                  : 'rgba(255,255,255,0.02)',
+                                border: record.danger
+                                  ? '1px solid rgba(255,59,48,0.15)'
+                                  : '1px solid rgba(255,255,255,0.04)',
+                              }}
+                            >
+                              {/* Frame info */}
+                              <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 3,
+                                flex: 1,
+                                minWidth: 0,
+                              }}>
+                                {/* Row 1: time + alert badge */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{
+                                    fontSize: 12,
+                                    color: 'var(--text-3)',
+                                    fontFamily: 'var(--font-body)',
+                                    flexShrink: 0,
+                                  }}>
+                                    {formatTime(record.timestamp)}
+                                  </span>
+                                  <span style={{
+                                    fontSize: 11,
+                                    color: alertLevelColor(record.alert_level),
+                                    background: `${alertLevelColor(record.alert_level)}18`,
+                                    borderRadius: 999,
+                                    padding: '1px 8px',
+                                    fontFamily: 'var(--font-body)',
+                                    flexShrink: 0,
+                                  }}>
+                                    {alertLevelLabel(record.alert_level)}
+                                  </span>
+                                </div>
+
+                                {/* Row 2: object names in Hebrew */}
+                                <span style={{
+                                  fontSize: 13,
+                                  color: 'var(--text)',
+                                  fontFamily: 'var(--font-body)',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}>
+                                  {objectsLabel(record)}
+                                </span>
+
+                                {/* Row 3: distance */}
+                                <span style={{
+                                  fontSize: 11,
+                                  color: 'var(--text-3)',
+                                  fontFamily: 'var(--font-body)',
+                                }}>
+                                  מרחק: {record.distance}
+                                </span>
+                              </div>
+
+                              {/* Icons: danger + feedback */}
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                flexShrink: 0,
+                                marginInlineStart: 8,
+                              }}>
+                                {record.danger && (
+                                  <AlertTriangle size={14} color="var(--danger)" />
+                                )}
+                                {feedbackIds.has(record.record_id)
+                                  ? <CheckCircle size={14} color="var(--safe)" />
+                                  : <Flag size={14} color="var(--text-3)" />
+                                }
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -407,7 +606,8 @@ const History = () => {
               transition={{ duration: 0.2 }}
               onClick={closeModal}
               style={{
-                position: 'fixed', inset: 0,
+                position: 'fixed',
+                inset: 0,
                 background: 'rgba(0,0,0,0.65)',
                 zIndex: 100,
                 display: 'flex',
@@ -441,9 +641,22 @@ const History = () => {
               {/* ── Menu view ── */}
               {modalView === 'menu' && (
                 <>
-                  <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 20, fontFamily: 'var(--font-body)' }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 6, fontFamily: 'var(--font-body)' }}>
                     {formatDate(activeRecord.timestamp)}
                   </p>
+
+                  {/* Show detected objects in modal header */}
+                  {activeRecord.objects && activeRecord.objects.length > 0 && (
+                    <p style={{
+                      fontSize: 14,
+                      color: 'var(--text)',
+                      marginBottom: 16,
+                      fontFamily: 'var(--font-body)',
+                      fontWeight: 600,
+                    }}>
+                      {activeRecord.objects.map((o) => hebrewName(o.class_name)).join(', ')} — {activeRecord.distance}
+                    </p>
+                  )}
 
                   <button
                     className="ghost-btn"
@@ -597,7 +810,7 @@ const History = () => {
                     תודה על הדיווח!
                   </p>
                   <p style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)' }}>
-                    המשוב התקבל בהצלחה.
+                    המשוב נשלח בהצלחה.
                   </p>
                 </div>
               )}

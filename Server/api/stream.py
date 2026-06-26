@@ -15,7 +15,7 @@ from services.session_service import (
     update_cache,
     clear_cache,
     check_danger_cleared,
-    save_frame_data_background,
+    save_frame_count_background,
 )
 from ml_engine.model_loader import run_inference
 from api.settings import get_user_settings
@@ -119,16 +119,20 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
             # Receive either binary (frame) or text (rtt report) messages
             message = await websocket.receive()
 
-            # ── Text message: RTT report from client ──
+            # ── Text message: RTT or FPS report from client ──
             if "text" in message:
                 try:
                     data = json.loads(message["text"])
                     if data.get("type") == "rtt_report" and "rtt_ms" in data:
                         rtt = float(data["rtt_ms"])
-                        if 0 < rtt < 30000:  # sanity check
+                        if 0 < rtt < 30000:
                             tracker.record_client_rtt(rtt)
+                    elif data.get("type") == "fps_report" and "fps" in data:
+                        fps = float(data["fps"])
+                        if 0 < fps < 100:
+                            tracker.record_client_fps(fps)
                 except (json.JSONDecodeError, ValueError, TypeError):
-                    pass  # ignore malformed text messages
+                    pass
                 continue
 
             # ── Binary message: JPEG frame for analysis ──
@@ -155,7 +159,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 img = decode_image(image_bytes)
 
                 # Prepare model input
-                model_input = process_image(image_bytes) if MODEL_MODE == "custom" else img
+                # model_input = process_image(image_bytes) if MODEL_MODE == "custom" else img
+                model_input = img
 
                 # Run inference + motion tracking
                 detections = run_inference(model, model_input)
@@ -178,11 +183,16 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
 
                 latency = tracker.end_timer(start, success=True)
 
-                # ── Send result FIRST (fast) ──
+                # ── Write detection record BEFORE response (need record_id) ──
+                from services.user_service import add_detection_record
+                record_id = add_detection_record(user_id, result, session_id=session_id)
+
+                # ── Send result with record_id ──
                 await websocket.send_json({
                     "type": "result",
                     "status": "success",
                     "frame": frame_count,
+                    "record_id": record_id,
                     "latency_ms": round(latency, 1),
                     "danger": is_danger,
                     "danger_cleared": danger_cleared,
@@ -192,15 +202,19 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     "objects": result["objects"]
                 })
 
-                # ── DB writes AFTER response (background — non-blocking) ──
-                save_frame_data_background(session_id, user_id, result, frame_count)
+                # ── Frame count update in background ──
+                save_frame_count_background(session_id, frame_count)
 
             except ValueError as e:
                 tracker.end_timer(start, success=False)
+                # Even on bad frames, check if danger state changed (e.g. user moved away)
+                danger_cleared = check_danger_cleared(user_id, False)
                 await websocket.send_json({
                     "type": "error",
                     "frame": frame_count,
-                    "detail": str(e)
+                    "detail": str(e),
+                    "danger_cleared": danger_cleared,
+                    "clearance_message": "Path Clear" if danger_cleared else None
                 })
 
             except Exception as e:

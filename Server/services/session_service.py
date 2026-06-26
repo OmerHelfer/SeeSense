@@ -117,23 +117,22 @@ def check_danger_cleared(user_id: str, is_danger: bool) -> bool:
 
 # ==================== Background DB Writes ====================
 
-def save_frame_data_background(session_id: str, user_id: str, result: dict, frame_count: int):
-    """Kick off a background thread to write frame data to DB (non-blocking)."""
+def save_frame_count_background(session_id: str, frame_count: int):
+    """Kick off a background thread to update frame count (non-blocking)."""
     thread = threading.Thread(
-        target=_save_frame_data,
-        args=(session_id, user_id, result, frame_count),
+        target=_save_frame_count,
+        args=(session_id, frame_count),
         daemon=True
     )
     thread.start()
 
 
-def _save_frame_data(session_id: str, user_id: str, result: dict, frame_count: int):
-    """Background DB write — runs in a separate thread after response is sent."""
+def _save_frame_count(session_id: str, frame_count: int):
+    """Background frame count update — runs in a separate thread."""
     try:
         _sessions().update_one(
             {"session_id": session_id},
             {"$set": {"frame_count": frame_count}}
         )
-        add_detection_record(user_id, result, session_id=session_id)
     except Exception as e:
-        logger.error(f"Background DB write failed: {e}")
+        logger.error(f"Background frame count update failed: {e}")

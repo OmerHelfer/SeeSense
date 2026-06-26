@@ -45,6 +45,9 @@ export class VisionStream {
     this._rttReportTimer    = null;   // interval for periodic reporting
     this._lastRtt           = null;   // most recent single RTT value
     this._rttStats          = { avg: 0, min: 0, max: 0 }; // rolling stats
+
+    // ── Client FPS tracking ──
+    this._frameSendTimes    = [];     // timestamps of last 30 sends
   }
 
   /** Open the WebSocket connection and begin the session. */
@@ -89,7 +92,11 @@ export class VisionStream {
    */
   sendFrame(blob) {
     if (this.isOpen) {
-      this._frameSendTime = performance.now();
+      const now = performance.now();
+      this._frameSendTime = now;
+      // Track recent send timestamps for FPS calculation
+      this._frameSendTimes.push(now);
+      if (this._frameSendTimes.length > 30) this._frameSendTimes.shift();
       this._socket.send(blob);
     }
   }
@@ -170,19 +177,36 @@ export class VisionStream {
     };
   }
 
-  /** Send average RTT to server every 5 seconds for admin dashboard. */
+  /** Send average RTT and capture FPS to server every 5 seconds. */
   _startRttReporting() {
     clearInterval(this._rttReportTimer);
     this._rttReportTimer = setInterval(() => {
-      if (!this.isOpen || this._rttBuffer.length === 0) return;
-      const avg = this._rttBuffer.reduce((a, b) => a + b, 0) / this._rttBuffer.length;
-      try {
-        this._socket.send(JSON.stringify({
-          type: 'rtt_report',
-          rtt_ms: Math.round(avg * 10) / 10
-        }));
-      } catch {
-        // socket may have closed between check and send — ignore
+      if (!this.isOpen) return;
+
+      // Send RTT average
+      if (this._rttBuffer.length > 0) {
+        const avg = this._rttBuffer.reduce((a, b) => a + b, 0) / this._rttBuffer.length;
+        try {
+          this._socket.send(JSON.stringify({
+            type: 'rtt_report',
+            rtt_ms: Math.round(avg * 10) / 10
+          }));
+        } catch { /* socket closed mid-send */ }
+      }
+
+      // Send actual capture FPS — based on last 30 send timestamps
+      if (this._frameSendTimes.length >= 2) {
+        const span = this._frameSendTimes[this._frameSendTimes.length - 1]
+                   - this._frameSendTimes[0];
+        if (span > 0) {
+          const fps = ((this._frameSendTimes.length - 1) / span) * 1000;
+          try {
+            this._socket.send(JSON.stringify({
+              type: 'fps_report',
+              fps: Math.round(fps * 100) / 100
+            }));
+          } catch { /* socket closed */ }
+        }
       }
     }, RTT_REPORT_INTERVAL_MS);
   }
