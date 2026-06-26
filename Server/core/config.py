@@ -80,12 +80,19 @@ VALID_PERIODS = {"all", "today", "week", "month", "three_months", "half_year", "
 VALID_FEEDBACK_TYPES = {"wrong_detection", "missed_obstacle", "general"}
 
 # ==================== CORS ====================
+# Base allowed origins for local development.
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:8080",
     "https://seesense.app",
+    "https://seesense-production.up.railway.app",  # deployed client (Railway)
 ]
+
+# Allow adding production origins via env var (comma-separated) without code changes.
+_extra_origins = os.getenv("CORS_ORIGINS", "")
+if _extra_origins:
+    CORS_ORIGINS += [o.strip() for o in _extra_origins.split(",") if o.strip()]
 
 # ==================== JWT Authentication ====================
 JWT_SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-for-dev-only")
