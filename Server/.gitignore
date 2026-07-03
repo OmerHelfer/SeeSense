@@ -12,6 +12,8 @@ venv/
 *.pt
 *.pth
 *.onnx
+# Except the deployed model, which must ship in the Docker image
+!ml_engine/seesense_model.pt
 
 # Environment & secrets
 .env

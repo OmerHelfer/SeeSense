@@ -5,7 +5,7 @@ load_dotenv()
 
 
 # ==================== Model ====================
-MODEL_PATH = "ml_engine/weights/model_14_classes.pt"
+MODEL_PATH = "ml_engine/seesense_model.pt"
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
