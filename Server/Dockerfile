@@ -3,6 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies for OpenCV
+# Note: libgl1 replaces libgl1-mesa-glx (renamed in Debian trixie)
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
