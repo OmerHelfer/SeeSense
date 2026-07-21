@@ -493,6 +493,15 @@ body {
   pointer-events: none;
 }
 
+/* ── Detection overlay (bounding boxes) ── */
+.detection-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;   /* never intercept camera/pinch gestures */
+  overflow: visible;
+}
+
 /* ── Corner brackets ── */
 .hud-corner {
   position: absolute;

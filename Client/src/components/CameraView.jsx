@@ -1,7 +1,14 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
+
+// Frames are captured and analysed at this fixed square size (see captureFrame
+// below and the server's letterbox resize). YOLO bbox coords arrive in this space.
+const FRAME_SIZE = 640;
+
+// Box colour per danger level — mirrors the app's alert palette (red / amber / cyan HUD).
+const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
 
 /**
  * CameraView
@@ -10,18 +17,26 @@ const MAX_ZOOM = 5;
  * - Pinch-to-zoom via PointerEvents (tries native MediaTrack zoom first,
  *   falls back to CSS transform + adjusted canvas crop)
  * - Periodic frame capture (640×640 JPEG) at 250 ms intervals when active
+ * - Real-time detection overlay (bounding boxes + class/confidence labels)
  *
  * Props:
  *   isActive       {boolean}   Start/stop the camera
  *   onFrameCapture {function}  Called with a base64 JPEG data-URL every 250 ms
+ *   detections     {Array}     Latest detections to draw, each { bbox:[x1,y1,x2,y2],
+ *                              class_name, confidence, alert_level, motion } in 640×640 space
  */
-const CameraView = ({ isActive, onFrameCapture }) => {
-  const videoRef  = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);  // active MediaStream
+const CameraView = ({ isActive, onFrameCapture, detections = [] }) => {
+  const videoRef     = useRef(null);
+  const canvasRef    = useRef(null);
+  const containerRef = useRef(null);
+  const streamRef    = useRef(null);  // active MediaStream
 
   const [zoom, setZoom]           = useState(1);
   const zoomRef                   = useRef(1);   // mirror for use inside intervals/callbacks
+
+  // Geometry needed to map 640×640 detection coords onto the displayed video
+  const [videoSize, setVideoSize]         = useState({ w: 0, h: 0 }); // intrinsic video pixels
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 }); // on-screen viewport pixels
 
   // Pinch tracking
   const pointersRef = useRef(new Map()); // pointerId → {x, y}
@@ -109,6 +124,60 @@ const CameraView = ({ isActive, onFrameCapture }) => {
     return () => clearInterval(id);
   }, [isActive, captureFrame]);
 
+  // ── Detection overlay geometry ───────────────────
+
+  /** Record the intrinsic video resolution once the stream metadata is ready. */
+  const handleLoadedMetadata = useCallback(() => {
+    const v = videoRef.current;
+    if (v) setVideoSize({ w: v.videoWidth, h: v.videoHeight });
+  }, []);
+
+  /** Keep the container's on-screen pixel size in sync (responsive layout). */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /**
+   * Map each detection's 640×640 bbox into on-screen (pre-zoom) container pixels.
+   *
+   * The captured frame is the centre square (side = min(videoW, videoH)) of the raw
+   * video. With object-fit: cover the video is scaled uniformly by `coverScale` and
+   * centred, so that centre square becomes a centred square of side `squareSide` in
+   * container coords. The zoom is applied separately via a CSS transform on the SVG
+   * (matching the video element), so we intentionally map in the *pre-zoom* space.
+   */
+  const overlayBoxes = useMemo(() => {
+    const { w: vW, h: vH } = videoSize;
+    const { w: cW, h: cH } = containerSize;
+    if (!vW || !vH || !cW || !cH || detections.length === 0) return [];
+
+    const baseSize   = Math.min(vW, vH);
+    const coverScale = Math.max(cW / vW, cH / vH);
+    const squareSide = baseSize * coverScale;
+    const squareLeft = (cW - squareSide) / 2;
+    const squareTop  = (cH - squareSide) / 2;
+    const s          = squareSide / FRAME_SIZE; // 640-space → container px
+
+    return detections.map((d, i) => {
+      const [x1, y1, x2, y2] = d.bbox ?? [0, 0, 0, 0];
+      return {
+        key:   d.motion?.track_id != null && d.motion.track_id >= 0 ? `t${d.motion.track_id}` : `i${i}`,
+        x:     squareLeft + x1 * s,
+        y:     squareTop  + y1 * s,
+        w:     Math.max(0, (x2 - x1) * s),
+        h:     Math.max(0, (y2 - y1) * s),
+        label: `${d.class_name ?? 'object'} ${Math.round((d.confidence ?? 0) * 100)}%`,
+        level: d.alert_level ?? 'none',
+      };
+    });
+  }, [detections, videoSize, containerSize]);
+
   // ── Pinch-to-zoom (PointerEvents) ───────────────
 
   const getPinchDist = () => {
@@ -158,6 +227,7 @@ const CameraView = ({ isActive, onFrameCapture }) => {
 
   return (
     <div
+      ref={containerRef}
       className="camera-container"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -171,11 +241,60 @@ const CameraView = ({ isActive, onFrameCapture }) => {
         playsInline
         muted
         className="video-feed"
+        onLoadedMetadata={handleLoadedMetadata}
         style={{
           transform:       `scale(${zoom})`,
           transformOrigin: 'center center',
         }}
       />
+
+      {/* ── Detection overlay ──
+          Bounding boxes are drawn in the same (pre-zoom) coordinate space as the
+          video and carry the identical CSS scale(zoom), so they track the feed at
+          any zoom level. Line/text sizes are divided by zoom to stay screen-constant. */}
+      {overlayBoxes.length > 0 && (
+        <svg
+          className="detection-overlay"
+          width={containerSize.w}
+          height={containerSize.h}
+          style={{
+            transform:       `scale(${zoom})`,
+            transformOrigin: 'center center',
+          }}
+          aria-hidden="true"
+        >
+          {overlayBoxes.map((b) => {
+            const color = BOX_COLORS[b.level] ?? BOX_COLORS.none;
+            const font  = 13 / zoom;
+            const pad   = 4 / zoom;
+            const above = b.y > font * 1.4;                 // keep label on-screen
+            const ty    = above ? b.y - pad : b.y + font + pad;
+            return (
+              <g key={b.key}>
+                <rect
+                  x={b.x} y={b.y} width={b.w} height={b.h}
+                  rx={4 / zoom}
+                  fill={color} fillOpacity={0.08}
+                  stroke={color} strokeWidth={2 / zoom}
+                />
+                <text
+                  x={b.x + pad} y={ty}
+                  fontSize={font}
+                  fontWeight="700"
+                  fill={color}
+                  stroke="rgba(0,0,0,0.85)"
+                  strokeWidth={3 / zoom}
+                  strokeLinejoin="round"
+                  paintOrder="stroke"
+                >
+                  {b.label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      )}
+
       {/* Hidden canvas used for frame extraction */}
       <canvas
         ref={canvasRef}
