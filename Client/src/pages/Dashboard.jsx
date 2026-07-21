@@ -88,6 +88,7 @@ const Dashboard = () => {
   const [healthStatus, setHealthStatus]   = useState('idle');   // 'idle' | 'green' | 'yellow' | 'red'
   const [detectionDir, setDetectionDir]   = useState(null);     // 'left' | 'right' | 'center' | null
   const [detectedClass, setDetectedClass] = useState(null);     // hebrew class name of leading object
+  const [detections, setDetections]       = useState([]);       // per-frame boxes for the overlay
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
@@ -175,6 +176,10 @@ const Dashboard = () => {
     // Track last record_id for quick feedback linking
     if (result.record_id) lastRecordIdRef.current = result.record_id;
 
+    // Update the live bounding-box overlay every frame (all detected objects,
+    // regardless of alert level). Cleared to [] when a frame has no detections.
+    setDetections(objects);
+
     setAlertLevel(level);
 
     // Track direction and class of leading object for HUD display
@@ -238,6 +243,7 @@ const Dashboard = () => {
       setAlertLevel('none');
       setDetectionDir(null);
       setDetectedClass(null);
+      setDetections([]);
       setHealthStatus('idle');
       setQuickReportState('idle');
       clearTimeout(quickReportTimerRef.current);
@@ -375,7 +381,7 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} />
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} detections={detections} />
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">
