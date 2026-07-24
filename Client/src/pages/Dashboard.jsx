@@ -88,6 +88,7 @@ const Dashboard = () => {
   const [healthStatus, setHealthStatus]   = useState('idle');   // 'idle' | 'green' | 'yellow' | 'red'
   const [detectionDir, setDetectionDir]   = useState(null);     // 'left' | 'right' | 'center' | null
   const [detectedClass, setDetectedClass] = useState(null);     // hebrew class name of leading object
+  const [detections, setDetections]       = useState([]);       // per-frame boxes for the overlay
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
   const [captureFps, setCaptureFps]       = useState(4);        // driven by server TARGET_FPS on connect
 
@@ -176,6 +177,10 @@ const Dashboard = () => {
     // Track last record_id for quick feedback linking
     if (result.record_id) lastRecordIdRef.current = result.record_id;
 
+    // Update the live bounding-box overlay every frame (all detected objects,
+    // regardless of alert level). Cleared to [] when a frame has no detections.
+    setDetections(objects);
+
     setAlertLevel(level);
 
     // Track direction and class of leading object for HUD display
@@ -247,6 +252,7 @@ const Dashboard = () => {
       setAlertLevel('none');
       setDetectionDir(null);
       setDetectedClass(null);
+      setDetections([]);
       setHealthStatus('idle');
       setQuickReportState('idle');
       clearTimeout(quickReportTimerRef.current);
@@ -388,7 +394,11 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
+<<<<<<< HEAD
         <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} />
+=======
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} detections={detections} />
+>>>>>>> 7d20dd12d03829befbffebe6f681b33bae99c0d8
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">
