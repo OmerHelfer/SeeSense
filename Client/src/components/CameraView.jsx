@@ -16,8 +16,8 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  * Renders the rear-facing camera feed with:
  * - Pinch-to-zoom via PointerEvents (tries native MediaTrack zoom first,
  *   falls back to CSS transform + adjusted canvas crop)
-<<<<<<< HEAD
  * - Periodic frame capture (640×640 JPEG) at the configured capture rate
+ * - Real-time detection overlay (bounding boxes + class/confidence labels)
  *
  * Props:
  *   isActive       {boolean}   Start/stop the camera
@@ -25,27 +25,14 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  *   captureFps     {number}    Target capture rate (frames/sec); driven by the
  *                              server's TARGET_FPS. Defaults to 4 until the server
  *                              reports its value on WebSocket connect.
- */
-const CameraView = ({ isActive, onFrameCapture, captureFps = 4 }) => {
-  const videoRef  = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);  // active MediaStream
-=======
- * - Periodic frame capture (640×640 JPEG) at 250 ms intervals when active
- * - Real-time detection overlay (bounding boxes + class/confidence labels)
- *
- * Props:
- *   isActive       {boolean}   Start/stop the camera
- *   onFrameCapture {function}  Called with a base64 JPEG data-URL every 250 ms
  *   detections     {Array}     Latest detections to draw, each { bbox:[x1,y1,x2,y2],
  *                              class_name, confidence, alert_level, motion } in 640×640 space
  */
-const CameraView = ({ isActive, onFrameCapture, detections = [] }) => {
+const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [] }) => {
   const videoRef     = useRef(null);
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
   const streamRef    = useRef(null);  // active MediaStream
->>>>>>> 7d20dd12d03829befbffebe6f681b33bae99c0d8
 
   const [zoom, setZoom]           = useState(1);
   const zoomRef                   = useRef(1);   // mirror for use inside intervals/callbacks

@@ -394,11 +394,7 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
-<<<<<<< HEAD
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} />
-=======
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} detections={detections} />
->>>>>>> 7d20dd12d03829befbffebe6f681b33bae99c0d8
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} detections={detections} />
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">
