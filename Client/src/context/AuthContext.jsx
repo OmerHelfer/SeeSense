@@ -1,4 +1,4 @@
-import { createContext, useState, useContext } from 'react';
+import { createContext, useState, useContext, useEffect } from 'react';
 
 const AuthContext = createContext();
 
@@ -20,6 +20,21 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(loadStoredUser);
 
   const isAuthenticated = !!user;
+
+  // Presence heartbeat — while logged in, ping the server every 30s so the user
+  // reads as "online" in admin views even when not actively scanning the camera.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const beat = async () => {
+      if (cancelled) return;
+      const { heartbeat } = await import('../services/userService');
+      heartbeat();
+    };
+    beat(); // immediate first beat
+    const id = setInterval(beat, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [user]);
 
   /**
    * Call after a successful login or register.

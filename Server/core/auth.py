@@ -50,6 +50,9 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
 
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        # Stamp presence — any authenticated request marks the user as "online".
+        from services.presence import mark_active
+        mark_active(payload["user_id"])
         return {
             "user_id": payload["user_id"],
             "email": payload["email"],

@@ -682,9 +682,17 @@ def touch_last_seen(user_id: str):
     _users().update_one({"user_id": user_id}, {"$set": {"last_seen": datetime.now().isoformat()}})
 
 
+def is_last_super_admin(user_id: str) -> bool:
+    """True if this user is a super admin (level 2) and the only one left."""
+    profile = _users().find_one({"user_id": user_id})
+    if not profile or _admin_level_of(profile) != 2:
+        return False
+    return _users().count_documents({"admin_level": 2}) <= 1
+
+
 def get_users_overview() -> dict:
     """Aggregate counts for the admin dashboard: total / online / offline / admins."""
-    from services.session_service import get_online_user_ids
+    from services.presence import get_online_user_ids
     total = _users().count_documents({})
     online = len(get_online_user_ids())
     admins = _users().count_documents({"admin_level": {"$gte": 1}})
@@ -708,7 +716,7 @@ def get_user_admin_view(email: str) -> Optional[dict]:
     profile = _users().find_one({"email": email})
     if not profile:
         return None
-    from services.session_service import is_user_online
+    from services.presence import is_online
     uid = profile["user_id"]
     level = _admin_level_of(profile)
     return {
@@ -723,7 +731,7 @@ def get_user_admin_view(email: str) -> Optional[dict]:
         "created_at": profile.get("created_at"),
         "admin_level": level,
         "is_admin": level >= 1,
-        "online": is_user_online(uid),
+        "online": is_online(uid),
         "last_seen": profile.get("last_seen"),
         "emergency_contacts": get_emergency_contacts(uid),
         "data_counts": {

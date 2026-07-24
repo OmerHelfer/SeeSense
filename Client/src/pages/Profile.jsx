@@ -191,8 +191,8 @@ const Profile = () => {
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {/* Danger zone — self delete (regular users only; admins are blocked server-side) */}
-        {profile && !profile.is_admin && (
+        {/* Danger zone — self delete (available to all; the last super admin is blocked server-side) */}
+        {profile && (
           <div className="danger-zone">
             <div className="danger-zone-head">
               <AlertTriangle size={15} />

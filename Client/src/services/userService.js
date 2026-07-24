@@ -40,6 +40,11 @@
      const { data } = await apiClient.delete('/users/account');
      return data;
    };
+
+   /** POST /users/heartbeat — presence ping so the user reads as "online" while the app is open */
+   export const heartbeat = async () => {
+     try { await apiClient.post('/users/heartbeat'); } catch { /* offline / not fatal */ }
+   };
    
    // ── Emergency Contacts ────────────────────────────────
    

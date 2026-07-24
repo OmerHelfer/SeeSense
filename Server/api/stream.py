@@ -112,6 +112,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
 
     user_id = user["user_id"]
     await websocket.accept()
+    from services.presence import mark_active
+    mark_active(user_id)
     logger.info(f"WebSocket connected: user={user_id}")
 
     # ── 2. Create or resume session ──
@@ -158,6 +160,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
             image_bytes = message.get("bytes")
             if not image_bytes:
                 continue
+
+            mark_active(user_id)  # scanning keeps the user "online"
 
             start = tracker.start_timer()
             frame_count += 1

@@ -108,7 +108,17 @@ async def login(request: Request, login_data: LoginRequest):
     token = create_token(profile["user_id"], profile["email"])
     from services.user_service import touch_last_seen
     touch_last_seen(profile["user_id"])
+    from services.presence import mark_active
+    mark_active(profile["user_id"])
     return {"status": "success", "message": "Logged in successfully", "user": profile, "token": token}
+
+
+@router.post("/heartbeat")
+async def heartbeat(current_user: dict = Depends(verify_token)):
+    """Lightweight presence ping — the client calls this periodically while the app
+    is open so the user reads as 'online' even when not actively scanning.
+    (verify_token already stamps presence.)"""
+    return {"status": "ok"}
 
 
 @router.post("/logout")
@@ -126,11 +136,13 @@ async def delete_account(current_user: dict = Depends(verify_token)):
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    from core.auth import get_admin_level
-    if get_admin_level(user_id) >= 1:
+    # Anyone may delete their own account — except the LAST super admin, which
+    # would leave the system with no one able to manage it.
+    from services.user_service import is_last_super_admin
+    if is_last_super_admin(user_id):
         raise HTTPException(
             status_code=403,
-            detail="Admin accounts cannot be self-deleted. Ask a super admin to remove admin rights first.",
+            detail="You are the last super admin — assign another super admin before deleting your account.",
         )
 
     # Notify verified emergency contacts
