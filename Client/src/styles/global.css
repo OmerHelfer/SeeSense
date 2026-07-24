@@ -2481,6 +2481,30 @@ button:active {
 
 .admin-modal-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ══════════ Global sound toggle ══════════ */
+.sound-toggle {
+  position: fixed;
+  top: 64px;
+  left: 12px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  background: rgba(20, 22, 28, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #22d3ee;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sound-toggle:hover { background: rgba(20, 22, 28, 0.9); }
+.sound-toggle.muted { color: #ef4444; border-color: rgba(239, 68, 68, 0.4); }
+.sound-toggle:active { transform: scale(0.92); }
+
 /* ══════════ Admin: user management ══════════ */
 
 .au-search {

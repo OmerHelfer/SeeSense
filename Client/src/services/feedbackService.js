@@ -21,6 +21,22 @@ export const haptic = (name) => {
   if (pattern && navigator.vibrate) navigator.vibrate(pattern);
 };
 
+// ── Global sound mute ────────────────────────────────
+// Persisted in localStorage; default is UNMUTED (sound plays).
+const MUTE_KEY = 'seesense_sound_muted';
+let _muted = localStorage.getItem(MUTE_KEY) === '1';
+
+export const isMuted = () => _muted;
+
+export const setMuted = (value) => {
+  _muted = !!value;
+  localStorage.setItem(MUTE_KEY, _muted ? '1' : '0');
+  // Cut off any speech already playing the moment we mute
+  if (_muted) window.speechSynthesis?.cancel();
+};
+
+export const toggleMuted = () => { setMuted(!_muted); return _muted; };
+
 // ── Audio: Web Speech API ────────────────────────────
 
 /** Hebrew names for detected object classes returned by the backend. */
@@ -53,6 +69,7 @@ let   lastSpeakAt    = 0;
  * @param {string} text
  */
 export const speakMessage = (text) => {
+  if (_muted) return;
   if (!window.speechSynthesis || !text) return;
   const now = Date.now();
   if (now - lastSpeakAt < COOLDOWN_MS) return;
@@ -80,6 +97,7 @@ const DIRECTION_LABELS = {
  * @param {boolean} isDanger — true for high-risk alerts (prepends "סכנה!")
  */
 export const announceDetections = (objects, isDanger = false) => {
+  if (_muted) return;
   if (!window.speechSynthesis || !Array.isArray(objects) || objects.length === 0) return;
 
   const topObj    = objects[0];

@@ -24,6 +24,7 @@ const RECONNECT_DELAY_MS     = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RTT_REPORT_INTERVAL_MS = 5000; // report avg RTT to server every 5s
 const MAX_INFLIGHT_MS        = 3000; // give up waiting on a stuck frame after this long
+const MAX_PIPELINE           = 5;    // hard cap on frames in flight at once
 
 export class VisionStream {
   /**
@@ -40,8 +41,17 @@ export class VisionStream {
     this._reconnectAttempts = 0;
     this._reconnectTimer    = null;
 
+    // ── Adaptive pipeline (in-flight frames) ──
+    // Rather than 1 frame in flight, keep up to _maxInFlight frames on the wire
+    // and adapt that depth to the measured RTT — so a slow (remote) link doesn't
+    // starve throughput. _sendTimes is a FIFO of send timestamps for in-flight
+    // frames; results arrive in send order (TCP + sequential server), so each
+    // result pairs with the oldest send time.
+    this._sendTimes         = [];     // FIFO of performance.now() for in-flight frames
+    this._targetFps         = 10;     // desired send rate (from server TARGET_FPS)
+    this._maxInFlight       = 1;      // adapts to RTT: ~ceil(avgRTT / frameInterval)
+
     // ── RTT measurement ──
-    this._frameSendTime     = null;   // performance.now() when last frame was sent
     this._rttBuffer         = [];     // recent RTT measurements (for averaging)
     this._rttReportTimer    = null;   // interval for periodic reporting
     this._lastRtt           = null;   // most recent single RTT value
@@ -81,15 +91,28 @@ export class VisionStream {
     return this._lastRtt;
   }
 
-  /**
-   * True while a sent frame's result hasn't come back yet (backpressure signal).
-   * Auto-clears after MAX_INFLIGHT_MS so one stuck/lost response can't
-   * permanently block future sends.
-   */
-  get isAwaitingResult() {
-    if (this._frameSendTime === null) return false;
-    return (performance.now() - this._frameSendTime) < MAX_INFLIGHT_MS;
+  /** Set the target FPS (from the server's TARGET_FPS) — drives pipeline depth. */
+  setTargetFps(fps) {
+    if (fps > 0) this._targetFps = fps;
   }
+
+  /**
+   * Backpressure gate: may we send another frame right now? We allow up to
+   * _maxInFlight frames on the wire at once (adaptive to RTT), which keeps the
+   * network pipe full and lifts throughput on high-latency links. Stale in-flight
+   * entries (older than MAX_INFLIGHT_MS — a lost result) are pruned so they can't
+   * block sending forever.
+   */
+  get canSend() {
+    const now = performance.now();
+    while (this._sendTimes.length && now - this._sendTimes[0] > MAX_INFLIGHT_MS) {
+      this._sendTimes.shift();
+    }
+    return this._sendTimes.length < this._maxInFlight;
+  }
+
+  /** Frames currently in flight (sent, awaiting result). */
+  get inFlight() { return this._sendTimes.length; }
 
   /** Rolling RTT stats: { avg, min, max } in ms. */
   get rttStats() {
@@ -104,7 +127,7 @@ export class VisionStream {
   sendFrame(blob) {
     if (this.isOpen) {
       const now = performance.now();
-      this._frameSendTime = now;
+      this._sendTimes.push(now);   // enqueue as in-flight (FIFO for RTT pairing)
       // Track recent send timestamps for FPS calculation
       this._frameSendTimes.push(now);
       if (this._frameSendTimes.length > 30) this._frameSendTimes.shift();
@@ -133,19 +156,10 @@ export class VisionStream {
         if (msg.type === 'connected') {
           this._onConnected(msg);
         } else if (msg.type === 'result') {
-          // ── Measure RTT ──
-          if (this._frameSendTime !== null) {
-            const rtt = performance.now() - this._frameSendTime;
-            this._lastRtt = Math.round(rtt * 10) / 10; // 1 decimal
-            this._rttBuffer.push(this._lastRtt);
-            // Keep buffer to last 50 measurements
-            if (this._rttBuffer.length > 50) this._rttBuffer.shift();
-            this._updateRttStats();
-            this._frameSendTime = null;
-          }
+          this._recordRtt();
           this._onResult(msg);
         } else if (msg.type === 'error') {
-          this._frameSendTime = null;
+          this._recordRtt();   // frame is done (rejected) — free its in-flight slot
           this._onError(new Error(msg.detail ?? 'Server processing error'));
         }
       } catch {
@@ -175,6 +189,27 @@ export class VisionStream {
     }
     this._reconnectAttempts++;
     this._reconnectTimer = setTimeout(() => this._open(), RECONNECT_DELAY_MS);
+  }
+
+  /**
+   * Pair an incoming result with the oldest in-flight frame, record its RTT, and
+   * re-tune the pipeline depth so we keep enough frames on the wire to hit the
+   * target FPS despite the round-trip time. On a fast/local link (RTT ≈ interval)
+   * this stays at depth 1 (no queue buildup); on a slow/remote link it opens up
+   * to MAX_PIPELINE so throughput ≈ depth / RTT instead of 1 / RTT.
+   */
+  _recordRtt() {
+    const sent = this._sendTimes.shift();
+    if (sent === undefined) return;
+    const rtt = performance.now() - sent;
+    this._lastRtt = Math.round(rtt * 10) / 10;
+    this._rttBuffer.push(this._lastRtt);
+    if (this._rttBuffer.length > 50) this._rttBuffer.shift();
+    this._updateRttStats();
+
+    const interval = 1000 / this._targetFps;              // ms between frames at target FPS
+    const depth    = Math.round((this._rttStats.avg || 0) / interval);
+    this._maxInFlight = Math.max(1, Math.min(MAX_PIPELINE, depth || 1));
   }
 
   /** Compute rolling avg/min/max from the RTT buffer. */

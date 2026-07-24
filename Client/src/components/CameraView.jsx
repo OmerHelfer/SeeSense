@@ -28,11 +28,16 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  *   detections     {Array}     Latest detections to draw, each { bbox:[x1,y1,x2,y2],
  *                              class_name, confidence, alert_level, motion } in 640×640 space
  */
-const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [] }) => {
+const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [], jpegQuality = 0.7 }) => {
   const videoRef     = useRef(null);
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
   const streamRef    = useRef(null);  // active MediaStream
+
+  // Mirror jpegQuality into a ref so changing it doesn't recreate captureFrame
+  // (which would restart the capture interval).
+  const jpegQualityRef = useRef(jpegQuality);
+  useEffect(() => { jpegQualityRef.current = jpegQuality; }, [jpegQuality]);
 
   const [zoom, setZoom]           = useState(1);
   const zoomRef                   = useRef(1);   // mirror for use inside intervals/callbacks
@@ -118,7 +123,7 @@ const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [] 
     const startY   = (video.videoHeight - cropSize) / 2;
 
     ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, 640, 640);
-    onFrameCapture?.(canvas.toDataURL('image/jpeg', 0.7));
+    onFrameCapture?.(canvas.toDataURL('image/jpeg', jpegQualityRef.current));
   }, [onFrameCapture]);
 
   useEffect(() => {

@@ -12,6 +12,7 @@ import EmergencyContacts from './pages/EmergencyContacts';
 import History           from './pages/History';
 import AdminStatus       from './pages/AdminStatus';
 import AdminUsers        from './pages/AdminUsers';
+import SoundToggle       from './components/SoundToggle';
 import SOSHistory        from './pages/SOSHistory';
 import GeneralFeedback  from './pages/GeneralFeedback';
 import PendingFeedback  from './pages/PendingFeedback';
@@ -111,6 +112,7 @@ function App() {
     <AuthProvider>
       <Router>
         <AnimatedRoutes />
+        <SoundToggle />
       </Router>
     </AuthProvider>
   );

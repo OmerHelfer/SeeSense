@@ -91,6 +91,7 @@ const Dashboard = () => {
   const [detections, setDetections]       = useState([]);       // per-frame boxes for the overlay
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
   const [captureFps, setCaptureFps]       = useState(4);        // driven by server TARGET_FPS on connect
+  const [jpegQuality, setJpegQuality]     = useState(0.7);      // lowered on slow links to cut upload time
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
@@ -177,6 +178,11 @@ const Dashboard = () => {
     // Track last record_id for quick feedback linking
     if (result.record_id) lastRecordIdRef.current = result.record_id;
 
+    // Adaptive JPEG quality: on a slow link (high RTT) compress harder so each
+    // frame uploads faster. React skips the re-render when the value is unchanged.
+    const avgRtt = visionStreamRef.current?.rttStats?.avg ?? 0;
+    setJpegQuality(avgRtt > 350 ? 0.5 : avgRtt > 200 ? 0.6 : 0.7);
+
     // Update the live bounding-box overlay every frame (all detected objects,
     // regardless of alert level). Cleared to [] when a frame has no detections.
     setDetections(objects);
@@ -226,7 +232,10 @@ const Dashboard = () => {
         onResult:    handleResult,
         onConnected: (msg) => {
           console.info('[SeeSense] WS connected, session:', msg.session_id, '| target_fps:', msg.target_fps);
-          if (msg.target_fps) setCaptureFps(msg.target_fps);
+          if (msg.target_fps) {
+            setCaptureFps(msg.target_fps);
+            visionStreamRef.current?.setTargetFps(msg.target_fps);
+          }
         },
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
       });
@@ -271,10 +280,10 @@ const Dashboard = () => {
     // Gate: only send when scanning, aligned, and socket is OPEN
     if (!isScanningRef.current || !isAlignedRef.current) return;
     if (!visionStreamRef.current?.isOpen) return;
-    // Backpressure: skip this capture tick if the previous frame's result
-    // hasn't come back yet — avoids piling up frames faster than the server
-    // (or network) can actually process them, which only adds latency.
-    if (visionStreamRef.current?.isAwaitingResult) return;
+    // Adaptive backpressure: send only while the in-flight window has room.
+    // The window auto-widens on slow links to keep the pipe full (higher FPS)
+    // and stays at 1 on fast links (no queue buildup).
+    if (!visionStreamRef.current?.canSend) return;
 
     // Convert base64 data-URL → raw Blob for binary WS send
     const [header, b64] = base64Frame.split(',');
@@ -394,7 +403,7 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} detections={detections} />
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} detections={detections} jpegQuality={jpegQuality} />
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">
