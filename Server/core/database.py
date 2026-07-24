@@ -25,6 +25,12 @@ def _ensure_indexes(db):
     db["reset_codes"].create_index(
         "created_at", expireAfterSeconds=900
     )
+    # Performance history — per-minute rollups. Index minute_ts for range queries,
+    # and TTL created_at so history self-prunes after the retention window (~13
+    # months, enough for a "last year" range).
+    from services.perf_history import RETENTION_SECONDS
+    db["perf_history"].create_index("minute_ts")
+    db["perf_history"].create_index("created_at", expireAfterSeconds=RETENTION_SECONDS)
     logger.info("MongoDB TTL indexes ensured")
 
 

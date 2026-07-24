@@ -152,33 +152,46 @@ def _build_alert_message(class_name: str, distance: str, position: str, motion: 
     return ""
 
 
+VEHICLE_CLASSES = {"car", "motorcycle", "bicycle", "scooter"}
+
+
 def _classify_alert(class_name: str, distance: str, high_risk_classes: set, motion: dict = None) -> str:
+    """
+    Motion-first alerting: a RED "high" danger is reserved for objects that are
+    actively APPROACHING (a developing threat) — a person/car closing distance, or
+    the user walking toward something (which grows its bbox → approaching). Once an
+    object stops moving relative to the user, its alert decays so the red screen
+    clears; it only re-fires when a genuine new approach starts. This is what makes
+    a static scene (parked cars, shelves, a standing person, the user sitting still)
+    go quiet instead of screaming "danger" on every frame.
+    """
     is_high_risk = class_name in high_risk_classes
     approaching = motion.get("approaching", False) if motion else False
     speed = motion.get("speed", "unknown") if motion else "unknown"
 
-    # Fast approaching high-risk object → always high, even if medium distance
-    if is_high_risk and approaching and speed == "fast":
-        return "high"
+    # ── Not approaching (static or moving away) → never RED. ──
+    # This is the key to "danger clears when motion stops, re-fires on change".
+    if not approaching:
+        # A high-risk, non-vehicle obstacle (person/dog/pole/stairs...) very close
+        # still deserves a soft caution — but not a red danger. Vehicles and
+        # anything farther go fully silent.
+        if is_high_risk and class_name not in VEHICLE_CLASSES and distance == "Close":
+            return "low"
+        return "none"
 
-    # Standard rules
-    if is_high_risk and distance == "Close":
-        return "high"
+    # ── Approaching → escalate by class / distance / speed. ──
+    if is_high_risk:
+        if speed == "fast":
+            return "high"                       # fast approach at any distance
+        if distance in ("Close", "Medium"):
+            return "high"                       # approaching and already near
+        return "low"                            # approaching from Far → early heads-up
 
-    # Approaching high-risk at medium distance → escalate to high
-    if is_high_risk and distance == "Medium" and approaching:
-        return "high"
-
-    if is_high_risk and distance == "Medium":
-        return "low"
-
-    # Non-high-risk but approaching and close
-    if distance == "Close" and approaching:
-        return "high"
-
+    # Non-high-risk but approaching
     if distance == "Close":
+        return "high"
+    if distance == "Medium":
         return "low"
-
     return "none"
 
 

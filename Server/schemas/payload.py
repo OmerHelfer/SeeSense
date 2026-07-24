@@ -28,6 +28,7 @@ class AnalyzeFrameResponse(BaseModel):
     danger: bool
     danger_cleared: bool = False  # True when danger just transitioned from True → False
     clearance_message: Optional[str] = None  # "Path Clear" / None
+    alert_is_new: bool = False  # True only on a none→low/low→high transition per tracked object (dedup)
     alert_level: str    # "high" | "low" | "none"
     distance: str       # "Close" | "Medium" | "Far"
     objects: list[DetectedObject]

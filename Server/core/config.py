@@ -11,6 +11,16 @@ MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 # ==================== Preprocessing ====================
 TARGET_SIZE = 640
 
+# ==================== Real-time / Streaming ====================
+# Target capture frame rate (FPS). The client captures + sends frames at this rate.
+# NOTE: the effective rate is additionally capped by round-trip time (client-side
+# backpressure won't send a new frame until the previous result returns), so if the
+# server/network can't keep up the real FPS will be lower — that's visible on the
+# admin performance page. Raise for faster reaction to fast objects (cars), lower to
+# reduce load. Change this ONE number to tune the whole pipeline's frame rate; the
+# client reads it automatically when the WebSocket connects.
+TARGET_FPS = 10
+
 # ==================== Inference ====================
 CONFIDENCE_THRESHOLD = 0.3
 NMS_IOU_THRESHOLD = 0.45

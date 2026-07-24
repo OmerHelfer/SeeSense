@@ -60,14 +60,33 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """Verify token AND check admin status."""
+def get_admin_level(user_id: str) -> int:
+    """
+    Return a user's admin level: 0 = regular, 1 = admin, 2 = super admin.
+    Falls back to is_admin for any user not yet migrated (is_admin True → 2).
+    """
     from core.database import get_db
+    profile = get_db()["users"].find_one({"user_id": user_id})
+    if not profile:
+        return 0
+    if "admin_level" in profile:
+        return int(profile["admin_level"])
+    return 2 if profile.get("is_admin", False) else 0
 
+
+def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Verify token AND require admin (level >= 1). Adds admin_level to the user dict."""
     user = verify_token(credentials)
-
-    profile = get_db()["users"].find_one({"user_id": user["user_id"]})
-    if not profile or not profile.get("is_admin", False):
+    level = get_admin_level(user["user_id"])
+    if level < 1:
         raise HTTPException(status_code=403, detail="Admin access required")
+    user["admin_level"] = level
+    return user
 
+
+def verify_super_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Verify token AND require super admin (level 2). Adds admin_level to the user dict."""
+    user = verify_admin(credentials)
+    if user["admin_level"] < 2:
+        raise HTTPException(status_code=403, detail="Level 2 (super) admin access required")
     return user

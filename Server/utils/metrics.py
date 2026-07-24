@@ -1,6 +1,6 @@
 import time
 import logging
-from collections import deque
+from collections import deque, defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,29 @@ class PerformanceTracker:
         self.frame_arrival_times = deque(maxlen=window_size)
         # Client-reported FPS (capture rate at the client side)
         self.client_fps_reports = deque(maxlen=window_size)
+
+        # Stage-level breakdown of where server_latency actually goes —
+        # decode_quality, inference, tracking, logic, db_write.
+        self.stage_latencies = defaultdict(lambda: deque(maxlen=window_size))
+
+    def reset(self):
+        """
+        Wipe ALL live metrics and restart timing from now. Backs the admin 'reset'
+        button — clears the in-memory sliding windows so the live view reflects only
+        what happens after the reset. (Persisted history is dropped separately via
+        perf_history.reset_history.)
+        """
+        self.latencies.clear()
+        self.total_frames = 0
+        self.success_count = 0
+        self.failure_count = 0
+        self._start_time = time.time()
+        self.client_rtts.clear()
+        self.rtt_history.clear()
+        self.frame_arrival_times.clear()
+        self.client_fps_reports.clear()
+        self.stage_latencies.clear()
+        logger.info("PerformanceTracker reset — all live metrics cleared")
 
     def start_timer(self) -> float:
         """Call at the beginning of a request. Returns timestamp."""
@@ -99,6 +122,26 @@ class PerformanceTracker:
             "max_ms": round(max(self.client_rtts), 2),
         }
 
+    # ── Stage-level latency breakdown ────────────────────
+
+    def record_stage(self, stage: str, ms: float):
+        """Record how long one pipeline stage took for this frame (ms)."""
+        self.stage_latencies[stage].append(ms)
+
+    def get_stage_breakdown(self) -> dict:
+        """Avg/min/max per pipeline stage — only successful-frame stages are recorded,
+        so this reflects real processing cost, not diluted by instantly-rejected frames."""
+        breakdown = {}
+        for stage, values in self.stage_latencies.items():
+            if not values:
+                continue
+            breakdown[stage] = {
+                "avg_ms": round(sum(values) / len(values), 2),
+                "min_ms": round(min(values), 2),
+                "max_ms": round(max(values), 2),
+            }
+        return breakdown
+
     # ── Server latency stats ─────────────────────────────
 
     def get_avg_latency(self) -> float:
@@ -151,6 +194,7 @@ class PerformanceTracker:
             },
             "client_rtt": self.get_client_rtt_stats(),
             "rtt_history": list(self.rtt_history),
+            "stage_latency": self.get_stage_breakdown(),
             "fps": {
                 "server_capacity": self.get_recent_fps(),       # תיאורטי - יכולת
                 "server_actual":   self.get_actual_server_fps(), # בפועל - מה שנכנס

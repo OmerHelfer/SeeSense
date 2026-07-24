@@ -89,6 +89,7 @@ const Dashboard = () => {
   const [detectionDir, setDetectionDir]   = useState(null);     // 'left' | 'right' | 'center' | null
   const [detectedClass, setDetectedClass] = useState(null);     // hebrew class name of leading object
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
+  const [captureFps, setCaptureFps]       = useState(4);        // driven by server TARGET_FPS on connect
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
@@ -191,6 +192,11 @@ const Dashboard = () => {
       return;
     }
 
+    // alert_is_new (server-side, per track_id) gates TTS/haptic so the same
+    // still-present object doesn't re-trigger them every single frame — the
+    // HUD above (alertLevel/detectionDir/detectedClass) still updates live.
+    if (!result.alert_is_new) return;
+
     if (result.danger) {
       haptic('danger');
       announceDetections(objects, true);   // "סכנה! מכונית מצד ימין"
@@ -213,7 +219,10 @@ const Dashboard = () => {
       const token  = localStorage.getItem('token');
       const stream = new VisionStream({
         onResult:    handleResult,
-        onConnected: (msg) => console.info('[SeeSense] WS connected, session:', msg.session_id),
+        onConnected: (msg) => {
+          console.info('[SeeSense] WS connected, session:', msg.session_id, '| target_fps:', msg.target_fps);
+          if (msg.target_fps) setCaptureFps(msg.target_fps);
+        },
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
       });
       stream.connect(token);
@@ -256,6 +265,10 @@ const Dashboard = () => {
     // Gate: only send when scanning, aligned, and socket is OPEN
     if (!isScanningRef.current || !isAlignedRef.current) return;
     if (!visionStreamRef.current?.isOpen) return;
+    // Backpressure: skip this capture tick if the previous frame's result
+    // hasn't come back yet — avoids piling up frames faster than the server
+    // (or network) can actually process them, which only adds latency.
+    if (visionStreamRef.current?.isAwaitingResult) return;
 
     // Convert base64 data-URL → raw Blob for binary WS send
     const [header, b64] = base64Frame.split(',');
@@ -375,7 +388,7 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} />
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} />
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">

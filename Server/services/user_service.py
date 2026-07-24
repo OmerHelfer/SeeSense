@@ -29,6 +29,21 @@ MAX_CODE_ATTEMPTS = 3
 
 # ==================== User CRUD ====================
 
+def migrate_admin_levels():
+    """One-time backfill: give every user an admin_level field (0/1/2).
+    Existing is_admin=True users become level 2 (super) so there's a bootstrap
+    super admin; everyone else becomes level 0."""
+    _users().update_many(
+        {"is_admin": True, "admin_level": {"$exists": False}},
+        {"$set": {"admin_level": 2}},
+    )
+    _users().update_many(
+        {"admin_level": {"$exists": False}},
+        {"$set": {"admin_level": 0, "is_admin": False}},
+    )
+    logger.info("Admin levels migration ensured")
+
+
 def create_user(data: dict) -> dict:
     """Register a new user. Returns the created profile."""
     user_id = str(uuid.uuid4())[:8]
@@ -39,6 +54,7 @@ def create_user(data: dict) -> dict:
     profile = {
         "user_id": user_id,
         "is_admin": False,
+        "admin_level": 0,
         "name": data["name"],
         "email": data["email"],
         "phone": data["phone"],
@@ -658,6 +674,111 @@ def get_emergency_alert_history(user_id: str, limit: int = 50) -> list:
         .limit(limit)
     )
     return alerts
+
+# ==================== Admin: user management ====================
+
+def touch_last_seen(user_id: str):
+    """Update last_seen (called on login and WS disconnect)."""
+    _users().update_one({"user_id": user_id}, {"$set": {"last_seen": datetime.now().isoformat()}})
+
+
+def get_users_overview() -> dict:
+    """Aggregate counts for the admin dashboard: total / online / offline / admins."""
+    from services.session_service import get_online_user_ids
+    total = _users().count_documents({})
+    online = len(get_online_user_ids())
+    admins = _users().count_documents({"admin_level": {"$gte": 1}})
+    return {
+        "total": total,
+        "online": online,
+        "offline": max(0, total - online),
+        "admins": admins,
+    }
+
+
+def _admin_level_of(profile: dict) -> int:
+    if "admin_level" in profile:
+        return int(profile["admin_level"])
+    return 2 if profile.get("is_admin", False) else 0
+
+
+def get_user_admin_view(email: str) -> Optional[dict]:
+    """Full admin-facing view of a user: profile + admin level + online status +
+    last_seen + counts of their data."""
+    profile = _users().find_one({"email": email})
+    if not profile:
+        return None
+    from services.session_service import is_user_online
+    uid = profile["user_id"]
+    level = _admin_level_of(profile)
+    return {
+        "user_id": uid,
+        "name": profile.get("name"),
+        "email": profile.get("email"),
+        "phone": profile.get("phone"),
+        "country": profile.get("country"),
+        "date_of_birth": profile.get("date_of_birth"),
+        "height_cm": profile.get("height_cm"),
+        "weight_kg": profile.get("weight_kg"),
+        "created_at": profile.get("created_at"),
+        "admin_level": level,
+        "is_admin": level >= 1,
+        "online": is_user_online(uid),
+        "last_seen": profile.get("last_seen"),
+        "emergency_contacts": get_emergency_contacts(uid),
+        "data_counts": {
+            "detections": _detection_history().count_documents({"user_id": uid}),
+            "feedback": _feedback().count_documents({"user_id": uid}),
+            "sessions": get_db()["sessions"].count_documents({"user_id": uid}),
+            "emergency_contacts": len(profile.get("emergency_contacts", [])),
+            "sos_alerts": _emergency_alerts().count_documents({"user_id": uid}),
+        },
+    }
+
+
+def admin_set_password(email: str, new_password: str) -> bool:
+    """Admin sets a user's password directly (by email)."""
+    profile = _users().find_one({"email": email})
+    if not profile:
+        raise ValueError("User not found")
+    _users().update_one({"email": email}, {"$set": {"password_hash": _hash_password(new_password)}})
+    logger.info(f"Admin reset password for {email}")
+    return True
+
+
+def admin_update_user(email: str, updates: dict) -> Optional[dict]:
+    """Admin edits a user's profile fields (by email)."""
+    profile = _users().find_one({"email": email})
+    if not profile:
+        raise ValueError("User not found")
+    return update_user(profile["user_id"], updates)
+
+
+def admin_set_admin_level(email: str, level: int) -> int:
+    """Grant/revoke admin. level: 0 regular, 1 admin, 2 super admin.
+    Guards against demoting the last remaining super admin (lockout)."""
+    if level not in (0, 1, 2):
+        raise ValueError("Invalid admin level (must be 0, 1 or 2)")
+    profile = _users().find_one({"email": email})
+    if not profile:
+        raise ValueError("User not found")
+    current = _admin_level_of(profile)
+    if current == 2 and level < 2 and _users().count_documents({"admin_level": 2}) <= 1:
+        raise ValueError("Cannot demote the last super admin")
+    _users().update_one({"email": email}, {"$set": {"admin_level": level, "is_admin": level >= 1}})
+    logger.info(f"Admin set {email} to admin_level={level}")
+    return level
+
+
+def admin_delete_user_by_email(email: str) -> bool:
+    """Admin deletes a user by email. Guards against deleting the last super admin."""
+    profile = _users().find_one({"email": email})
+    if not profile:
+        raise ValueError("User not found")
+    if _admin_level_of(profile) == 2 and _users().count_documents({"admin_level": 2}) <= 1:
+        raise ValueError("Cannot delete the last super admin")
+    return delete_user_account(profile["user_id"])
+
 
 def delete_user_account(user_id: str) -> bool:
     """

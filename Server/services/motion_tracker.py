@@ -23,9 +23,10 @@ IOU_THRESHOLD = 0.3        # Minimum IoU for matching
 LOW_CONF_THRESHOLD = 0.3   # Below this = low confidence detection
 HIGH_CONF_THRESHOLD = 0.5  # Above this = high confidence detection
 HISTORY_SIZE = 10           # Frames of history per track
-APPROACH_RATIO = 1.10       # BBox grew 10%+ between frames = approaching
+APPROACH_RATIO = 1.10       # BBox grew 10%+ across the motion window = approaching
 RAPID_APPROACH_RATIO = 1.25 # BBox grew 25%+ = fast approach
 LATERAL_THRESHOLD = 15      # Pixels of lateral movement to register direction
+MOTION_WINDOW = 4           # Frames to look back for motion (anti-jitter smoothing)
 
 # Per-user tracker instances
 _user_trackers = {}
@@ -85,7 +86,16 @@ class Track:
         return self.time_since_update > MAX_AGE
 
     def get_motion(self) -> dict:
-        """Analyze motion from position history."""
+        """
+        Analyze motion from position history.
+
+        Uses a WINDOWED comparison (current vs several frames back) rather than
+        just the previous frame. YOLO bounding boxes jitter a few pixels every
+        frame even on a perfectly static object; comparing frame-to-frame makes
+        `approaching` flicker on/off and spam alerts. Comparing across a short
+        window smooths that jitter out: a truly static object stays "static",
+        and only a sustained size increase (real approach) reads as "approaching".
+        """
         if len(self.history) < 2:
             return {
                 "track_id": self.track_id,
@@ -95,15 +105,16 @@ class Track:
                 "area_change": 1.0
             }
 
-        # Compare current to previous
         curr = self.history[-1]
-        prev = self.history[-2]
+        # Look back up to WINDOW frames (or as far as history allows early on).
+        lookback = min(len(self.history) - 1, MOTION_WINDOW)
+        past = self.history[-1 - lookback]
 
-        # Area change (approaching/receding)
-        if prev["area"] == 0:
+        # Area change across the window (approaching/receding)
+        if past["area"] <= 0:
             area_ratio = 1.0
         else:
-            area_ratio = curr["area"] / prev["area"]
+            area_ratio = curr["area"] / past["area"]
 
         approaching = area_ratio >= APPROACH_RATIO
 
@@ -116,28 +127,14 @@ class Track:
         else:
             speed = "static"
 
-        # Lateral movement
-        dx = curr["center"][0] - prev["center"][0]
+        # Lateral movement across the same window
+        dx = curr["center"][0] - past["center"][0]
         if dx > LATERAL_THRESHOLD:
             direction = "right"
         elif dx < -LATERAL_THRESHOLD:
             direction = "left"
         else:
             direction = "center"
-
-        # Multi-frame trend (use last 3-5 frames for stability)
-        if len(self.history) >= 3:
-            old = self.history[-3]
-            if old["area"] > 0:
-                trend_ratio = curr["area"] / old["area"]
-                # Override single-frame noise with multi-frame trend
-                if trend_ratio >= RAPID_APPROACH_RATIO:
-                    speed = "fast"
-                    approaching = True
-                elif trend_ratio >= APPROACH_RATIO:
-                    if speed == "static":
-                        speed = "moderate"
-                        approaching = True
 
         return {
             "track_id": self.track_id,

@@ -22,6 +22,10 @@ _user_cache = {}
 # Track previous danger state per user (for "danger cleared" detection)
 _ws_previous_danger_state = {}
 
+# Track last-announced alert level per (user_id, track_id) — for alert dedup.
+# user_id → {track_id: last_alert_level}
+_track_alert_state = {}
+
 
 def get_cached_state(user_id: str) -> dict:
     """Get cached session state for a user."""
@@ -36,9 +40,30 @@ def update_cache(user_id: str, **kwargs):
 
 
 def clear_cache(user_id: str):
-    """Clear cache when user disconnects."""
+    """Clear cache when user disconnects. Also stamps last_seen for admin views."""
     _user_cache.pop(user_id, None)
     _ws_previous_danger_state.pop(user_id, None)
+    _track_alert_state.pop(user_id, None)
+    try:
+        get_db()["users"].update_one(
+            {"user_id": user_id},
+            {"$set": {"last_seen": datetime.now().isoformat()}},
+        )
+    except Exception as e:
+        logger.error(f"Failed to stamp last_seen for {user_id}: {e}")
+
+
+# ==================== Online presence ====================
+# A user is "online" while they have a live streaming WebSocket — which is exactly
+# when they have an entry in _user_cache (added on WS connect, removed on disconnect).
+
+def get_online_user_ids() -> set:
+    """Set of user_ids currently connected via the streaming WebSocket."""
+    return set(_user_cache.keys())
+
+
+def is_user_online(user_id: str) -> bool:
+    return user_id in _user_cache
 
 
 # ==================== Session Management ====================
@@ -113,6 +138,36 @@ def check_danger_cleared(user_id: str, is_danger: bool) -> bool:
     was_danger = _ws_previous_danger_state.get(user_id, False)
     _ws_previous_danger_state[user_id] = is_danger
     return was_danger and not is_danger
+
+
+def has_new_alert(user_id: str, objects: list[dict]) -> bool:
+    """
+    Alert dedup — returns True only if some object's alert_level actually
+    CHANGED since we last saw it (keyed by its track_id), e.g. a parked car
+    that's constantly "low" every frame won't keep re-triggering TTS/haptic,
+    but a genuine none→low or low→high transition will.
+
+    Tracks not present in this frame are forgotten (object left view / track died),
+    so if the same real-world object reappears later it's treated as new again —
+    that's the correct behavior (worth re-alerting on).
+    """
+    state = _track_alert_state.setdefault(user_id, {})
+    seen_ids = set()
+    is_new = False
+
+    for obj in objects:
+        track_id = obj.get("motion", {}).get("track_id", -1)
+        level = obj.get("alert_level", "none")
+        seen_ids.add(track_id)
+
+        if level in ("low", "high") and state.get(track_id) != level:
+            is_new = True
+        state[track_id] = level
+
+    for stale_id in (set(state.keys()) - seen_ids):
+        del state[stale_id]
+
+    return is_new
 
 
 # ==================== Background DB Writes ====================

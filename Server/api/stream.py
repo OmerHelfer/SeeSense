@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 import json
 import logging
+import time
+import asyncio
+import threading
 
 from core.auth import verify_token
-from core.config import MODEL_MODE
+from core.config import MODEL_MODE, TARGET_FPS
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
 from services.motion_tracker import get_tracker as get_motion_tracker, clear_tracker
@@ -15,15 +18,29 @@ from services.session_service import (
     update_cache,
     clear_cache,
     check_danger_cleared,
+    has_new_alert,
     save_frame_count_background,
 )
 from ml_engine.model_loader import run_inference
 from api.settings import get_user_settings
 from utils.metrics import tracker
+from services import perf_history
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stream", tags=["Stream"])
+
+# Serializes model inference across concurrent connections. Ultralytics YOLO is
+# not guaranteed thread-safe for concurrent forward passes, and the hardware can
+# only do one at a time efficiently anyway — so we run inference in a worker
+# thread (to keep the async event loop responsive to /health etc.) but hold this
+# lock so only one inference actually executes at once.
+_inference_lock = threading.Lock()
+
+
+def _run_inference_locked(model, img_input):
+    with _inference_lock:
+        return run_inference(model, img_input)
 
 
 # ==================== Auth ====================
@@ -107,6 +124,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
     await websocket.send_json({
         "type": "connected",
         "session_id": session_id,
+        "target_fps": TARGET_FPS,
         "message": "Stream session active"
     })
 
@@ -127,6 +145,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                         rtt = float(data["rtt_ms"])
                         if 0 < rtt < 30000:
                             tracker.record_client_rtt(rtt)
+                            perf_history.record_rtt(rtt)
                     elif data.get("type") == "fps_report" and "fps" in data:
                         fps = float(data["fps"])
                         if 0 < fps < 100:
@@ -155,19 +174,36 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     tracker.end_timer(start, success=True)
                     continue
 
+                # Per-stage timings (also persisted to perf_history via record_frame)
+                stage_times = {}
+
                 # Decode and validate
+                t0 = time.time()
                 img = decode_image(image_bytes)
+                stage_times["decode_quality"] = (time.time() - t0) * 1000
+                tracker.record_stage("decode_quality", stage_times["decode_quality"])
 
                 # Prepare model input
                 # model_input = process_image(image_bytes) if MODEL_MODE == "custom" else img
                 model_input = img
 
-                # Run inference + motion tracking
-                detections = run_inference(model, model_input)
+                # Run inference in a worker thread so the ~inference time doesn't
+                # block the async event loop (which would stall /health pings and
+                # make the connection watchdog falsely report "unstable").
+                t1 = time.time()
+                detections = await asyncio.to_thread(_run_inference_locked, model, model_input)
+                stage_times["inference"] = (time.time() - t1) * 1000
+                tracker.record_stage("inference", stage_times["inference"])
+
+                # Motion tracking
+                t2 = time.time()
                 motion_tracker = get_motion_tracker(user_id)
                 detections_with_motion = motion_tracker.update(detections)
+                stage_times["tracking"] = (time.time() - t2) * 1000
+                tracker.record_stage("tracking", stage_times["tracking"])
 
                 # Danger assessment with user settings (from cache)
+                t3 = time.time()
                 user_settings = cached.get("settings", settings)
                 result = assess_danger(
                     detections_with_motion,
@@ -176,16 +212,29 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     image_width=img.shape[1],
                     image_height=img.shape[0]
                 )
+                stage_times["danger_logic"] = (time.time() - t3) * 1000
+                tracker.record_stage("danger_logic", stage_times["danger_logic"])
 
                 # Danger cleared check
                 is_danger = result["danger"]
                 danger_cleared = check_danger_cleared(user_id, is_danger)
 
+                # Alert dedup — only True on a genuine none→low / low→high transition
+                # per tracked object, so TTS/haptic don't fire every single frame for
+                # the same still-present object (e.g. a car sitting at "low" for 10s).
+                alert_is_new = has_new_alert(user_id, result["objects"])
+
                 latency = tracker.end_timer(start, success=True)
 
                 # ── Write detection record BEFORE response (need record_id) ──
+                t4 = time.time()
                 from services.user_service import add_detection_record
                 record_id = add_detection_record(user_id, result, session_id=session_id)
+                stage_times["db_write"] = (time.time() - t4) * 1000
+                tracker.record_stage("db_write", stage_times["db_write"])
+
+                # ── Persist this frame's metrics to per-minute history ──
+                perf_history.record_frame(latency, True, stage_times)
 
                 # ── Send result with record_id ──
                 await websocket.send_json({
@@ -197,6 +246,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     "danger": is_danger,
                     "danger_cleared": danger_cleared,
                     "clearance_message": "Path Clear" if danger_cleared else None,
+                    "alert_is_new": alert_is_new,
                     "alert_level": result["alert_level"],
                     "distance": result["distance"],
                     "objects": result["objects"]
@@ -206,7 +256,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 save_frame_count_background(session_id, frame_count)
 
             except ValueError as e:
-                tracker.end_timer(start, success=False)
+                perf_history.record_frame(tracker.end_timer(start, success=False), False)
                 # Even on bad frames, check if danger state changed (e.g. user moved away)
                 danger_cleared = check_danger_cleared(user_id, False)
                 await websocket.send_json({
@@ -218,7 +268,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 })
 
             except Exception as e:
-                tracker.end_timer(start, success=False)
+                perf_history.record_frame(tracker.end_timer(start, success=False), False)
                 logger.error(f"WS frame error: {e}", exc_info=True)
                 await websocket.send_json({
                     "type": "error",

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRight, Edit2, Save, X, Users, User } from 'lucide-react';
+import { ArrowRight, Edit2, Save, X, Users, User, Trash2, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getProfile, updateProfile } from '../services/userService';
+import { getProfile, updateProfile, deleteAccount } from '../services/userService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -13,7 +13,7 @@ const pageVariants = {
 
 const Profile = () => {
   const navigate = useNavigate();
-  useAuth(); // ensure auth context is available
+  const { logout } = useAuth();
 
   const [profile, setProfile]         = useState(null);
   const [loadErr, setLoadErr]         = useState('');
@@ -22,6 +22,23 @@ const Profile = () => {
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError]     = useState('');
   const [saveOk, setSaveOk]           = useState(false);
+
+  // Self-delete
+  const [showDelete, setShowDelete]   = useState(false);
+  const [deleting, setDeleting]       = useState(false);
+  const [deleteErr, setDeleteErr]     = useState('');
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true); setDeleteErr('');
+    try {
+      await deleteAccount();
+      await logout();
+      navigate('/login');
+    } catch (err) {
+      setDeleteErr(err?.response?.data?.detail || 'מחיקת החשבון נכשלה.');
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     getProfile()
@@ -174,8 +191,50 @@ const Profile = () => {
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
+        {/* Danger zone — self delete (regular users only; admins are blocked server-side) */}
+        {profile && !profile.is_admin && (
+          <div className="danger-zone">
+            <div className="danger-zone-head">
+              <AlertTriangle size={15} />
+              <span>אזור מסוכן</span>
+            </div>
+            <p className="danger-zone-desc">
+              מחיקת החשבון היא לצמיתות ותסיר את כל הנתונים שלך (זיהויים, משובים, אנשי קשר, קריאות חירום).
+              אי אפשר לשחזר.
+            </p>
+            <button className="au-delete-btn" onClick={() => setShowDelete(true)}>
+              <Trash2 size={16} /> מחק את החשבון שלי
+            </button>
+          </div>
+        )}
+
         <div style={{ height: 40 }} />
       </div>
+
+      {/* Self-delete confirmation modal (centered) */}
+      <AnimatePresence>
+        {showDelete && (
+          <motion.div className="admin-modal-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => !deleting && setShowDelete(false)}>
+            <motion.div className="admin-modal-card" onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}>
+              <div className="admin-modal-icon"><AlertTriangle size={26} /></div>
+              <h3 className="admin-modal-title">למחוק את החשבון שלך?</h3>
+              <p className="admin-modal-body">
+                כל הנתונים שלך יימחקו <strong>לצמיתות</strong> ולא ניתן יהיה לשחזר אותם. תנותק מיד.
+              </p>
+              {deleteErr && <div className="error-banner" style={{ marginBottom: 12 }}>{deleteErr}</div>}
+              <button className="admin-reset-btn confirm" onClick={handleDeleteAccount} disabled={deleting}>
+                <Trash2 size={16} /> {deleting ? 'מוחק...' : 'כן, מחק לצמיתות'}
+              </button>
+              <button className="admin-modal-cancel" onClick={() => setShowDelete(false)} disabled={deleting}>
+                ביטול
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

@@ -106,6 +106,8 @@ async def login(request: Request, login_data: LoginRequest):
     if not profile:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_token(profile["user_id"], profile["email"])
+    from services.user_service import touch_last_seen
+    touch_last_seen(profile["user_id"])
     return {"status": "success", "message": "Logged in successfully", "user": profile, "token": token}
 
 
@@ -117,11 +119,19 @@ async def logout(current_user: dict = Depends(verify_token)):
 
 @router.delete("/account")
 async def delete_account(current_user: dict = Depends(verify_token)):
-    """Permanently delete user account and all associated data."""
+    """Permanently delete your OWN account and all associated data.
+    Admins cannot self-delete — a super admin must demote them first."""
     user_id = current_user["user_id"]
     profile = get_user(user_id)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
+
+    from core.auth import get_admin_level
+    if get_admin_level(user_id) >= 1:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin accounts cannot be self-deleted. Ask a super admin to remove admin rights first.",
+        )
 
     # Notify verified emergency contacts
     contacts = profile.get("emergency_contacts", [])

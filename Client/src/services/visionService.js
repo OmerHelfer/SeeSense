@@ -23,6 +23,7 @@ const WS_BASE = (import.meta.env.VITE_API_URL ?? '')
 const RECONNECT_DELAY_MS     = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RTT_REPORT_INTERVAL_MS = 5000; // report avg RTT to server every 5s
+const MAX_INFLIGHT_MS        = 3000; // give up waiting on a stuck frame after this long
 
 export class VisionStream {
   /**
@@ -78,6 +79,16 @@ export class VisionStream {
   /** Most recent RTT measurement in ms (or null if none yet). */
   get lastRtt() {
     return this._lastRtt;
+  }
+
+  /**
+   * True while a sent frame's result hasn't come back yet (backpressure signal).
+   * Auto-clears after MAX_INFLIGHT_MS so one stuck/lost response can't
+   * permanently block future sends.
+   */
+  get isAwaitingResult() {
+    if (this._frameSendTime === null) return false;
+    return (performance.now() - this._frameSendTime) < MAX_INFLIGHT_MS;
   }
 
   /** Rolling RTT stats: { avg, min, max } in ms. */

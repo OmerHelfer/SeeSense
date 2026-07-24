@@ -9,13 +9,16 @@ const MAX_ZOOM = 5;
  * Renders the rear-facing camera feed with:
  * - Pinch-to-zoom via PointerEvents (tries native MediaTrack zoom first,
  *   falls back to CSS transform + adjusted canvas crop)
- * - Periodic frame capture (640×640 JPEG) at 250 ms intervals when active
+ * - Periodic frame capture (640×640 JPEG) at the configured capture rate
  *
  * Props:
  *   isActive       {boolean}   Start/stop the camera
- *   onFrameCapture {function}  Called with a base64 JPEG data-URL every 250 ms
+ *   onFrameCapture {function}  Called with a base64 JPEG data-URL each capture tick
+ *   captureFps     {number}    Target capture rate (frames/sec); driven by the
+ *                              server's TARGET_FPS. Defaults to 4 until the server
+ *                              reports its value on WebSocket connect.
  */
-const CameraView = ({ isActive, onFrameCapture }) => {
+const CameraView = ({ isActive, onFrameCapture, captureFps = 4 }) => {
   const videoRef  = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);  // active MediaStream
@@ -105,9 +108,12 @@ const CameraView = ({ isActive, onFrameCapture }) => {
 
   useEffect(() => {
     if (!isActive) return;
-    const id = setInterval(captureFrame, 250);
+    // Capture interval derived from the server-configured target FPS.
+    // (Clamped to a sane range so a bad config value can't break capture.)
+    const fps = Math.max(1, Math.min(30, captureFps || 4));
+    const id = setInterval(captureFrame, 1000 / fps);
     return () => clearInterval(id);
-  }, [isActive, captureFrame]);
+  }, [isActive, captureFrame, captureFps]);
 
   // ── Pinch-to-zoom (PointerEvents) ───────────────
 
