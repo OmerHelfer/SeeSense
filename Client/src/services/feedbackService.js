@@ -228,7 +228,7 @@ export const speakMessage = (text) => {
  * Speak a short sample so the user can hear the selected voice/volume.
  * Bypasses the cooldown but still respects the audio channel gate.
  */
-export const previewVoice = (text = 'שלום, זו התראת SeeSense') => {
+export const previewVoice = (text = 'שלום') => {
   if (!_audioEnabled() || !window.speechSynthesis) return;
   _speak(text);
 };
