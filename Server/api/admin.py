@@ -26,6 +26,11 @@ from services.user_service import (
     admin_update_user,
     admin_set_admin_level,
     admin_delete_user_by_email,
+    get_all_feedback_admin,
+    get_feedback_admin_stats,
+    admin_take_feedback,
+    admin_resolve_feedback,
+    admin_assign_feedback,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +62,14 @@ class SetLevelRequest(BaseModel):
 
 class DeleteUserRequest(BaseModel):
     email: EmailStr
+
+
+class ResolveFeedbackRequest(BaseModel):
+    response: str
+
+
+class AssignFeedbackRequest(BaseModel):
+    assignee_id: str
 
 
 # ==================== Helpers ====================
@@ -150,3 +163,62 @@ async def delete_user_endpoint(req: DeleteUserRequest, current_user: dict = Depe
     if not ok:
         raise HTTPException(status_code=404, detail="User not found")
     return {"status": "success", "message": f"User {req.email} deleted"}
+
+
+# ==================== Feedback management ====================
+
+@router.get("/feedback")
+async def feedback_list(
+    handling_status: Optional[str] = Query(None),
+    current_user: dict = Depends(verify_admin),
+):
+    """All submitted feedbacks from all users + status counts, for the feedback
+    management page. Optional ?handling_status=pending|in_progress|resolved. (level 1+)"""
+    return {
+        "status": "success",
+        "actor_level": current_user["admin_level"],
+        "stats": get_feedback_admin_stats(),
+        "feedback": get_all_feedback_admin(handling_status),
+    }
+
+
+@router.post("/feedback/{feedback_id}/take")
+async def feedback_take(feedback_id: str, current_user: dict = Depends(verify_admin)):
+    """Take a pending feedback for yourself → moves it to 'in progress'. (level 1+)"""
+    try:
+        result = admin_take_feedback(feedback_id, current_user["user_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return {"status": "success", "feedback": result}
+
+
+@router.post("/feedback/{feedback_id}/resolve")
+async def feedback_resolve(feedback_id: str, req: ResolveFeedbackRequest,
+                           current_user: dict = Depends(verify_admin)):
+    """Mark a feedback resolved with a required note on what was done. Only the handling
+    admin or a super admin may resolve. (level 1+, ownership-gated)"""
+    try:
+        result = admin_resolve_feedback(
+            feedback_id, current_user["user_id"], current_user["admin_level"], req.response,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return {"status": "success", "feedback": result}
+
+
+@router.post("/feedback/{feedback_id}/assign")
+async def feedback_assign(feedback_id: str, req: AssignFeedbackRequest,
+                          current_user: dict = Depends(verify_super_admin)):
+    """Assign a feedback to a specific admin who will handle it → in progress under
+    them. Super admin (level 2) only."""
+    try:
+        result = admin_assign_feedback(feedback_id, req.assignee_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return {"status": "success", "feedback": result}

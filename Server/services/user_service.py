@@ -362,7 +362,8 @@ def get_pending_feedback(user_id: str) -> list[dict]:
 
 
 def get_all_feedback(user_id: str) -> list[dict]:
-    """Get all feedback for a user."""
+    """Get all feedback for a user (incl. the admin-handling status + response so the
+    user can see how their feedback was handled)."""
     cursor = _feedback().find(
         {"user_id": user_id}
     ).sort("created_at", -1)
@@ -370,6 +371,7 @@ def get_all_feedback(user_id: str) -> list[dict]:
     results = []
     for doc in cursor:
         doc["feedback_id"] = str(doc["_id"])
+        doc["handling_status"] = _norm_handling(doc)
         del doc["_id"]
         del doc["user_id"]
         results.append(doc)
@@ -412,6 +414,159 @@ def delete_feedback(user_id: str, feedback_id: str) -> bool:
     """Delete a feedback entry."""
     result = _feedback().delete_one({"_id": ObjectId(feedback_id), "user_id": user_id})
     return result.deleted_count > 0
+
+
+# ==================== Admin feedback handling ====================
+# A SEPARATE lifecycle layered on top of the user-side `status` (pending/submitted):
+# once a user has *submitted* a feedback, admins triage it through
+#   pending (ממתין) → in_progress (בטיפול) → resolved (טופל).
+# `handling_status` (+ the handling_admin / admin_response fields) is independent of
+# the misdetection `status` field and never touches it. Legacy docs without a
+# handling_status read as "pending".
+
+VALID_HANDLING = {"pending", "in_progress", "resolved"}
+
+
+def _norm_handling(doc: dict) -> str:
+    hs = doc.get("handling_status")
+    return hs if hs in VALID_HANDLING else "pending"
+
+
+def _try_oid(feedback_id: str) -> ObjectId:
+    try:
+        return ObjectId(feedback_id)
+    except Exception:
+        raise ValueError("Invalid feedback id")
+
+
+def _feedback_admin_view(doc: dict, user_map: dict = None) -> dict:
+    """Shape one feedback doc for the admin management view: the submitting user's
+    name/email + normalized handling fields. `user_map` (user_id → user doc) lets the
+    list path avoid an extra query per row; omit it for a single doc."""
+    uid = doc.get("user_id")
+    if user_map is not None:
+        u = user_map.get(uid, {})
+    else:
+        u = _users().find_one({"user_id": uid}, {"name": 1, "email": 1}) or {}
+    return {
+        "feedback_id": str(doc["_id"]),
+        "user_id": uid,
+        "user_name": u.get("name"),
+        "user_email": u.get("email"),
+        "feedback_type": doc.get("feedback_type"),
+        "notes": doc.get("notes"),
+        "record_id": doc.get("record_id"),
+        "detection_snapshot": doc.get("detection_snapshot"),
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+        "handling_status": _norm_handling(doc),
+        "assigned_admin_id": doc.get("assigned_admin_id"),
+        "handling_admin_id": doc.get("handling_admin_id"),
+        "handling_admin_name": doc.get("handling_admin_name"),
+        "admin_response": doc.get("admin_response"),
+        "handling_started_at": doc.get("handling_started_at"),
+        "resolved_at": doc.get("resolved_at"),
+    }
+
+
+def get_all_feedback_admin(handling_status: str = None) -> list:
+    """All *submitted* feedbacks from ALL users (admin management view), newest first.
+    Optional filter by handling_status (pending/in_progress/resolved)."""
+    docs = list(_feedback().find({"status": "submitted"}).sort("created_at", -1))
+    uids = list({d.get("user_id") for d in docs if d.get("user_id")})
+    user_map = {
+        u["user_id"]: u
+        for u in _users().find({"user_id": {"$in": uids}}, {"user_id": 1, "name": 1, "email": 1})
+    }
+    views = [_feedback_admin_view(d, user_map) for d in docs]
+    if handling_status in VALID_HANDLING:
+        views = [v for v in views if v["handling_status"] == handling_status]
+    return views
+
+
+def get_feedback_admin_stats() -> dict:
+    """Counts of submitted feedbacks by handling status (+ total)."""
+    counts = {"pending": 0, "in_progress": 0, "resolved": 0}
+    for d in _feedback().find({"status": "submitted"}, {"handling_status": 1}):
+        counts[_norm_handling(d)] += 1
+    counts["total"] = counts["pending"] + counts["in_progress"] + counts["resolved"]
+    return counts
+
+
+def _admin_name(admin_id: str) -> str:
+    u = _users().find_one({"user_id": admin_id}, {"name": 1})
+    return (u or {}).get("name")
+
+
+def admin_take_feedback(feedback_id: str, admin_id: str) -> dict:
+    """An admin takes a pending feedback for themselves → in_progress. Only allowed
+    while it's still pending (nobody else is handling it)."""
+    oid = _try_oid(feedback_id)
+    doc = _feedback().find_one({"_id": oid})
+    if not doc:
+        return None
+    if _norm_handling(doc) != "pending":
+        raise ValueError("Feedback is already being handled")
+    updates = {
+        "handling_status": "in_progress",
+        "handling_admin_id": admin_id,
+        "handling_admin_name": _admin_name(admin_id),
+        "handling_started_at": datetime.now().isoformat(),
+    }
+    r = _feedback().find_one_and_update({"_id": oid}, {"$set": updates}, return_document=True)
+    return _feedback_admin_view(r)
+
+
+def admin_resolve_feedback(feedback_id: str, admin_id: str, admin_level: int, response: str) -> dict:
+    """Mark a feedback resolved with a required response note describing what the admin
+    did. Only the handling admin, or a super admin (level 2), may resolve. If resolved
+    straight from pending, the resolver is recorded as the handling admin."""
+    if not response or not response.strip():
+        raise ValueError("A resolution note is required")
+    oid = _try_oid(feedback_id)
+    doc = _feedback().find_one({"_id": oid})
+    if not doc:
+        return None
+    if _norm_handling(doc) == "resolved":
+        raise ValueError("Feedback already resolved")
+    handler = doc.get("handling_admin_id")
+    if admin_level < 2 and handler and handler != admin_id:
+        raise ValueError("Only the handling admin or a super admin can resolve this")
+    now = datetime.now().isoformat()
+    updates = {
+        "handling_status": "resolved",
+        "admin_response": response.strip(),
+        "resolved_at": now,
+    }
+    if not handler:
+        updates["handling_admin_id"] = admin_id
+        updates["handling_admin_name"] = _admin_name(admin_id)
+        updates["handling_started_at"] = doc.get("handling_started_at") or now
+    r = _feedback().find_one_and_update({"_id": oid}, {"$set": updates}, return_document=True)
+    return _feedback_admin_view(r)
+
+
+def admin_assign_feedback(feedback_id: str, assignee_id: str) -> dict:
+    """Super admin assigns a feedback to a specific admin → in_progress under them,
+    without that admin having to pick it. Cannot reassign an already-resolved one."""
+    oid = _try_oid(feedback_id)
+    assignee = _users().find_one({"user_id": assignee_id})
+    if not assignee or _admin_level_of(assignee) < 1:
+        raise ValueError("Assignee must be an admin")
+    doc = _feedback().find_one({"_id": oid})
+    if not doc:
+        return None
+    if _norm_handling(doc) == "resolved":
+        raise ValueError("Cannot reassign a resolved feedback")
+    updates = {
+        "handling_status": "in_progress",
+        "assigned_admin_id": assignee_id,
+        "handling_admin_id": assignee_id,
+        "handling_admin_name": assignee.get("name"),
+        "handling_started_at": datetime.now().isoformat(),
+    }
+    r = _feedback().find_one_and_update({"_id": oid}, {"$set": updates}, return_document=True)
+    return _feedback_admin_view(r)
 
 
 # ==================== Emergency Contacts (embedded in user document) ====================

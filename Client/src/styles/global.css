@@ -2566,6 +2566,222 @@ button:active {
   font-weight: 500;
 }
 
+/* ── Active (selected/filter) stat card ── */
+.admin-stat-card-btn.active {
+  background: rgba(255, 255, 255, 0.09);
+  border-width: 1.5px;
+}
+
+/* ═══════════════════════════════════════════════════
+   Admin feedback management (AdminFeedback page)
+   ═══════════════════════════════════════════════════ */
+
+.afb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.afb-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  direction: rtl;
+}
+
+.afb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.afb-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  min-width: 0;
+}
+
+.afb-user-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.afb-user-email {
+  font-size: 0.7rem;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.afb-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.afb-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.afb-type {
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid var(--cyan-dim);
+  color: var(--cyan);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.72rem;
+}
+
+.afb-date {
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+
+.afb-detection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.afb-detection-names {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.afb-detection-dist {
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+
+.afb-notes {
+  font-size: 0.82rem;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin: 0 0 8px 0;
+  white-space: pre-wrap;
+}
+
+.afb-handler {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+
+.afb-handler strong { color: var(--text); font-weight: 600; }
+
+.afb-response {
+  background: rgba(34, 197, 94, 0.07);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.afb-response-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--safe);
+}
+
+.afb-response p {
+  font-size: 0.82rem;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin: 4px 0 0 0;
+  white-space: pre-wrap;
+}
+
+.afb-response-time {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+
+.afb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.afb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.afb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.afb-btn.take    { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.5); color: #f59e0b; }
+.afb-btn.resolve { background: rgba(34, 197, 94, 0.14);  border-color: rgba(34, 197, 94, 0.5);  color: #22c55e; }
+.afb-btn.assign  { background: rgba(167, 139, 250, 0.14); border-color: rgba(167, 139, 250, 0.5); color: #a78bfa; }
+
+.afb-textarea {
+  width: 100%;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  padding: 12px 14px;
+  resize: vertical;
+  outline: none;
+  direction: rtl;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+.afb-textarea:focus { border-color: var(--cyan-dim); }
+
+/* Assign-modal admin row (button) */
+.afb-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  font-family: inherit;
+  text-align: right;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.afb-assign-row:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(167, 139, 250, 0.4); }
+.afb-assign-row:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ══════════ Confirm dialog (logout) ══════════ */
 .confirm-overlay {
   position: fixed;

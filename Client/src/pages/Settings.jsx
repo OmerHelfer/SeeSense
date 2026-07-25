@@ -550,6 +550,14 @@ const Settings = () => {
             </button>
             <button
               className="nav-row-btn"
+              onClick={() => navigate('/admin/feedback')}
+            >
+              <MessageSquare size={16} />
+              <span>ניהול משובים</span>
+              <ArrowRight size={16} className="nav-row-arrow" />
+            </button>
+            <button
+              className="nav-row-btn"
               onClick={() => navigate('/admin/status')}
             >
               <Activity size={16} />

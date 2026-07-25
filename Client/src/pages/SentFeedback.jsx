@@ -22,6 +22,14 @@ const FEEDBACK_TYPES = [
   { key: 'general',         label: 'כללי'         },
 ];
 
+// Admin-handling status, shown to the user so they know what's happening with
+// their feedback (mirrors the handling_status the admin sets).
+const HANDLING_META = {
+  pending:     { label: 'ממתין לטיפול', color: '#94a3b8' },
+  in_progress: { label: 'בטיפול',       color: '#f59e0b' },
+  resolved:    { label: 'טופל',          color: '#22c55e' },
+};
+
 const HEBREW_NAMES = {
   person: 'אדם', car: 'מכונית', bicycle: 'אופניים', motorcycle: 'אופנוע',
   bench: 'ספסל', fire_hydrant: 'ברז כיבוי', traffic_light: 'רמזור',
@@ -240,16 +248,29 @@ const SentFeedback = () => {
                             borderRadius: 'var(--r-md)', padding: '14px 16px', direction: 'rtl',
                           }}
                         >
-                          {/* Top row: type badge + date */}
+                          {/* Top row: type + handling-status badges + date */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                            <span style={{
-                              background: 'rgba(34,197,94,0.1)', border: '1px solid var(--safe)',
-                              color: 'var(--safe)', borderRadius: 999, padding: '2px 10px',
-                              fontSize: 12, fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 4,
-                            }}>
-                              <CheckCircle size={11} />
-                              {FEEDBACK_TYPE_LABELS[item.feedback_type] ?? item.feedback_type}
-                            </span>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{
+                                background: 'rgba(34,197,94,0.1)', border: '1px solid var(--safe)',
+                                color: 'var(--safe)', borderRadius: 999, padding: '2px 10px',
+                                fontSize: 12, fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 4,
+                              }}>
+                                <CheckCircle size={11} />
+                                {FEEDBACK_TYPE_LABELS[item.feedback_type] ?? item.feedback_type}
+                              </span>
+                              {(() => {
+                                const hs = HANDLING_META[item.handling_status] ?? HANDLING_META.pending;
+                                return (
+                                  <span style={{
+                                    border: `1px solid ${hs.color}`, color: hs.color, borderRadius: 999,
+                                    padding: '2px 10px', fontSize: 12, fontFamily: 'var(--font-body)',
+                                  }}>
+                                    {hs.label}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
                               {formatDate(item.created_at)}
                             </span>
@@ -273,6 +294,22 @@ const SentFeedback = () => {
                             <p style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)', margin: '0 0 8px 0', lineHeight: 1.5 }}>
                               {item.notes}
                             </p>
+                          )}
+
+                          {/* Team response (once an admin has resolved it) */}
+                          {item.handling_status === 'resolved' && item.admin_response && (
+                            <div style={{
+                              background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.3)',
+                              borderRadius: 'var(--r-sm)', padding: '10px 12px', margin: '0 0 8px 0',
+                            }}>
+                              <span style={{ fontSize: 11, color: 'var(--safe)', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
+                                תשובת הצוות
+                                {item.handling_admin_name ? ` · ${item.handling_admin_name}` : ''}
+                              </span>
+                              <p style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)', margin: '4px 0 0 0', lineHeight: 1.5 }}>
+                                {item.admin_response}
+                              </p>
+                            </div>
                           )}
 
                           {/* Actions: edit + delete */}

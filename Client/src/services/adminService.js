@@ -48,3 +48,30 @@ export const deleteUserByEmail = async (email) => {
   const { data } = await apiClient.delete('/admin/user', { data: { email } });
   return data;
 };
+
+// ── Feedback management ──────────────────────────────
+
+/** GET /admin/feedback[?handling_status=] → { feedback:[...], stats, actor_level } */
+export const getFeedbackAdmin = async (handling_status) => {
+  const params = handling_status ? { handling_status } : {};
+  const { data } = await apiClient.get('/admin/feedback', { params });
+  return data;
+};
+
+/** POST /admin/feedback/{id}/take — pending → in progress, under the caller. (level 1+) */
+export const takeFeedback = async (feedbackId) => {
+  const { data } = await apiClient.post(`/admin/feedback/${feedbackId}/take`);
+  return data.feedback;
+};
+
+/** POST /admin/feedback/{id}/resolve — response note required. (handling admin or L2) */
+export const resolveFeedback = async (feedbackId, response) => {
+  const { data } = await apiClient.post(`/admin/feedback/${feedbackId}/resolve`, { response });
+  return data.feedback;
+};
+
+/** POST /admin/feedback/{id}/assign — assign to a specific admin. L2 only. */
+export const assignFeedback = async (feedbackId, assigneeId) => {
+  const { data } = await apiClient.post(`/admin/feedback/${feedbackId}/assign`, { assignee_id: assigneeId });
+  return data.feedback;
+};
