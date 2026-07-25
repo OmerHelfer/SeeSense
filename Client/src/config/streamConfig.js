@@ -32,7 +32,7 @@ export const JPEG_QUALITY = Math.max(0, Math.min(1, 1 - COMPRESSION_PERCENT / 10
  * and reports the value it actually used back on connect, so client + server
  * always agree on the coordinate space.
  */
-export const INPUT_SIZE = 500;
+export const INPUT_SIZE = 640;
 
 /**
  * Pipeline depth — how many frames may be "in flight" (sent, awaiting a result)
@@ -55,4 +55,4 @@ export const INPUT_SIZE = 500;
  * so we keep this low. It's bounded (unlike fire-and-forget) — at most this many
  * frames are ever queued, no runaway backlog. Also capped by TARGET_FPS.
  */
-export const MAX_INFLIGHT = 2;
+export const MAX_INFLIGHT = 4;
