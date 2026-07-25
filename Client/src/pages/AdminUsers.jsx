@@ -178,7 +178,7 @@ const AdminUsers = () => {
         <form className="au-search" onSubmit={doSearch}>
           <input
             type="email"
-            placeholder="הזן אימייל של משתמש..."
+            placeholder="...הזן אימייל של משתמש"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             dir="ltr"
