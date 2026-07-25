@@ -57,13 +57,13 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
   );
 };
 
-/** Health status indicator dot + live latency (ms) + label */
-const HealthDot = ({ status, rtt }) => {
+/** Health status indicator dot + live latency (ms, admin only) + label */
+const HealthDot = ({ status, rtt, user }) => {
   if (status === 'idle') return null;
   const colors = { green: '#22c55e', yellow: '#eab308', orange: '#f97316', red: '#ef4444' };
   const labels = { green: 'חיבור יציב', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
-  // Exact latency so the user knows precisely where the connection stands.
-  // No reading (timeout / lost) → em dash.
+  // Only admins level 1+ see the latency number; regular users see only the dot and label.
+  const isAdmin = user?.admin_level >= 1;
   const rttText = rtt != null ? `${rtt} ms` : ' ';
   return (
     <div className="health-dot-wrap" title={labels[status] || rttText}>
@@ -72,10 +72,13 @@ const HealthDot = ({ status, rtt }) => {
         style={{ backgroundColor: colors[status] }}
       />
       {/* dir="ltr" so the number and unit read "87 ms" (unit attached to the right
-          of the number) instead of being reordered to "ms 87" by the RTL layout. */}
-      <span className="health-ms" dir="ltr" style={{ color: colors[status] }}>
-        {rttText}
-      </span>
+          of the number) instead of being reordered to "ms 87" by the RTL layout.
+          Only visible to admins level 1+. */}
+      {isAdmin && (
+        <span className="health-ms" dir="ltr" style={{ color: colors[status] }}>
+          {rttText}
+        </span>
+      )}
       {labels[status] && (
         <span className={`health-label ${status}`} style={{ color: colors[status] }}>
           {labels[status]}
@@ -359,7 +362,7 @@ const Dashboard = () => {
       <header className="dashboard-header">
         <span className="header-brand">SEE<span>SENSE</span></span>
         <div className="header-actions">
-          <HealthDot status={healthStatus} rtt={healthRtt} />
+          <HealthDot status={healthStatus} rtt={healthRtt} user={user} />
           <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
           </button>
