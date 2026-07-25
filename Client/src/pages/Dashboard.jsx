@@ -65,7 +65,7 @@ const HealthDot = ({ status, rtt }) => {
   const showLabel = status !== 'green';
   // Exact latency so the user knows precisely where the connection stands.
   // No reading (timeout / lost) → em dash.
-  const rttText = rtt != null ? `${rtt} ms` : '—';
+  const rttText = rtt != null ? `${rtt} ms` : ' ';
   return (
     <div className="health-dot-wrap" title={labels[status] || rttText}>
       <div

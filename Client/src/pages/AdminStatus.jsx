@@ -147,9 +147,9 @@ const RttChart = ({ history }) => {
       ctx.textAlign = 'left';
       ctx.fillText(label, w - pad.right - 40, y - 4);
     };
-    drawThreshold(150, 'rgba(234,179,8,0.5)',  '150ms');  // yellow — unstable
-    drawThreshold(200, 'rgba(249,115,22,0.5)', '200ms');  // orange — severe
-    drawThreshold(250, 'rgba(239,68,68,0.5)',  '250ms');  // red — disconnect
+    drawThreshold(100, 'rgba(234,179,8,0.5)',  '100ms');  // yellow — unstable
+    drawThreshold(150, 'rgba(249,115,22,0.5)', '150ms');  // orange — severe
+    drawThreshold(200, 'rgba(239,68,68,0.5)',  '250');  // red — disconnect
 
     // Data line
     ctx.beginPath();
@@ -437,7 +437,7 @@ const AdminStatus = () => {
               <div className="admin-network-calc">
                 <Wifi size={14} />
                 <span>
-                  רשת (הערכה): ~{Math.round(data.client_rtt.avg_ms - data.server_latency.avg_ms)}ms
+                  רשת (הערכה): {Math.round(data.client_rtt.avg_ms - data.server_latency.avg_ms)}~ms
                 </span>
               </div>
             )}
