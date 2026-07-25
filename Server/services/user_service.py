@@ -22,6 +22,14 @@ def _detection_history():
     return get_db()["detection_history"]
 
 
+def _norm_email(email):
+    """Canonical form of an email for storage + lookup.
+    Emails are case-insensitive, so we lower-case (and trim) everywhere
+    a user registers, logs in, or is searched for by an admin. This makes
+    'OmErHelFER@GmAil.com' and 'omerhelfer@gmail.com' equivalent."""
+    return email.strip().lower() if isinstance(email, str) else email
+
+
 MAX_EMERGENCY_CONTACTS = 5
 CONTACT_CODE_EXPIRY_MINUTES = 30
 MAX_CODE_ATTEMPTS = 3
@@ -48,15 +56,16 @@ def create_user(data: dict) -> dict:
     """Register a new user. Returns the created profile."""
     user_id = str(uuid.uuid4())[:8]
 
-    if _users().find_one({"email": data["email"]}):
-        raise ValueError(f"Email {data['email']} already registered")
+    email = _norm_email(data["email"])
+    if _users().find_one({"email": email}):
+        raise ValueError(f"Email {email} already registered")
 
     profile = {
         "user_id": user_id,
         "is_admin": False,
         "admin_level": 0,
         "name": data["name"],
-        "email": data["email"],
+        "email": email,
         "phone": data["phone"],
         "password_hash": _hash_password(data["password"]),
         "country": data.get("country"),
@@ -98,7 +107,7 @@ def update_user(user_id: str, updates: dict) -> Optional[dict]:
 
 def authenticate_user(email: str, password: str) -> Optional[dict]:
     """Find user by email and verify password with bcrypt."""
-    profile = _users().find_one({"email": email})
+    profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         return None
 
@@ -110,7 +119,7 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
 
 def get_user_by_email(email: str) -> Optional[dict]:
     """Fetch user profile by email."""
-    profile = _users().find_one({"email": email})
+    profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         return None
     return _safe_profile(profile)
@@ -713,7 +722,7 @@ def _admin_level_of(profile: dict) -> int:
 def get_user_admin_view(email: str) -> Optional[dict]:
     """Full admin-facing view of a user: profile + admin level + online status +
     last_seen + counts of their data."""
-    profile = _users().find_one({"email": email})
+    profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         return None
     from services.presence import is_online
@@ -746,6 +755,7 @@ def get_user_admin_view(email: str) -> Optional[dict]:
 
 def admin_set_password(email: str, new_password: str) -> bool:
     """Admin sets a user's password directly (by email)."""
+    email = _norm_email(email)
     profile = _users().find_one({"email": email})
     if not profile:
         raise ValueError("User not found")
@@ -756,7 +766,7 @@ def admin_set_password(email: str, new_password: str) -> bool:
 
 def admin_update_user(email: str, updates: dict) -> Optional[dict]:
     """Admin edits a user's profile fields (by email)."""
-    profile = _users().find_one({"email": email})
+    profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         raise ValueError("User not found")
     return update_user(profile["user_id"], updates)
@@ -767,6 +777,7 @@ def admin_set_admin_level(email: str, level: int) -> int:
     Guards against demoting the last remaining super admin (lockout)."""
     if level not in (0, 1, 2):
         raise ValueError("Invalid admin level (must be 0, 1 or 2)")
+    email = _norm_email(email)
     profile = _users().find_one({"email": email})
     if not profile:
         raise ValueError("User not found")
@@ -780,7 +791,7 @@ def admin_set_admin_level(email: str, level: int) -> int:
 
 def admin_delete_user_by_email(email: str) -> bool:
     """Admin deletes a user by email. Guards against deleting the last super admin."""
-    profile = _users().find_one({"email": email})
+    profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         raise ValueError("User not found")
     if _admin_level_of(profile) == 2 and _users().count_documents({"admin_level": 2}) <= 1:

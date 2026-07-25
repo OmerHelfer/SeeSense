@@ -1584,7 +1584,10 @@ button:active {
   z-index: 10;
   width: 72px;
   height: 72px;
+  padding: 0;
   border-radius: 50%;
+  appearance: none;
+  -webkit-appearance: none;
   /* Deep red glass core */
   background: radial-gradient(circle at 38% 38%,
     rgba(220, 30, 30, 0.95) 0%,
@@ -1622,21 +1625,12 @@ button:active {
   }
 }
 
-/* Pressing: stop idle pulse, compress scale, bright ring */
-.sos-btn.sos-pressing {
-  animation: none;
-  transform: scale(0.93);
-  box-shadow:
-    0 0 0 14px rgba(255, 59, 48, 0.12),
-    0 0 48px   rgba(255, 59, 48, 0.8),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-
 /* Sending: dim while awaiting GPS/network */
 .sos-btn.sos-sending {
   animation: none;
   opacity: 0.75;
   transform: scale(0.96);
+  cursor: default;
 }
 
 /* Sent: flip to green success state */
@@ -1651,18 +1645,6 @@ button:active {
     0 0 32px   rgba(0, 229, 160, 0.7),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transform: scale(1.05);
-}
-
-/* SVG progress ring — sits just outside the button circle */
-.sos-ring {
-  position: absolute;
-  /* Extend 6px beyond all edges so the ring strokes outside the button */
-  top: -6px;
-  left: -6px;
-  width: calc(100% + 12px);
-  height: calc(100% + 12px);
-  pointer-events: none;
-  overflow: visible;
 }
 
 /* "SOS" / "✓" label */

@@ -209,16 +209,21 @@ const Settings = () => {
     const fb = getFeedbackSettings();
     const patch = { alert_type: next };
 
+    const vol = fb.volume_intensity ?? 0;
+    const vib = fb.vibration_intensity ?? 0;
+
+    // Rule: enabling a channel that was OFF (0) restores it to the default 0.8;
+    // disabling a channel zeroes it.
     if (next === 'audio') {
-      // Audio only — silence vibration
+      // Audio on (restore if it was off), vibration off
+      if (vol === 0) patch.volume_intensity = 0.8;
       patch.vibration_intensity = 0;
     } else if (next === 'haptic') {
-      // Haptic only — silence audio
+      // Haptic on (restore if it was off), audio off
+      if (vib === 0) patch.vibration_intensity = 0.8;
       patch.volume_intensity = 0;
     } else if (next === 'both') {
-      // Both enabled — restore any that were zeroed
-      const vol = fb.volume_intensity ?? 0;
-      const vib = fb.vibration_intensity ?? 0;
+      // Both on — restore any that were zeroed
       if (vol === 0) patch.volume_intensity = 0.8;
       if (vib === 0) patch.vibration_intensity = 0.8;
     }

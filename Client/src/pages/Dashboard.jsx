@@ -113,11 +113,8 @@ const Dashboard = () => {
   const feedbackTimerRef = useRef(null);        // auto-hide timer
 
   // ── SOS state ──
-  // 'idle' | 'pressing' | 'sending' | 'sent'
+  // 'idle' | 'sending' | 'sent'  (single tap → sending → sent → idle)
   const [sosState, setSosState]       = useState('idle');
-  const [sosProgress, setSosProgress] = useState(0); // 0–1 during long-press
-  const sosRafRef                     = useRef(null);
-  const sosStartRef                   = useRef(null);
 
   useEffect(() => { isScanningRef.current = isScanning;        }, [isScanning]);
   useEffect(() => { isAlignedRef.current  = isAligned;         }, [isAligned]);
@@ -297,45 +294,17 @@ const Dashboard = () => {
     visionStreamRef.current?.sendFrame(blob);
   }, []); // stable reference — no deps, reads state through refs
 
-  /* ── SOS: long-press handlers ──
-     Hold for 2 s → get GPS → POST /users/emergency_alert */
-  const handleSOSDown = (e) => {
+  /* ── SOS: single tap ──
+     One press → get GPS → POST /users/emergency_alert.
+     No long-press: the button fires immediately and shows a sending state. */
+  const handleSOSClick = (e) => {
     e.preventDefault();
-    if (sosState !== 'idle') return;
-    setSosState('pressing');
-    haptic('aligned'); // subtle acknowledgement tick
-    sosStartRef.current = Date.now();
-
-    const tick = () => {
-      const progress = Math.min((Date.now() - sosStartRef.current) / 2000, 1);
-      setSosProgress(progress);
-      if (progress < 1) {
-        sosRafRef.current = requestAnimationFrame(tick);
-      } else {
-        fireSOS();
-      }
-    };
-    sosRafRef.current = requestAnimationFrame(tick);
-  };
-
-  const cancelSOS = () => {
-    if (sosRafRef.current) {
-      cancelAnimationFrame(sosRafRef.current);
-      sosRafRef.current = null;
-    }
-    if (sosState === 'pressing') {
-      setSosState('idle');
-      setSosProgress(0);
-    }
+    if (sosState !== 'idle') return; // ignore taps while sending / just-sent
+    fireSOS();
   };
 
   const fireSOS = () => {
-    if (sosRafRef.current) {
-      cancelAnimationFrame(sosRafRef.current);
-      sosRafRef.current = null;
-    }
     setSosState('sending');
-    setSosProgress(1);
     haptic('danger');
 
     const send = async (lat, lon) => {
@@ -351,7 +320,6 @@ const Dashboard = () => {
         speakMessage('שליחת בקשת עזרה נכשלה');
       }
       setSosState('sent');
-      setSosProgress(0);
       setTimeout(() => setSosState('idle'), 3000);
     };
 
@@ -546,31 +514,18 @@ const Dashboard = () => {
         </AnimatePresence>
 
         {/* ── SOS Emergency Button ── */}
-        <div
+        <button
+          type="button"
           className={`sos-btn sos-${sosState}`}
-          onPointerDown={handleSOSDown}
-          onPointerUp={cancelSOS}
-          onPointerLeave={cancelSOS}
+          onClick={handleSOSClick}
+          disabled={sosState === 'sending'}
           onContextMenu={(e) => e.preventDefault()}
-          role="button"
-          aria-label="כפתור חירום — לחץ לחיצה ארוכה (2 שניות) לשליחת התראה"
+          aria-label="כפתור חירום — לחץ לשליחת התראה"
         >
-          {/* SVG progress ring — fills clockwise as user holds */}
-          <svg className="sos-ring" viewBox="0 0 80 80" aria-hidden="true">
-            <circle
-              cx="40" cy="40" r="36"
-              fill="none"
-              stroke="rgba(255,255,255,0.9)"
-              strokeWidth="3.5"
-              strokeDasharray={`${sosProgress * 226.2} 226.2`}
-              strokeLinecap="round"
-              transform="rotate(-90 40 40)"
-            />
-          </svg>
           <span className="sos-label">
             {sosState === 'sent' ? '✓' : sosState === 'sending' ? '...' : 'SOS'}
           </span>
-        </div>
+        </button>
       </main>
 
       {/* ── Main scan button ── */}

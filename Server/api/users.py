@@ -28,6 +28,7 @@ from services.user_service import (
     create_user,
     get_user,
     get_user_by_email,
+    _norm_email,
     update_user,
     change_password,
     authenticate_user,
@@ -196,15 +197,18 @@ async def forgot_password(request: Request, req: ForgotPasswordRequest):
         # Don't reveal if email exists or not (security)
         return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
 
-    # Generate 6-digit code and store in MongoDB (TTL handles expiry)
+    # Generate 6-digit code and store in MongoDB (TTL handles expiry).
+    # Key reset codes by the canonical (lower-cased) email so lookup on
+    # reset matches regardless of the casing the user typed.
+    email = _norm_email(req.email)
     code = ''.join(random.choices(string.digits, k=6))
     _reset_codes_col().update_one(
-        {"email": req.email},
+        {"email": email},
         {"$set": {"code": code, "created_at": datetime.utcnow()}},
         upsert=True
     )
 
-    _send_email_background(send_password_reset_email, req.email, profile["name"], code)
+    _send_email_background(send_password_reset_email, email, profile["name"], code)
     return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
 
 
@@ -214,21 +218,22 @@ async def reset_password(request: ResetPasswordRequest):
     if len(request.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
-    reset_data = _reset_codes_col().find_one({"email": request.email})
+    email = _norm_email(request.email)
+    reset_data = _reset_codes_col().find_one({"email": email})
     if not reset_data:
         raise HTTPException(status_code=400, detail="No reset code found. Request a new one.")
 
     if reset_data["code"] != request.code:
         raise HTTPException(status_code=400, detail="Invalid reset code")
 
-    profile = get_user_by_email(request.email)
+    profile = get_user_by_email(email)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
     change_password(profile["user_id"], None, request.new_password, force=True)
-    _reset_codes_col().delete_one({"email": request.email})
+    _reset_codes_col().delete_one({"email": email})
 
-    _send_email_background(send_password_changed_email, request.email, profile["name"])
+    _send_email_background(send_password_changed_email, email, profile["name"])
     return {"status": "success", "message": "Password reset successfully"}
 
 
