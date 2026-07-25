@@ -167,10 +167,19 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, captureFps = 4, i
 
   useEffect(() => {
     if (!isActive) return;
-    // Capture interval derived from the server-configured target FPS.
-    // (Clamped to a sane range so a bad config value can't break capture.)
-    const fps = Math.max(1, Math.min(30, captureFps || 4));
-    const id = setInterval(captureFrame, 1000 / fps);
+    // We POLL for a send opportunity faster than the target send rate. The actual
+    // send rate is gated by backpressure (shouldCapture → canSend / MAX_INFLIGHT),
+    // so ticks that can't send are near-free early-outs (no draw, no encode).
+    //
+    // Why poll faster: the pipeline frees an in-flight slot the instant a *result*
+    // arrives, which doesn't align with a fixed timer. Polling only at the send
+    // rate means a freed slot waits up to a full interval before we fill it — dead
+    // time that caps throughput well below the pipeline-depth ceiling. Polling ~3×
+    // faster shrinks that wait, so effective FPS climbs toward depth/RTT at no
+    // latency cost. (Clamped so a bad config value can't break capture.)
+    const target  = Math.max(1, Math.min(30, captureFps || 4));
+    const pollFps = Math.min(60, target * 3);
+    const id = setInterval(captureFrame, 1000 / pollFps);
     return () => clearInterval(id);
   }, [isActive, captureFrame, captureFps]);
 
