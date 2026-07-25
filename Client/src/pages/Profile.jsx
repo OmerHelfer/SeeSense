@@ -28,6 +28,9 @@ const Profile = () => {
   const [deleting, setDeleting]       = useState(false);
   const [deleteErr, setDeleteErr]     = useState('');
 
+  // Unsaved-changes guard on back
+  const [showLeave, setShowLeave]     = useState(false);
+
   const handleDeleteAccount = async () => {
     setDeleting(true); setDeleteErr('');
     try {
@@ -56,7 +59,9 @@ const Profile = () => {
       .catch(() => setLoadErr('לא ניתן לטעון את הפרופיל. נסה שוב.'));
   }, []);
 
-  const handleSave = async () => {
+  // Core save — returns true on success. Shared by the "שמור" button and the
+  // "save & leave" path of the unsaved-changes guard.
+  const saveChanges = async () => {
     setSaveError('');
     setSaveOk(false);
     setSaveLoading(true);
@@ -70,15 +75,46 @@ const Profile = () => {
 
       const updated = await updateProfile(payload);
       setProfile(updated);
-      setSaveOk(true);
       setIsEditing(false);
-      setTimeout(() => setSaveOk(false), 3000);
+      return true;
     } catch (err) {
       const detail = err?.response?.data?.detail;
       setSaveError(typeof detail === 'string' ? detail : 'שמירה נכשלה. נסה שוב.');
+      return false;
     } finally {
       setSaveLoading(false);
     }
+  };
+
+  const handleSave = async () => {
+    const ok = await saveChanges();
+    if (ok) {
+      setSaveOk(true);
+      setTimeout(() => setSaveOk(false), 3000);
+    }
+  };
+
+  // True if the user is editing and the form differs from the saved profile.
+  const EDIT_KEYS = ['name', 'phone', 'country', 'date_of_birth', 'height_cm', 'weight_kg'];
+  const hasUnsavedChanges = () =>
+    isEditing && !!profile && EDIT_KEYS.some((k) => String(editData[k] ?? '') !== String(profile[k] ?? ''));
+
+  // Back arrow: warn about unsaved edits instead of leaving silently.
+  const handleBack = () => {
+    if (hasUnsavedChanges()) setShowLeave(true);
+    else navigate('/settings');
+  };
+
+  const handleSaveAndLeave = async () => {
+    const ok = await saveChanges();
+    setShowLeave(false);
+    if (ok) navigate('/settings');
+    // On failure the modal closes so the error banner is visible; user stays on page.
+  };
+
+  const handleDiscardAndLeave = () => {
+    setShowLeave(false);
+    navigate('/settings');
   };
 
   const cancelEdit = () => {
@@ -121,7 +157,7 @@ const Profile = () => {
       exit="exit"
     >
       <header className="inner-page-header">
-        <button className="back-btn" onClick={() => navigate('/settings')} aria-label="חזרה">
+        <button className="back-btn" onClick={handleBack} aria-label="חזרה">
           <ArrowRight size={22} />
         </button>
         <span className="inner-page-title">פרופיל אישי</span>
@@ -230,6 +266,37 @@ const Profile = () => {
               </button>
               <button className="admin-modal-cancel" onClick={() => setShowDelete(false)} disabled={deleting}>
                 ביטול
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Unsaved-changes confirmation on back (centered) */}
+      <AnimatePresence>
+        {showLeave && (
+          <motion.div className="admin-modal-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => !saveLoading && setShowLeave(false)}>
+            <motion.div className="admin-modal-card" onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}>
+              <div className="admin-modal-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                <AlertTriangle size={26} />
+              </div>
+              <h3 className="admin-modal-title">יש לך שינויים שלא נשמרו</h3>
+              <p className="admin-modal-body">
+                ערכת את הפרטים שלך אך עדיין לא שמרת. האם לשמור את השינויים לפני היציאה?
+              </p>
+              <button className="accent-btn" onClick={handleSaveAndLeave} disabled={saveLoading}
+                style={{ width: '100%', justifyContent: 'center' }}>
+                <Save size={16} /> {saveLoading ? 'שומר...' : 'שמור שינויים'}
+              </button>
+              <button className="admin-reset-btn confirm" onClick={handleDiscardAndLeave} disabled={saveLoading}
+                style={{ marginTop: 10 }}>
+                <X size={16} /> צא בלי לשמור
+              </button>
+              <button className="admin-modal-cancel" onClick={() => setShowLeave(false)} disabled={saveLoading}>
+                המשך עריכה
               </button>
             </motion.div>
           </motion.div>
