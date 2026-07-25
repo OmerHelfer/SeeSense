@@ -33,3 +33,19 @@ export const JPEG_QUALITY = Math.max(0, Math.min(1, 1 - COMPRESSION_PERCENT / 10
  * always agree on the coordinate space.
  */
 export const INPUT_SIZE = 640;
+
+/**
+ * Pipeline depth — how many frames may be "in flight" (sent, awaiting a result)
+ * at once. This is the throughput knob when the NETWORK is the bottleneck.
+ *
+ *   1     = one round-trip at a time → FPS capped at 1/RTT (e.g. 250ms → ~4 FPS)
+ *           even while the server sits idle.
+ *   2..6  = fill the network pipe → throughput ≈ depth/RTT (e.g. 4 → ~16 FPS),
+ *           while each frame's latency stays ~one RTT.
+ *
+ * It's bounded (unlike fire-and-forget), so at most this many frames are ever
+ * queued — no runaway backlog. Keep it small: too high and frames can pile up on
+ * a slow server and go stale. Effective FPS is also capped by the server's
+ * TARGET_FPS (capture rate).
+ */
+export const MAX_INFLIGHT = 4;

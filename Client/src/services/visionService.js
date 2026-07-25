@@ -13,7 +13,7 @@
  *   stream.disconnect();
  */
 
-import { INPUT_SIZE } from '../config/streamConfig';
+import { INPUT_SIZE, MAX_INFLIGHT } from '../config/streamConfig';
 
 // Derive the WebSocket base URL from the Vite env var.
 // http:// → ws://   |   https:// → wss://
@@ -43,12 +43,13 @@ export class VisionStream {
     this._reconnectAttempts = 0;
     this._reconnectTimer    = null;
 
-    // ── Depth-1 backpressure ──
-    // Only one frame is in flight at a time: we don't send the next frame until
-    // the previous result comes back (see `canSend`). This self-throttles the
-    // send rate to ~1/RTT so frames can never pile up into a queue — end-to-end
-    // latency stays bounded (≈ server + network) instead of growing unbounded.
-    // _sendTimes is a FIFO of send timestamps used to pair results for RTT.
+    // ── Bounded-depth backpressure ──
+    // Up to MAX_INFLIGHT frames may be in flight (sent, awaiting a result) at
+    // once — see `canSend`. Depth 1 caps throughput at 1/RTT even when the server
+    // is idle; a small depth fills the network pipe so throughput ≈ depth/RTT,
+    // while each frame's latency stays ~one RTT. It's bounded, so the queue can't
+    // run away like fire-and-forget. _sendTimes is a FIFO of send timestamps used
+    // to pair results for RTT (results arrive in send order).
     this._sendTimes         = [];     // FIFO of performance.now() for sent-but-unanswered frames
 
     // ── RTT measurement ──
@@ -97,18 +98,17 @@ export class VisionStream {
   }
 
   /**
-   * Depth-1 backpressure gate: may we send another frame right now?
-   * True only when no frame is awaiting a result — so at most one frame is ever
-   * in flight and the queue can't build up. A frame that never gets answered is
-   * treated as lost after MAX_INFLIGHT_MS so a single drop can't wedge sending.
+   * Bounded-depth backpressure gate: may we send another frame right now?
+   * True while fewer than MAX_INFLIGHT frames are awaiting a result, so at most
+   * MAX_INFLIGHT are ever in flight and the queue stays bounded. In-flight entries
+   * older than MAX_INFLIGHT_MS (a lost result) are pruned so drops can't wedge it.
    */
   get canSend() {
-    if (this._sendTimes.length === 0) return true;
-    if (performance.now() - this._sendTimes[0] > MAX_INFLIGHT_MS) {
-      this._sendTimes = []; // stale — drop it and allow the next send
-      return true;
+    const now = performance.now();
+    while (this._sendTimes.length && now - this._sendTimes[0] > MAX_INFLIGHT_MS) {
+      this._sendTimes.shift();
     }
-    return false;
+    return this._sendTimes.length < Math.max(1, MAX_INFLIGHT);
   }
 
   /**
