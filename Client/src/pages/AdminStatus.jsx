@@ -147,9 +147,9 @@ const RttChart = ({ history }) => {
       ctx.textAlign = 'left';
       ctx.fillText(label, w - pad.right - 40, y - 4);
     };
-    drawThreshold(250, 'rgba(234,179,8,0.5)',  '250ms');  // yellow — unstable
-    drawThreshold(400, 'rgba(249,115,22,0.5)', '400ms');  // orange — severe
-    drawThreshold(600, 'rgba(239,68,68,0.5)',  '600ms');  // red — disconnect
+    drawThreshold(150, 'rgba(234,179,8,0.5)',  '150ms');  // yellow — unstable
+    drawThreshold(200, 'rgba(249,115,22,0.5)', '200ms');  // orange — severe
+    drawThreshold(250, 'rgba(239,68,68,0.5)',  '250ms');  // red — disconnect
 
     // Data line
     ctx.beginPath();
