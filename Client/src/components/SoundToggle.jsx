@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Volume2, VolumeX } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -20,6 +21,7 @@ import { getSettings, updateSettings } from '../services/settingsService';
  */
 const SoundToggle = () => {
   const { isAuthenticated, user } = useAuth();
+  const location = useLocation();
   const userId = user?.id ?? user?.user_id;
 
   const [muted, setMutedState] = useState(isMuted());
@@ -38,7 +40,8 @@ const SoundToggle = () => {
   // ── Keep the icon in sync with the store (e.g. slider dragged to 0). ──
   useEffect(() => subscribeFeedback(() => setMutedState(isMuted())), []);
 
-  if (!isAuthenticated) return null;
+  // Only shown on the camera page (Dashboard, path "/") — hidden elsewhere.
+  if (!isAuthenticated || location.pathname !== '/') return null;
 
   const handleToggle = () => {
     toggleMuted();               // updates the shared runtime store

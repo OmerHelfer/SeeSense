@@ -2070,6 +2070,13 @@ button:active {
   animation: health-pulse 1.5s ease-in-out infinite;
 }
 
+.health-ms {
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .health-dot {
   width: 8px;
   height: 8px;

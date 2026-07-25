@@ -57,18 +57,24 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
   );
 };
 
-/** Health status indicator dot + label */
-const HealthDot = ({ status }) => {
+/** Health status indicator dot + live latency (ms) + label */
+const HealthDot = ({ status, rtt }) => {
   if (status === 'idle') return null;
   const colors = { green: '#22c55e', yellow: '#eab308', orange: '#f97316', red: '#ef4444' };
   const labels = { green: '', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
   const showLabel = status !== 'green';
+  // Exact latency so the user knows precisely where the connection stands.
+  // No reading (timeout / lost) → em dash.
+  const rttText = rtt != null ? `${rtt} ms` : '—';
   return (
-    <div className="health-dot-wrap" title={labels[status]}>
+    <div className="health-dot-wrap" title={labels[status] || rttText}>
       <div
         className={`health-dot ${status}`}
         style={{ backgroundColor: colors[status] }}
       />
+      <span className="health-ms" style={{ color: colors[status] }}>
+        {rttText}
+      </span>
       {showLabel && (
         <span className="health-label" style={{ color: colors[status] }}>
           {labels[status]}
@@ -86,6 +92,7 @@ const Dashboard = () => {
   const [isScanning, setIsScanning]       = useState(false);
   const [alertLevel, setAlertLevel]       = useState('none');   // 'none' | 'low' | 'high'
   const [healthStatus, setHealthStatus]   = useState('idle');   // 'idle' | 'green' | 'yellow' | 'red'
+  const [healthRtt, setHealthRtt]         = useState(null);     // last ping RTT in ms (null = no reading)
   const [detectionDir, setDetectionDir]   = useState(null);     // 'left' | 'right' | 'center' | null
   const [detectedClass, setDetectedClass] = useState(null);     // hebrew class name of leading object
   const [detections, setDetections]       = useState([]);       // per-frame boxes for the overlay
@@ -236,7 +243,7 @@ const Dashboard = () => {
 
       // ── Start Health Watchdog ──
       startHealthWatch({
-        onStatusChange: (status, _rtt) => setHealthStatus(status),
+        onStatusChange: (status, rtt) => { setHealthStatus(status); setHealthRtt(rtt ?? null); },
         onDisconnect: () => {
           // Health RED → pause scanning visually (WebSocket may still be open but unusable)
           console.warn('[SeeSense] Health watchdog: connection lost');
@@ -254,6 +261,7 @@ const Dashboard = () => {
       setDetectedClass(null);
       setDetections([]);
       setHealthStatus('idle');
+      setHealthRtt(null);
       setQuickReportState('idle');
       clearTimeout(quickReportTimerRef.current);
       stopHealthWatch();
@@ -350,7 +358,7 @@ const Dashboard = () => {
       <header className="dashboard-header">
         <span className="header-brand">SEE<span>SENSE</span></span>
         <div className="header-actions">
-          <HealthDot status={healthStatus} />
+          <HealthDot status={healthStatus} rtt={healthRtt} />
           <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
           </button>
