@@ -53,4 +53,4 @@ export const INPUT_SIZE = 512;
  * distance — acceptable for urban use. Bounded queue (no fire-and-forget backlog);
  * also capped by server TARGET_FPS.
  */
-export const MAX_INFLIGHT = 4;
+export const MAX_INFLIGHT = 1; // TEMP: local-only test to prove queue-wait vs network — revert to 4 before commit/deploy
