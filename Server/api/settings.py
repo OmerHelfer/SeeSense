@@ -63,6 +63,11 @@ async def update_settings(settings: dict = {}, current_user: dict = Depends(veri
             if value not in ("audio", "haptic", "both"):
                 raise HTTPException(status_code=400, detail=f"Invalid alert_type: {value}. Choose from: audio, haptic, both")
 
+        # Validate voice_gender
+        if key == "voice_gender":
+            if value not in ("female", "male", "default"):
+                raise HTTPException(status_code=400, detail=f"Invalid voice_gender: {value}. Choose from: female, male, default")
+
         # Validate intensity values
         if key in ("volume_intensity", "vibration_intensity"):
             if not isinstance(value, (int, float)) or not (0.0 <= value <= 1.0):

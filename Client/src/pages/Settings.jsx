@@ -9,6 +9,15 @@ import {
   resetSettings,
   getAvailableClasses,
 } from '../services/settingsService';
+import {
+  setFeedbackSettings,
+  seedFeedbackSettings,
+  subscribeFeedback,
+  getFeedbackSettings,
+  getVoiceInfo,
+  isVibrationSupported,
+  previewVoice,
+} from '../services/feedbackService';
 
 // ── Hebrew labels + emoji for each detectable class ──────
 const CLASS_META = {
@@ -47,8 +56,8 @@ const SegControl = ({ options, value, onChange }) => (
 );
 
 // ── Range slider with neon fill track ─────────────────────
-const HudSlider = ({ label, emoji, value, onChange }) => (
-  <div className="slider-row">
+const HudSlider = ({ label, emoji, value, onChange, disabled = false }) => (
+  <div className={`slider-row${disabled ? ' disabled' : ''}`}>
     <div className="slider-header">
       <span className="slider-label">
         <span className="slider-emoji">{emoji}</span> {label}
@@ -61,6 +70,7 @@ const HudSlider = ({ label, emoji, value, onChange }) => (
       max="1"
       step="0.05"
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(parseFloat(e.target.value))}
       className="hud-slider"
       style={{ '--fill': `${value * 100}%` }}
@@ -85,17 +95,53 @@ const Settings = () => {
   // ── Collapsible state ──
   const [scanOpen, setScanOpen] = useState(false);
 
+  // ── Voice availability (async — voices load after page mount) ──
+  const [voiceInfo, setVoiceInfo] = useState(getVoiceInfo());
+  const vibrationSupported = isVibrationSupported();
+
   // ── Load settings + class list in parallel ──
   useEffect(() => {
     if (!userId) return;
     Promise.all([getSettings(userId), getAvailableClasses()])
       .then(([s, classes]) => {
         setSettings(s);
+        seedFeedbackSettings(s);   // feed the shared runtime store
         setAvailableClasses(classes);
       })
       .catch(() => setError('לא ניתן לטעון הגדרות. בדוק חיבור ונסה שוב.'))
       .finally(() => setLoading(false));
   }, [userId]);
+
+  // ── Keep the store-managed fields in sync with the shared store
+  //    (e.g. the floating mute button toggling volume while this page is open). ──
+  useEffect(() => subscribeFeedback((fb) => {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      if (prev.volume_intensity === fb.volume_intensity &&
+          prev.vibration_intensity === fb.vibration_intensity &&
+          prev.alert_type === fb.alert_type &&
+          prev.voice_gender === fb.voice_gender) return prev; // no change → no re-render
+      return {
+        ...prev,
+        volume_intensity:    fb.volume_intensity,
+        vibration_intensity: fb.vibration_intensity,
+        alert_type:          fb.alert_type,
+        voice_gender:        fb.voice_gender,
+      };
+    });
+  }), []);
+
+  // ── Refresh voice availability once voices load ──
+  useEffect(() => {
+    const update = () => setVoiceInfo(getVoiceInfo());
+    update();
+    window.speechSynthesis?.addEventListener?.('voiceschanged', update);
+    const t = setTimeout(update, 600);
+    return () => {
+      window.speechSynthesis?.removeEventListener?.('voiceschanged', update);
+      clearTimeout(t);
+    };
+  }, []);
 
   // ── Toggle a class on/off in high_risk_classes ──
   const toggleClass = (cls) => {
@@ -118,10 +164,12 @@ const Settings = () => {
         alert_type:            settings.alert_type,
         volume_intensity:      settings.volume_intensity,
         vibration_intensity:   settings.vibration_intensity,
+        voice_gender:          settings.voice_gender,
         detection_sensitivity: settings.detection_sensitivity,
         high_risk_classes:     settings.high_risk_classes,
       });
       setSettings(updated);
+      seedFeedbackSettings(updated);
       setSaveOk(true);
       setTimeout(() => setSaveOk(false), 2500);
     } catch (err) {
@@ -139,6 +187,7 @@ const Settings = () => {
     try {
       const defaults = await resetSettings(userId);
       setSettings(defaults);
+      seedFeedbackSettings(defaults);
     } catch {
       setError('איפוס נכשל. נסה שוב.');
     } finally {
@@ -148,6 +197,34 @@ const Settings = () => {
 
   const set = (key) => (val) =>
     setSettings((prev) => ({ ...prev, [key]: val }));
+
+  // Store-managed fields: write through the shared store (the subscriber above
+  // mirrors the change back into local `settings`), so the floating mute button
+  // and the live runtime reflect it immediately.
+  const setFb = (key) => (val) => setFeedbackSettings({ [key]: val });
+
+  // Changing the alert channel forces the disabled channel to 0, and restores
+  // any zeroed channel to a sensible default when re-enabling both.
+  const handleAlertType = (next) => {
+    const fb = getFeedbackSettings();
+    const patch = { alert_type: next };
+    if (next === 'audio')  patch.vibration_intensity = 0;
+    if (next === 'haptic') patch.volume_intensity = 0;
+    if (next === 'both') {
+      if ((fb.volume_intensity ?? 0) === 0)    patch.volume_intensity = 0.8;
+      if ((fb.vibration_intensity ?? 0) === 0) patch.vibration_intensity = 0.8;
+    }
+    setFeedbackSettings(patch);
+  };
+
+  const handleVoiceGender = (val) => {
+    setFeedbackSettings({ voice_gender: val });
+    previewVoice(); // let the user hear the selected voice immediately
+  };
+
+  const alertType   = settings?.alert_type ?? 'both';
+  const audioOff    = alertType === 'haptic';   // volume slider disabled
+  const hapticOff   = alertType === 'audio';    // vibration slider disabled
 
   const sensOptions = [
     { value: 'low',    label: 'נמוכה'   },
@@ -159,6 +236,12 @@ const Settings = () => {
     { value: 'audio',  label: '🔊 שמע'  },
     { value: 'haptic', label: '📳 רטט'  },
     { value: 'both',   label: 'שניהם'   },
+  ];
+
+  const voiceOptions = [
+    { value: 'female',  label: '👩 אישה'  },
+    { value: 'male',    label: '👨 גבר'   },
+    { value: 'default', label: 'ברירת מחדל' },
   ];
 
   return (
@@ -290,12 +373,12 @@ const Settings = () => {
                       <span className="section-label">סוג התראה</span>
                     </div>
                     <p className="settings-desc">
-                      בחר כיצד SeeSense יתריע בזמן זיהוי עצם בסיכון גבוה.
+                      בחר כיצד SeeSense יתריע בזמן זיהוי עצם: קול, רטט או שניהם.
                     </p>
                     <SegControl
                       options={alertOptions}
                       value={settings.alert_type}
-                      onChange={set('alert_type')}
+                      onChange={handleAlertType}
                     />
                   </div>
 
@@ -308,15 +391,43 @@ const Settings = () => {
                       emoji="🔊"
                       label="עוצמת שמע"
                       value={settings.volume_intensity}
-                      onChange={set('volume_intensity')}
+                      onChange={setFb('volume_intensity')}
+                      disabled={audioOff}
                     />
                     <div className="slider-divider" />
                     <HudSlider
                       emoji="📳"
                       label="עוצמת רטט"
                       value={settings.vibration_intensity}
-                      onChange={set('vibration_intensity')}
+                      onChange={setFb('vibration_intensity')}
+                      disabled={hapticOff}
                     />
+                    {!vibrationSupported && !hapticOff && (
+                      <p className="settings-note">
+                        ⚠ הרטט אינו נתמך בדפדפן במכשיר זה (למשל iPhone). הרטט יעבוד באנדרואיד/אפליקציה.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* ── Voice (TTS) ── */}
+                  <div className="glass-section">
+                    <div className="section-label-row" style={{ marginBottom: 6 }}>
+                      <Bell size={15} />
+                      <span className="section-label">קול ההתראה</span>
+                    </div>
+                    <p className="settings-desc">
+                      בחר קול לדיבור ההתראות. הבחירה תושמע מיד לתצוגה מקדימה.
+                    </p>
+                    <SegControl
+                      options={voiceOptions}
+                      value={settings.voice_gender ?? 'default'}
+                      onChange={handleVoiceGender}
+                    />
+                    {!voiceInfo.canChooseGender && (
+                      <p className="settings-note">
+                        במכשיר זה זוהה קול עברי אחד בלבד — ייתכן שבחירת המגדר לא תשמע שונה.
+                      </p>
+                    )}
                   </div>
 
                   {/* ── High-Risk Object Filter ── */}

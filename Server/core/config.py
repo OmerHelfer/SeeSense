@@ -82,6 +82,7 @@ DEFAULT_SETTINGS = {
     "alert_type": "both",
     "volume_intensity": 0.8,
     "vibration_intensity": 0.8,
+    "voice_gender": "default",  # "female" | "male" | "default" (system default voice)
     "detection_sensitivity": "medium",
     "high_risk_classes": list(HIGH_RISK_CLASSES)
 }

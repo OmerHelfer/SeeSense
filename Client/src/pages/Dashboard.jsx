@@ -90,6 +90,7 @@ const Dashboard = () => {
   const [detectedClass, setDetectedClass] = useState(null);     // hebrew class name of leading object
   const [detections, setDetections]       = useState([]);       // per-frame boxes for the overlay
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [captureFps, setCaptureFps]       = useState(4);        // driven by server TARGET_FPS on connect
   const [jpegQuality, setJpegQuality]     = useState(0.7);      // lowered on slow links to cut upload time
 
@@ -391,7 +392,7 @@ const Dashboard = () => {
           <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
           </button>
-          <button className="icon-btn" onClick={logout} aria-label="יציאה">
+          <button className="icon-btn" onClick={() => setShowLogoutConfirm(true)} aria-label="יציאה">
             <LogOut size={20} />
           </button>
         </div>
@@ -602,7 +603,7 @@ const Dashboard = () => {
       {/* ── Floating glass tab bar ── */}
       <div className="tab-bar-wrap">
         <nav className="tab-bar" role="navigation" aria-label="ניווט ראשי">
-          <button className="tab-btn" onClick={logout} aria-label="יציאה">
+          <button className="tab-btn" onClick={() => setShowLogoutConfirm(true)} aria-label="יציאה">
             <LogOut size={20} />
             <span>יציאה</span>
           </button>
@@ -616,6 +617,37 @@ const Dashboard = () => {
           </button>
         </nav>
       </div>
+
+      {/* ── Logout confirmation ── */}
+      <AnimatePresence>
+        {showLogoutConfirm && (
+          <motion.div
+            className="confirm-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setShowLogoutConfirm(false)}
+            role="dialog"
+            aria-modal="true"
+          >
+            <motion.div
+              className="confirm-card"
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="confirm-title">האם אתה בטוח שברצונך להתנתק?</p>
+              <div className="confirm-actions">
+                <button className="confirm-btn confirm-yes" onClick={logout}>כן</button>
+                <button className="confirm-btn confirm-no" onClick={() => setShowLogoutConfirm(false)}>לא</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

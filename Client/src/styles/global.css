@@ -1865,6 +1865,21 @@ button:active {
   gap: 12px;
 }
 
+/* Disabled slider — grayed out and non-interactive (channel off via alert type) */
+.slider-row.disabled {
+  opacity: 0.4;
+  filter: grayscale(1);
+  pointer-events: none;
+}
+
+/* Small inline note under a control (voice availability, vibration support…) */
+.settings-note {
+  margin-top: 10px;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
 .slider-divider {
   height: 1px;
   background: var(--glass-border);
@@ -2481,10 +2496,64 @@ button:active {
 
 .admin-modal-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ══════════ Confirm dialog (logout) ══════════ */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.confirm-card {
+  width: 100%;
+  max-width: 320px;
+  padding: 24px 20px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.14));
+  background: rgba(20, 22, 28, 0.96);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+.confirm-title {
+  margin: 0 0 20px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-1, #fff);
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+.confirm-btn {
+  flex: 1;
+  padding: 12px 0;
+  border-radius: 12px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: transform 0.12s, filter 0.15s;
+}
+.confirm-btn:active { transform: scale(0.96); }
+.confirm-yes {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #fff;
+}
+.confirm-no {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-1, #fff);
+}
+
 /* ══════════ Global sound toggle ══════════ */
 .sound-toggle {
   position: fixed;
-  top: 64px;
+  top: 116px;
   left: 12px;
   z-index: 900;
   display: flex;
