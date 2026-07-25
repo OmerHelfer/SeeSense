@@ -2487,6 +2487,85 @@ button:active {
 
 .admin-modal-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── Clickable stat card (button variant) ── */
+.admin-stat-card-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s, transform 0.1s;
+}
+
+.admin-stat-card-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.admin-stat-card-btn:active { transform: scale(0.97); }
+
+/* ── Admins list modal ── */
+.admin-list-modal {
+  max-width: 440px;
+  text-align: right;
+}
+
+.admin-list-modal .admin-modal-title { text-align: center; }
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 52vh;
+  overflow-y: auto;
+  margin-bottom: 6px;
+  padding-left: 4px;
+}
+
+.admin-list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.admin-list-row.offline { opacity: 0.65; }
+
+.admin-list-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.admin-list-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-list-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-list-meta {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
 /* ══════════ Confirm dialog (logout) ══════════ */
 .confirm-overlay {
   position: fixed;

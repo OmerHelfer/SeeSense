@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  getOverview, getUserByEmail, setUserPassword, updateUser, setUserLevel, deleteUserByEmail,
+  getOverview, getAdmins, getUserByEmail, setUserPassword, updateUser, setUserLevel, deleteUserByEmail,
 } from '../services/adminService';
 
 const pageVariants = {
@@ -74,6 +74,11 @@ const AdminUsers = () => {
   const [editData, setEditData] = useState({});
   const [confirm, setConfirm] = useState(null);     // { type: 'delete'|'level', level? }
 
+  // Online-admins modal
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [admins, setAdmins] = useState([]);
+  const [adminsLoading, setAdminsLoading] = useState(false);
+
   const loadOverview = useCallback(async () => {
     try {
       const ov = await getOverview();
@@ -83,6 +88,29 @@ const AdminUsers = () => {
   }, []);
 
   useEffect(() => { loadOverview(); }, [loadOverview]);
+
+  // Load the admin list whenever the modal opens (fresh presence each time).
+  useEffect(() => {
+    if (!showAdminModal) return;
+    setAdminsLoading(true);
+    getAdmins()
+      .then((d) => setAdmins(d.admins || []))
+      .catch(() => setAdmins([]))
+      .finally(() => setAdminsLoading(false));
+  }, [showAdminModal]);
+
+  // Sort: online admins first (highest level on top), then offline admins
+  // (grayed, most-recently-seen first).
+  const sortedAdmins = useMemo(() => {
+    const ts = (a) => (a.last_seen ? new Date(a.last_seen).getTime() : 0);
+    const online = admins
+      .filter((a) => a.online)
+      .sort((a, b) => b.admin_level - a.admin_level || (a.name || '').localeCompare(b.name || ''));
+    const offline = admins
+      .filter((a) => !a.online)
+      .sort((a, b) => ts(b) - ts(a));
+    return [...online, ...offline];
+  }, [admins]);
 
   const flash = (msg) => { setActionMsg(msg); setTimeout(() => setActionMsg(''), 2500); };
 
@@ -171,6 +199,17 @@ const AdminUsers = () => {
             <StatCard icon={Users}   label="סה״כ משתמשים" value={overview.total}   color="#22d3ee" />
             <StatCard icon={Wifi}    label="מחוברים"       value={overview.online}  color="#22c55e" />
             <StatCard icon={WifiOff} label="מנותקים"       value={overview.offline} color="#94a3b8" />
+            <button
+              className="admin-stat-card-btn"
+              onClick={() => setShowAdminModal(true)}
+              title="הצג אדמינים מחוברים"
+            >
+              <div className="admin-stat-icon" style={{ color: '#f59e0b' }}><ShieldCheck size={18} /></div>
+              <div className="admin-stat-body">
+                <span className="admin-stat-value">{overview.admins_online ?? 0}</span>
+                <span className="admin-stat-label">אדמינים מחוברים</span>
+              </div>
+            </button>
           </div>
         )}
 
@@ -354,6 +393,56 @@ const AdminUsers = () => {
                 </>
               )}
               <button className="admin-modal-cancel" onClick={() => setConfirm(null)} disabled={busy}>ביטול</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Online-admins modal (centered) */}
+      <AnimatePresence>
+        {showAdminModal && (
+          <motion.div className="admin-modal-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setShowAdminModal(false)}>
+            <motion.div className="admin-modal-card admin-list-modal" onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}>
+              <h3 className="admin-modal-title">
+                <ShieldCheck size={18} style={{ verticalAlign: '-3px', marginLeft: 6 }} />
+                אדמינים
+              </h3>
+              <p className="admin-modal-body" style={{ marginBottom: 14 }}>
+                {overview?.admins_online ?? 0} מחוברים מתוך {admins.length}
+              </p>
+
+              {adminsLoading ? (
+                <div className="admin-loading">טוען...</div>
+              ) : sortedAdmins.length === 0 ? (
+                <p className="admin-modal-body">אין אדמינים.</p>
+              ) : (
+                <div className="admin-list">
+                  {sortedAdmins.map((a) => {
+                    const color = a.online
+                      ? (a.admin_level >= 2 ? '#ef4444' : '#22c55e')
+                      : '#6b7280';
+                    const levelLabel = a.admin_level >= 2 ? 'אדמין רמה 2' : 'אדמין רמה 1';
+                    return (
+                      <div key={a.user_id} className={`admin-list-row${a.online ? '' : ' offline'}`}>
+                        <span className="admin-list-dot" style={{ background: color }} />
+                        <div className="admin-list-info">
+                          <span className="admin-list-name" style={{ color: a.online ? '#fff' : '#9ca3af' }}>
+                            {a.name || a.email}
+                          </span>
+                          <span className="admin-list-meta" style={{ color }}>
+                            {levelLabel}{a.online ? ' • מחובר' : ` • נראה ${relTime(a.last_seen)}`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <button className="admin-modal-cancel" onClick={() => setShowAdminModal(false)}>סגור</button>
             </motion.div>
           </motion.div>
         )}

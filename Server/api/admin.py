@@ -21,6 +21,7 @@ from core.auth import verify_admin, verify_super_admin
 from services.user_service import (
     get_users_overview,
     get_user_admin_view,
+    list_admins,
     admin_set_password,
     admin_update_user,
     admin_set_admin_level,
@@ -83,6 +84,13 @@ async def overview(current_user: dict = Depends(verify_admin)):
     """User counts: total / online / offline / admins, plus the caller's own admin
     level so the UI can gate actions. (admin level 1+)"""
     return {"status": "success", "actor_level": current_user["admin_level"], **get_users_overview()}
+
+
+@router.get("/admins")
+async def admins_list(current_user: dict = Depends(verify_admin)):
+    """All admin accounts (level 1+) with presence + last_seen, for the admin-status
+    modal. Any admin (level 1 or 2) may view. (level 1+)"""
+    return {"status": "success", "admins": list_admins(), "actor_level": current_user["admin_level"]}
 
 
 @router.get("/user")

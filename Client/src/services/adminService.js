@@ -7,9 +7,15 @@
 
 import apiClient from '../api/client';
 
-/** GET /admin/overview → { total, online, offline, admins, actor_level } */
+/** GET /admin/overview → { total, online, offline, admins, admins_online, actor_level } */
 export const getOverview = async () => {
   const { data } = await apiClient.get('/admin/overview');
+  return data;
+};
+
+/** GET /admin/admins → { admins:[{user_id,name,email,admin_level,online,last_seen}], actor_level } */
+export const getAdmins = async () => {
+  const { data } = await apiClient.get('/admin/admins');
   return data;
 };
 

@@ -744,17 +744,39 @@ def is_last_super_admin(user_id: str) -> bool:
 
 
 def get_users_overview() -> dict:
-    """Aggregate counts for the admin dashboard: total / online / offline / admins."""
+    """Aggregate counts for the admin dashboard: total / online / offline / admins /
+    admins_online."""
     from services.presence import get_online_user_ids
+    online_ids = get_online_user_ids()
     total = _users().count_documents({})
-    online = len(get_online_user_ids())
-    admins = _users().count_documents({"admin_level": {"$gte": 1}})
+    online = len(online_ids)
+    admin_ids = {p["user_id"] for p in _users().find({"admin_level": {"$gte": 1}}, {"user_id": 1})}
     return {
         "total": total,
         "online": online,
         "offline": max(0, total - online),
-        "admins": admins,
+        "admins": len(admin_ids),
+        "admins_online": len(admin_ids & online_ids),
     }
+
+
+def list_admins() -> list:
+    """All admin accounts (level 1+) with presence + last_seen, for the admin-status
+    modal. Returned unsorted — the client sorts (online first by level, then offline
+    by last_seen). Any admin (level 1+) may view this."""
+    from services.presence import is_online
+    admins = []
+    for p in _users().find({"admin_level": {"$gte": 1}}):
+        uid = p["user_id"]
+        admins.append({
+            "user_id": uid,
+            "name": p.get("name"),
+            "email": p.get("email"),
+            "admin_level": _admin_level_of(p),
+            "online": is_online(uid),
+            "last_seen": p.get("last_seen"),
+        })
+    return admins
 
 
 def _admin_level_of(profile: dict) -> int:
