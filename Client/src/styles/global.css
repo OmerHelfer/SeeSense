@@ -2544,6 +2544,24 @@ button:active {
 
 .admin-list-row.offline { opacity: 0.65; }
 
+/* Clickable admin row (opens full user detail) */
+.admin-list-row.clickable {
+  width: 100%;
+  font-family: inherit;
+  text-align: right;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.admin-list-row.clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(34, 211, 238, 0.4);
+}
+.admin-list-chevron {
+  flex: 0 0 auto;
+  margin-right: auto;   /* push to the visual-left in RTL */
+  color: var(--text-3);
+}
+
 .admin-list-dot {
   flex: 0 0 auto;
   width: 10px;
@@ -3192,6 +3210,32 @@ button:active {
 }
 .au-info-label { color: rgba(255, 255, 255, 0.45); }
 .au-info-value { color: #fff; }
+
+/* Emergency-contacts list in the user-detail card */
+.au-contacts { display: flex; flex-direction: column; gap: 8px; }
+.au-contact {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.au-contact-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.au-contact-name { font-size: 0.86rem; font-weight: 600; color: #fff; }
+.au-contact-status { font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+.au-contact-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+.au-contact-sub span { display: inline-flex; align-items: center; gap: 4px; }
 
 .au-edit-grid {
   display: grid;

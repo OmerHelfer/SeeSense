@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   ArrowRight, Search, Users, Wifi, WifiOff, Shield, ShieldCheck,
   KeyRound, Edit2, Save, X, Trash2, AlertTriangle, CheckCircle,
+  ChevronLeft, Phone, Mail, LifeBuoy,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -114,12 +115,14 @@ const AdminUsers = () => {
 
   const flash = (msg) => { setActionMsg(msg); setTimeout(() => setActionMsg(''), 2500); };
 
-  const doSearch = async (e) => {
-    e?.preventDefault();
-    if (!email.trim()) return;
+  // Core lookup — shared by the email search box and by clicking an admin in the
+  // modal (both just resolve an email to the full admin-view of that user).
+  const lookupUser = useCallback(async (emailToSearch) => {
+    const q = (emailToSearch ?? '').trim();
+    if (!q) return;
     setLoading(true); setError(''); setTarget(null); setEditing(false); setPwValue('');
     try {
-      const { user } = await getUserByEmail(email.trim());
+      const { user } = await getUserByEmail(q);
       setTarget(user);
       setEditData({
         name: user.name ?? '', phone: user.phone ?? '', country: user.country ?? '',
@@ -130,6 +133,16 @@ const AdminUsers = () => {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const doSearch = (e) => { e?.preventDefault(); lookupUser(email); };
+
+  // Clicking an admin in the modal opens their full detail, exactly as an email
+  // search would: close the modal, fill the search box, and load the profile.
+  const openAdminDetail = (a) => {
+    setShowAdminModal(false);
+    setEmail(a.email);
+    lookupUser(a.email);
   };
 
   const refreshTarget = async () => {
@@ -313,6 +326,36 @@ const AdminUsers = () => {
               )}
             </div>
 
+            {/* Emergency contacts (full list — full detail, same as searching by email) */}
+            <div className="au-section">
+              <div className="au-section-head">
+                <span><LifeBuoy size={14} /> אנשי קשר לחירום ({target.emergency_contacts?.length ?? 0})</span>
+              </div>
+              {(!target.emergency_contacts || target.emergency_contacts.length === 0) ? (
+                <p className="au-hint">אין אנשי קשר לחירום.</p>
+              ) : (
+                <div className="au-contacts">
+                  {target.emergency_contacts.map((c, i) => {
+                    const verified = c.status === 'verified';
+                    return (
+                      <div key={i} className="au-contact">
+                        <div className="au-contact-main">
+                          <span className="au-contact-name">{c.name}</span>
+                          <span className="au-contact-status" style={{ color: verified ? '#22c55e' : '#f59e0b' }}>
+                            {verified ? 'מאומת' : 'ממתין לאימות'}
+                          </span>
+                        </div>
+                        <div className="au-contact-sub">
+                          {c.phone && <span dir="ltr"><Phone size={11} /> {c.phone}</span>}
+                          {c.email && <span dir="ltr"><Mail size={11} /> {c.email}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Change password */}
             {canManage && (
               <div className="au-section">
@@ -426,7 +469,8 @@ const AdminUsers = () => {
                       : '#6b7280';
                     const levelLabel = a.admin_level >= 2 ? 'אדמין רמה 2' : 'אדמין רמה 1';
                     return (
-                      <div key={a.user_id} className={`admin-list-row${a.online ? '' : ' offline'}`}>
+                      <button key={a.user_id} className={`admin-list-row clickable${a.online ? '' : ' offline'}`}
+                        onClick={() => openAdminDetail(a)} title="הצג פרטים מלאים">
                         <span className="admin-list-dot" style={{ background: color }} />
                         <div className="admin-list-info">
                           <span className="admin-list-name" style={{ color: a.online ? '#fff' : '#9ca3af' }}>
@@ -436,7 +480,8 @@ const AdminUsers = () => {
                             {levelLabel}{a.online ? ' • מחובר' : ` • נראה ${relTime(a.last_seen)}`}
                           </span>
                         </div>
-                      </div>
+                        <ChevronLeft size={16} className="admin-list-chevron" />
+                      </button>
                     );
                   })}
                 </div>
