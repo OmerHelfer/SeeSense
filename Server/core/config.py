@@ -30,7 +30,7 @@ MAX_INPUT_SIZE = 640
 # client reads it automatically when the WebSocket connects.
 # This is a CEILING — depth-1 backpressure self-throttles the real rate to ~1/RTT,
 # so a high value here just lets the client run as fast as the pipe actually allows.
-TARGET_FPS = 15
+TARGET_FPS = 30
 
 # ==================== Inference ====================
 CONFIDENCE_THRESHOLD = 0.4
