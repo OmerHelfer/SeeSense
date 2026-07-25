@@ -203,17 +203,26 @@ const Settings = () => {
   // and the live runtime reflect it immediately.
   const setFb = (key) => (val) => setFeedbackSettings({ [key]: val });
 
-  // Changing the alert channel forces the disabled channel to 0, and restores
-  // any zeroed channel to a sensible default when re-enabling both.
+  // When alert channel changes: disable one channel (→ 0), or restore disabled channels
+  // (0 → 0.8) when re-enabling both.
   const handleAlertType = (next) => {
     const fb = getFeedbackSettings();
     const patch = { alert_type: next };
-    if (next === 'audio')  patch.vibration_intensity = 0;
-    if (next === 'haptic') patch.volume_intensity = 0;
-    if (next === 'both') {
-      if ((fb.volume_intensity ?? 0) === 0)    patch.volume_intensity = 0.8;
-      if ((fb.vibration_intensity ?? 0) === 0) patch.vibration_intensity = 0.8;
+
+    if (next === 'audio') {
+      // Audio only — silence vibration
+      patch.vibration_intensity = 0;
+    } else if (next === 'haptic') {
+      // Haptic only — silence audio
+      patch.volume_intensity = 0;
+    } else if (next === 'both') {
+      // Both enabled — restore any that were zeroed
+      const vol = fb.volume_intensity ?? 0;
+      const vib = fb.vibration_intensity ?? 0;
+      if (vol === 0) patch.volume_intensity = 0.8;
+      if (vib === 0) patch.vibration_intensity = 0.8;
     }
+
     setFeedbackSettings(patch);
   };
 
