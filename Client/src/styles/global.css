@@ -2070,6 +2070,11 @@ button:active {
   animation: health-pulse 1.5s ease-in-out infinite;
 }
 
+/* Green = stable connection: steady label, no pulsing (pulsing implies a warning). */
+.health-label.green {
+  animation: none;
+}
+
 .health-ms {
   font-size: 0.68rem;
   font-weight: 700;
