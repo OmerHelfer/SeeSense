@@ -36,23 +36,21 @@ export const INPUT_SIZE = 512;
 
 /**
  * Pipeline depth — how many frames may be "in flight" (sent, awaiting a result)
- * at once. Trades per-frame LATENCY against throughput (FPS).
+ * at once. Balances per-frame latency (how long before an alert reaches the user)
+ * against throughput (FPS). Each in-flight frame queues behind others at the server.
  *
- * The server processes frames serially (~57ms each), so a frame sent while N
- * others are already in flight waits behind them before it's even touched:
- *
- *     per-frame latency ≈ network_RTT + depth × server_time
+ *     per-frame latency ≈ network_RTT + depth × server_processing_time
  *     throughput        ≈ min(1/server_time, depth / network_RTT)
  *
- * With our measured numbers (network ≈ 71ms, server ≈ 57ms):
- *   1 → ~8 FPS,  latency ~128ms   (server sits idle between round-trips)
- *   2 → ~15 FPS, latency ~185ms   ← sweet spot: near-full FPS, low latency
- *   4 → ~17 FPS, latency ~250ms   (extra depth buys ~2 FPS for +65ms latency)
+ * With INPUT_SIZE=512 (now optimized to ~41ms per frame on the server) and
+ * measured network ≈ 131ms:
+ *   1 → ~7 FPS,  latency ~131ms   (server sits idle)
+ *   2 → ~13 FPS, latency ~172ms
+ *   4 → ~22 FPS, latency ~216ms   ← current: 96% efficiency, good FPS + safety
  *
- * The server caps at ~17.5 FPS (1/57ms) no matter how deep we go, so depth
- * beyond ~2–3 mostly adds queue latency without real throughput. For a
- * walking-safety app, reaction latency matters more than the last couple FPS,
- * so we keep this low. It's bounded (unlike fire-and-forget) — at most this many
- * frames are ever queued, no runaway backlog. Also capped by TARGET_FPS.
+ * At depth 4 we're hitting the ceiling (~23.5 FPS). For a blind pedestrian safety
+ * app, 22 FPS is plenty smooth, and 216ms total lag = 3m at 50km/h reaction
+ * distance — acceptable for urban use. Bounded queue (no fire-and-forget backlog);
+ * also capped by server TARGET_FPS.
  */
 export const MAX_INFLIGHT = 4;
