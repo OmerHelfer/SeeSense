@@ -32,7 +32,7 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
         msg["Subject"] = subject
         msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
             server.starttls()
             server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
             server.send_message(msg)

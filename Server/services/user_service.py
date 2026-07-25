@@ -424,9 +424,22 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
     expired = _cleanup_expired_contacts(user_id)
     if expired:
         from services.email_service import send_contact_expired_notification
+        import threading
         profile = _users().find_one({"user_id": user_id})
-        for exp_email, exp_name in expired:
-            send_contact_expired_notification(profile["email"], profile["name"], exp_name)
+
+        # Background thread — blocking SMTP here would freeze the async event loop.
+        def _notify_expired(to_email, to_name, items):
+            for _exp_email, exp_name in items:
+                try:
+                    send_contact_expired_notification(to_email, to_name, exp_name)
+                except Exception as e:
+                    logger.error(f"Failed to send contact-expired notification: {e}")
+
+        threading.Thread(
+            target=_notify_expired,
+            args=(profile["email"], profile["name"], expired),
+            daemon=True,
+        ).start()
 
     profile = _users().find_one({"user_id": user_id})
     if not profile:
@@ -681,15 +694,26 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
     # Persist alert to DB
     _emergency_alerts().insert_one(alert.copy())
 
-    # Send email to each verified contact
-    for contact in contacts:
-        send_emergency_alert_email(
-            contact["email"],
-            contact["name"],
-            profile["name"],
-            maps_link
-        )
-        logger.warning(f"EMERGENCY ALERT to {contact['name']} ({contact['email']}): {maps_link}")
+    # Send emails on a background thread and return immediately. Blocking SMTP
+    # here would run on the async event loop and freeze the WHOLE server — the
+    # /health pings would time out (watchdog → RED "connection lost") and every
+    # other request/WebSocket would stall until all emails finished sending.
+    import threading
+
+    def _notify_contacts():
+        for contact in contacts:
+            try:
+                send_emergency_alert_email(
+                    contact["email"],
+                    contact["name"],
+                    profile["name"],
+                    maps_link,
+                )
+                logger.warning(f"EMERGENCY ALERT to {contact['name']} ({contact['email']}): {maps_link}")
+            except Exception as e:
+                logger.error(f"Failed to send emergency alert to {contact.get('email')}: {e}")
+
+    threading.Thread(target=_notify_contacts, daemon=True).start()
 
     return alert
 
