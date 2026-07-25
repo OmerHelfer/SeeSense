@@ -36,16 +36,23 @@ export const INPUT_SIZE = 640;
 
 /**
  * Pipeline depth — how many frames may be "in flight" (sent, awaiting a result)
- * at once. This is the throughput knob when the NETWORK is the bottleneck.
+ * at once. Trades per-frame LATENCY against throughput (FPS).
  *
- *   1     = one round-trip at a time → FPS capped at 1/RTT (e.g. 250ms → ~4 FPS)
- *           even while the server sits idle.
- *   2..6  = fill the network pipe → throughput ≈ depth/RTT (e.g. 4 → ~16 FPS),
- *           while each frame's latency stays ~one RTT.
+ * The server processes frames serially (~57ms each), so a frame sent while N
+ * others are already in flight waits behind them before it's even touched:
  *
- * It's bounded (unlike fire-and-forget), so at most this many frames are ever
- * queued — no runaway backlog. Keep it small: too high and frames can pile up on
- * a slow server and go stale. Effective FPS is also capped by the server's
- * TARGET_FPS (capture rate).
+ *     per-frame latency ≈ network_RTT + depth × server_time
+ *     throughput        ≈ min(1/server_time, depth / network_RTT)
+ *
+ * With our measured numbers (network ≈ 71ms, server ≈ 57ms):
+ *   1 → ~8 FPS,  latency ~128ms   (server sits idle between round-trips)
+ *   2 → ~15 FPS, latency ~185ms   ← sweet spot: near-full FPS, low latency
+ *   4 → ~17 FPS, latency ~250ms   (extra depth buys ~2 FPS for +65ms latency)
+ *
+ * The server caps at ~17.5 FPS (1/57ms) no matter how deep we go, so depth
+ * beyond ~2–3 mostly adds queue latency without real throughput. For a
+ * walking-safety app, reaction latency matters more than the last couple FPS,
+ * so we keep this low. It's bounded (unlike fire-and-forget) — at most this many
+ * frames are ever queued, no runaway backlog. Also capped by TARGET_FPS.
  */
-export const MAX_INFLIGHT = 4;
+export const MAX_INFLIGHT = 2;
