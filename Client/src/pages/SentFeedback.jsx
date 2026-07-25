@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Flag, CheckCircle, Trash2, Edit3, ChevronLeft, AlertTriangle, Save } from 'lucide-react';
+import { ArrowRight, Flag, CheckCircle, Trash2, Edit3, ChevronLeft, AlertTriangle, Save, Lock, MessageSquare, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getSubmittedFeedback, deleteFeedback, updateFeedback } from '../services/userService';
+import { getSubmittedFeedback, deleteFeedback, updateFeedback, markResponsesSeen } from '../services/userService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -166,12 +166,18 @@ const SentFeedback = () => {
   const [loading,   setLoading]   = useState(true);
   const [loadError, setLoadError] = useState('');
   const [editing,   setEditing]   = useState(null);
+  const [responseView, setResponseView] = useState(null);  // item whose full team response is open
 
   const loadFeedback = useCallback(async () => {
     setLoading(true); setLoadError('');
     try {
       const feedbacks = await getSubmittedFeedback();
       setItems(feedbacks);
+      // Any unseen team responses are now on screen → clear the badge (keeps the
+      // "חדש" highlight for this visit since local items still read as unseen).
+      if (feedbacks.some((f) => f.handling_status === 'resolved' && f.response_seen === false)) {
+        markResponsesSeen().catch(() => {});
+      }
     } catch (err) {
       const detail = err?.response?.data?.detail;
       setLoadError(typeof detail === 'string' ? detail : 'לא ניתן לטעון משובים.');
@@ -239,6 +245,10 @@ const SentFeedback = () => {
                       const snap = item.detection_snapshot;
                       const objs = snap?.objects ?? [];
                       const names = objs.length > 0 ? objs.map((o) => hebrewName(o.class_name)).join(', ') : null;
+                      // Editable only while still pending — locked once an admin takes it.
+                      const locked   = item.handling_status === 'in_progress' || item.handling_status === 'resolved';
+                      const hasReply = item.handling_status === 'resolved' && item.admin_response;
+                      const isNew    = hasReply && item.response_seen === false;
 
                       return (
                         <motion.div key={id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -270,6 +280,11 @@ const SentFeedback = () => {
                                   </span>
                                 );
                               })()}
+                              {isNew && (
+                                <span className="sf-new-pill">
+                                  <span className="sf-new-dot" /> תשובה חדשה
+                                </span>
+                              )}
                             </div>
                             <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
                               {formatDate(item.created_at)}
@@ -296,31 +311,36 @@ const SentFeedback = () => {
                             </p>
                           )}
 
-                          {/* Team response (once an admin has resolved it) */}
-                          {item.handling_status === 'resolved' && item.admin_response && (
-                            <div style={{
-                              background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.3)',
-                              borderRadius: 'var(--r-sm)', padding: '10px 12px', margin: '0 0 8px 0',
-                            }}>
-                              <span style={{ fontSize: 11, color: 'var(--safe)', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
-                                תשובת הצוות
+                          {/* Team response (once an admin has resolved it) — click to read in full */}
+                          {hasReply && (
+                            <button className="sf-response" onClick={() => setResponseView(item)}>
+                              <span className="sf-response-label">
+                                <MessageSquare size={12} /> תשובת הצוות
                                 {item.handling_admin_name ? ` · ${item.handling_admin_name}` : ''}
                               </span>
-                              <p style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)', margin: '4px 0 0 0', lineHeight: 1.5 }}>
-                                {item.admin_response}
-                              </p>
-                            </div>
+                              <p className="sf-response-preview">{item.admin_response}</p>
+                              <span className="sf-response-more">הצג הודעה מלאה ›</span>
+                            </button>
                           )}
 
-                          {/* Actions: edit + delete */}
-                          <div style={{ display: 'flex', gap: 16 }}>
-                            <button onClick={() => setEditing(item)} style={{
-                              display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0',
-                              border: 'none', background: 'none', color: 'var(--cyan)',
-                              fontSize: 12, fontFamily: 'var(--font-body)', cursor: 'pointer',
-                            }}>
-                              <Edit3 size={12} /> ערוך
-                            </button>
+                          {/* Actions: edit (only while pending) + delete */}
+                          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                            {locked ? (
+                              <span style={{
+                                display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0',
+                                color: 'var(--text-3)', fontSize: 12, fontFamily: 'var(--font-body)',
+                              }}>
+                                <Lock size={12} /> ננעל לעריכה (בטיפול)
+                              </span>
+                            ) : (
+                              <button onClick={() => setEditing(item)} style={{
+                                display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0',
+                                border: 'none', background: 'none', color: 'var(--cyan)',
+                                fontSize: 12, fontFamily: 'var(--font-body)', cursor: 'pointer',
+                              }}>
+                                <Edit3 size={12} /> ערוך
+                              </button>
+                            )}
                             <button onClick={() => handleDelete(id)} style={{
                               display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0',
                               border: 'none', background: 'none', color: 'var(--text-3)',
@@ -340,6 +360,33 @@ const SentFeedback = () => {
         </AnimatePresence>
         <div style={{ height: 40 }} />
       </div>
+
+      {/* Full team-response modal */}
+      <AnimatePresence>
+        {responseView && (
+          <motion.div className="admin-modal-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setResponseView(null)}>
+            <motion.div className="admin-modal-card" onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}>
+              <div className="admin-modal-icon" style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+                <MessageSquare size={26} />
+              </div>
+              <h3 className="admin-modal-title">תשובת הצוות</h3>
+              {responseView.handling_admin_name && (
+                <p className="admin-modal-body" style={{ marginBottom: 8, color: 'var(--safe)' }}>
+                  {responseView.handling_admin_name}
+                  {responseView.resolved_at ? ` · ${formatDate(responseView.resolved_at)}` : ''}
+                </p>
+              )}
+              <p className="sf-response-full">{responseView.admin_response}</p>
+              <button className="admin-modal-cancel" onClick={() => setResponseView(null)}>
+                <X size={15} style={{ verticalAlign: '-2px' }} /> סגור
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

@@ -267,6 +267,25 @@
      const { data } = await apiClient.delete(`/users/feedback/${feedback_id}`);
      return data;
    };
+
+   /**
+    * GET /users/feedback/responses/unseen_count → number of team responses the user
+    * hasn't seen yet (drives the "new response" badge).
+    */
+   export const getUnseenResponseCount = async () => {
+     try {
+       const { data } = await apiClient.get('/users/feedback/responses/unseen_count');
+       return data.count ?? 0;
+     } catch { return 0; }
+   };
+
+   /**
+    * POST /users/feedback/responses/seen → mark all team responses as seen (clears badge).
+    */
+   export const markResponsesSeen = async () => {
+     const { data } = await apiClient.post('/users/feedback/responses/seen');
+     return data;
+   };
    
    /**
     * POST /users/forgot_password (rate-limited: 3/min)

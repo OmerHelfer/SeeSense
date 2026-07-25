@@ -2787,6 +2787,184 @@ button:active {
 .afb-assign-row:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(167, 139, 250, 0.4); }
 .afb-assign-row:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ══════════ Clickable user header in a feedback card ══════════ */
+.afb-user-btn {
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: right;
+  cursor: pointer;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+.afb-user-btn:hover { background: rgba(255, 255, 255, 0.05); }
+.afb-user-chevron { color: var(--text-3); margin-right: 2px; flex-shrink: 0; }
+
+/* ══════════ User-details modal (feedback management) ══════════ */
+.afb-user-detail { text-align: right; margin-bottom: 6px; }
+
+.afb-ud-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.afb-ud-avatar {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(34, 211, 238, 0.12);
+  color: #22d3ee;
+  flex-shrink: 0;
+}
+.afb-ud-dot {
+  position: absolute;
+  bottom: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--bg, #0b0f14);
+}
+.afb-ud-name { font-size: 1rem; font-weight: 700; color: var(--text); }
+.afb-ud-status { font-size: 0.72rem; margin-top: 2px; }
+
+.afb-ud-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.afb-ud-row-icon { color: var(--text-3); flex-shrink: 0; }
+.afb-ud-row-label { font-size: 0.78rem; color: var(--text-3); }
+.afb-ud-row-value {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.afb-ud-counts {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.afb-ud-count {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.66rem;
+  color: var(--text-3);
+}
+.afb-ud-count span { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+
+/* ══════════ "משובים שנשלחו" nav-row badge + feedback notifications ══════════ */
+.nav-row-badge {
+  margin-right: auto;   /* push to the visual-left, before the arrow */
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.nav-row-badge + .nav-row-arrow { margin-right: 10px; }
+
+/* "new response" pill on a sent-feedback card */
+.sf-new-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  color: #fff;
+  background: #ef4444;
+}
+.sf-new-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: health-pulse 1.2s ease-in-out infinite;
+}
+
+/* Clickable team-response block on a sent-feedback card */
+.sf-response {
+  display: block;
+  width: 100%;
+  text-align: right;
+  background: rgba(34, 197, 94, 0.07);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  margin: 0 0 8px 0;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sf-response:hover { background: rgba(34, 197, 94, 0.12); }
+.sf-response-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--safe);
+  font-weight: 600;
+}
+.sf-response-preview {
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 4px 0 0 0;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sf-response-more {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cyan);
+}
+.sf-response-full {
+  text-align: right;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 18px;
+}
+
 /* ══════════ Confirm dialog (logout) ══════════ */
 .confirm-overlay {
   position: fixed;

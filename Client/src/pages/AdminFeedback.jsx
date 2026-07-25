@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   ArrowRight, MessageSquare, Clock, Loader, CheckCircle, AlertTriangle,
-  Hand, UserCheck, Send, X, User,
+  Hand, UserCheck, Send, X, User, Phone, Calendar, MapPin, Shield, Mail,
+  ChevronLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getFeedbackAdmin, takeFeedback, resolveFeedback, assignFeedback, getAdmins } from '../services/adminService';
+import { getFeedbackAdmin, takeFeedback, resolveFeedback, assignFeedback, getAdmins, getUserByEmail } from '../services/adminService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -47,6 +48,18 @@ function fmtDate(ts) {
   return `${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+// ── One labelled detail row in the user modal (hidden when value is empty) ──
+const DetailRow = ({ icon: Icon, label, value, ltr }) => {
+  if (value == null || value === '') return null;
+  return (
+    <div className="afb-ud-row">
+      <Icon size={15} className="afb-ud-row-icon" />
+      <span className="afb-ud-row-label">{label}</span>
+      <span className="afb-ud-row-value" dir={ltr ? 'ltr' : undefined}>{value}</span>
+    </div>
+  );
+};
+
 // ── Stat card (clickable = sets filter) ──
 const StatCard = ({ icon: Icon, label, value, color, active, onClick }) => (
   <button className={`admin-stat-card-btn${active ? ' active' : ''}`} onClick={onClick}
@@ -60,7 +73,7 @@ const StatCard = ({ icon: Icon, label, value, color, active, onClick }) => (
 );
 
 // ── One feedback card ──
-const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, busyId }) => {
+const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onUserClick, busyId }) => {
   const st = STATUS_META[item.handling_status] ?? STATUS_META.pending;
   const snap = item.detection_snapshot;
   const objs = snap?.objects ?? [];
@@ -73,15 +86,17 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, bus
 
   return (
     <div className="afb-card">
-      {/* Header: user + status */}
+      {/* Header: user (clickable → details) + status */}
       <div className="afb-head">
-        <div className="afb-user">
+        <button className="afb-user afb-user-btn" onClick={() => onUserClick(item)}
+          title="הצג פרטי משתמש">
           <User size={14} />
           <div>
             <div className="afb-user-name">{item.user_name || 'משתמש'}</div>
             <div className="afb-user-email" dir="ltr">{item.user_email}</div>
           </div>
-        </div>
+          <ChevronLeft size={15} className="afb-user-chevron" />
+        </button>
         <span className="afb-status" style={{ color: st.color, borderColor: st.color }}>
           <st.Icon size={12} /> {st.label}
         </span>
@@ -168,6 +183,12 @@ const AdminFeedback = () => {
   const [admins, setAdmins]           = useState([]);
   const [adminsLoading, setAdminsLoading] = useState(false);
 
+  // User-details modal
+  const [userModal, setUserModal]       = useState(null);  // the feedback item whose user we're viewing
+  const [userDetail, setUserDetail]     = useState(null);  // fetched full user
+  const [userLoading, setUserLoading]   = useState(false);
+  const [userError, setUserError]       = useState('');
+
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -186,6 +207,16 @@ const AdminFeedback = () => {
     setAdminsLoading(true);
     getAdmins().then((d) => setAdmins(d.admins || [])).catch(() => setAdmins([])).finally(() => setAdminsLoading(false));
   }, [assignItem]);
+
+  // Load the submitting user's full details when the user modal opens.
+  useEffect(() => {
+    if (!userModal?.user_email) return;
+    setUserLoading(true); setUserError(''); setUserDetail(null);
+    getUserByEmail(userModal.user_email)
+      .then((d) => setUserDetail(d.user))
+      .catch(() => setUserError('לא ניתן לטעון את פרטי המשתמש'))
+      .finally(() => setUserLoading(false));
+  }, [userModal]);
 
   const actorLevel = data?.actor_level ?? 0;
   const stats = data?.stats ?? { pending: 0, in_progress: 0, resolved: 0, total: 0 };
@@ -274,7 +305,8 @@ const AdminFeedback = () => {
           <div className="afb-list">
             {shown.map((item) => (
               <FeedbackCard key={item.feedback_id} item={item} actorLevel={actorLevel} myId={myId}
-                busyId={busyId} onTake={handleTake} onResolve={setResolveItem} onAssign={setAssignItem} />
+                busyId={busyId} onTake={handleTake} onResolve={setResolveItem} onAssign={setAssignItem}
+                onUserClick={setUserModal} />
             ))}
           </div>
         )}
@@ -344,6 +376,62 @@ const AdminFeedback = () => {
               )}
               <button className="admin-modal-cancel" onClick={() => setAssignItem(null)} disabled={busyId != null}>
                 <X size={15} style={{ verticalAlign: '-2px' }} /> ביטול
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── User details modal ── */}
+      <AnimatePresence>
+        {userModal && (
+          <motion.div className="admin-modal-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setUserModal(null)}>
+            <motion.div className="admin-modal-card admin-list-modal" onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}>
+              <h3 className="admin-modal-title">
+                <User size={18} style={{ verticalAlign: '-3px', marginLeft: 6 }} /> פרטי משתמש
+              </h3>
+
+              {userLoading && <div className="admin-loading">טוען פרטים...</div>}
+              {userError && <div className="admin-error">{userError}</div>}
+
+              {userDetail && (
+                <div className="afb-user-detail">
+                  <div className="afb-ud-hero">
+                    <div className="afb-ud-avatar">
+                      <User size={22} />
+                      <span className="afb-ud-dot" style={{ background: userDetail.online ? '#22c55e' : '#6b7280' }} />
+                    </div>
+                    <div>
+                      <div className="afb-ud-name">{userDetail.name || 'ללא שם'}</div>
+                      <div className="afb-ud-status" style={{ color: userDetail.online ? '#22c55e' : '#94a3b8' }}>
+                        {userDetail.online ? 'מחובר כעת' : `נראה לאחרונה: ${fmtDate(userDetail.last_seen) || '—'}`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <DetailRow icon={Mail}     label="אימייל"   value={userDetail.email} ltr />
+                  <DetailRow icon={Phone}    label="טלפון"    value={userDetail.phone} ltr />
+                  <DetailRow icon={MapPin}   label="מדינה"    value={userDetail.country} />
+                  <DetailRow icon={Calendar} label="תאריך לידה" value={userDetail.date_of_birth} />
+                  <DetailRow icon={Shield}   label="הרשאה"
+                    value={userDetail.admin_level >= 2 ? 'אדמין רמה 2' : userDetail.admin_level >= 1 ? 'אדמין רמה 1' : 'משתמש רגיל'} />
+                  <DetailRow icon={Calendar} label="הצטרף"    value={fmtDate(userDetail.created_at)} />
+
+                  {userDetail.data_counts && (
+                    <div className="afb-ud-counts">
+                      <div className="afb-ud-count"><span>{userDetail.data_counts.detections ?? 0}</span>זיהויים</div>
+                      <div className="afb-ud-count"><span>{userDetail.data_counts.feedback ?? 0}</span>משובים</div>
+                      <div className="afb-ud-count"><span>{userDetail.data_counts.sos_alerts ?? 0}</span>קריאות SOS</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button className="admin-modal-cancel" onClick={() => setUserModal(null)}>
+                <X size={15} style={{ verticalAlign: '-2px' }} /> סגור
               </button>
             </motion.div>
           </motion.div>

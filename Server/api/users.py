@@ -43,6 +43,8 @@ from services.user_service import (
     update_feedback,
     submit_feedback,
     delete_feedback,
+    count_unseen_responses,
+    mark_responses_seen,
     add_emergency_contact,
     verify_emergency_contact,
     resend_contact_code,
@@ -351,12 +353,28 @@ async def get_all(current_user: dict = Depends(verify_token)):
 async def update_feedback_endpoint(feedback_id: str, update: FeedbackUpdate, current_user: dict = Depends(verify_token)):
     """
     Companion adds notes to a pending feedback.
-    Automatically marks as submitted.
+    Automatically marks as submitted. Blocked once an admin is handling it.
     """
-    result = update_feedback(current_user["user_id"], feedback_id, update.notes, update.feedback_type)
+    try:
+        result = update_feedback(current_user["user_id"], feedback_id, update.notes, update.feedback_type)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     if not result:
         raise HTTPException(status_code=404, detail="Feedback not found")
     return {"status": "success", "message": "Feedback updated and submitted", "feedback": result}
+
+
+@router.get("/feedback/responses/unseen_count")
+async def unseen_responses_count(current_user: dict = Depends(verify_token)):
+    """How many resolved-feedback responses the user hasn't seen yet (badge count)."""
+    return {"status": "success", "count": count_unseen_responses(current_user["user_id"])}
+
+
+@router.post("/feedback/responses/seen")
+async def mark_responses_seen_endpoint(current_user: dict = Depends(verify_token)):
+    """Mark all of the user's team responses as seen (clears the notification badge)."""
+    updated = mark_responses_seen(current_user["user_id"])
+    return {"status": "success", "updated": updated}
 
 
 @router.post("/feedback/{feedback_id}/submit")

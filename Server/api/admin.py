@@ -32,10 +32,17 @@ from services.user_service import (
     admin_resolve_feedback,
     admin_assign_feedback,
 )
+from services.email_service import send_feedback_response_email
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+def _send_email_background(func, *args):
+    """Send email in a background thread — doesn't block the response."""
+    import threading
+    threading.Thread(target=func, args=args, daemon=True).start()
 
 
 # ==================== Schemas ====================
@@ -207,6 +214,9 @@ async def feedback_resolve(feedback_id: str, req: ResolveFeedbackRequest,
         raise HTTPException(status_code=400, detail=str(e))
     if not result:
         raise HTTPException(status_code=404, detail="Feedback not found")
+    # Let the user know their feedback was handled (in-app badge + email).
+    if result.get("user_email"):
+        _send_email_background(send_feedback_response_email, result["user_email"], result.get("user_name") or "")
     return {"status": "success", "feedback": result}
 
 

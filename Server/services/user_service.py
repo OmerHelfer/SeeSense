@@ -379,7 +379,15 @@ def get_all_feedback(user_id: str) -> list[dict]:
 
 
 def update_feedback(user_id: str, feedback_id: str, notes: str = None, feedback_type: str = None) -> dict:
-    """Companion updates a feedback — adds notes and/or changes type. Marks as submitted."""
+    """Companion updates a feedback — adds notes and/or changes type. Marks as submitted.
+    Locked once an admin starts handling it: editing is only allowed while the feedback
+    is still 'pending' (nobody has taken/resolved it)."""
+    existing = _feedback().find_one({"_id": ObjectId(feedback_id), "user_id": user_id})
+    if not existing:
+        return None
+    if _norm_handling(existing) != "pending":
+        raise ValueError("המשוב כבר בטיפול ולא ניתן לערוך אותו")
+
     updates = {"updated_at": datetime.now().isoformat(), "status": "submitted"}
     if notes is not None:
         updates["notes"] = notes
@@ -414,6 +422,26 @@ def delete_feedback(user_id: str, feedback_id: str) -> bool:
     """Delete a feedback entry."""
     result = _feedback().delete_one({"_id": ObjectId(feedback_id), "user_id": user_id})
     return result.deleted_count > 0
+
+
+def count_unseen_responses(user_id: str) -> int:
+    """Number of resolved feedbacks whose admin response the user hasn't seen yet.
+    Drives the 'new response' badge. Legacy docs (no response_seen field) don't count."""
+    return _feedback().count_documents({
+        "user_id": user_id,
+        "handling_status": "resolved",
+        "response_seen": False,
+    })
+
+
+def mark_responses_seen(user_id: str) -> int:
+    """Mark all of the user's resolved-feedback responses as seen (clears the badge).
+    Returns how many were updated."""
+    result = _feedback().update_many(
+        {"user_id": user_id, "handling_status": "resolved", "response_seen": False},
+        {"$set": {"response_seen": True}},
+    )
+    return result.modified_count
 
 
 # ==================== Admin feedback handling ====================
@@ -537,6 +565,7 @@ def admin_resolve_feedback(feedback_id: str, admin_id: str, admin_level: int, re
         "handling_status": "resolved",
         "admin_response": response.strip(),
         "resolved_at": now,
+        "response_seen": False,   # drives the user's "new response" notification
     }
     if not handler:
         updates["handling_admin_id"] = admin_id

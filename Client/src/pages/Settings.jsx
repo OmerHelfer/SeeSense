@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRight, Save, RotateCcw, Target, Bell, User, Users, Clock, Activity, Flag, MessageSquare, CheckCircle, ChevronDown, AlertTriangle, Sliders } from 'lucide-react';
+import { ArrowRight, Save, RotateCcw, Target, Bell, User, Users, Clock, Activity, Flag, MessageSquare, CheckCircle, ChevronDown, AlertTriangle, Sliders, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   getSettings,
@@ -18,6 +18,7 @@ import {
   isVibrationSupported,
   previewVoice,
 } from '../services/feedbackService';
+import { getUnseenResponseCount } from '../services/userService';
 
 // ── Hebrew labels + emoji for each detectable class ──────
 const CLASS_META = {
@@ -78,6 +79,16 @@ const HudSlider = ({ label, emoji, value, onChange, disabled = false }) => (
   </div>
 );
 
+// Fields persisted by "שמור". A stable JSON snapshot of these lets us detect
+// unsaved edits (arrays sorted so class-order changes don't count as a diff).
+const PERSIST_KEYS = ['alert_type', 'volume_intensity', 'vibration_intensity',
+  'voice_gender', 'detection_sensitivity', 'high_risk_classes'];
+const snapshotOf = (s) => JSON.stringify(PERSIST_KEYS.reduce((acc, k) => {
+  const v = s?.[k];
+  acc[k] = Array.isArray(v) ? [...v].sort() : v;
+  return acc;
+}, {}));
+
 // ── Settings page ──────────────────────────────────────────
 const Settings = () => {
   const navigate = useNavigate();
@@ -95,6 +106,14 @@ const Settings = () => {
   // ── Collapsible state ──
   const [scanOpen, setScanOpen] = useState(false);
 
+  // ── Unsaved-changes guard on back ──
+  const [baseline, setBaseline]   = useState('');   // snapshot of last-saved settings
+  const [showLeave, setShowLeave] = useState(false);
+
+  // ── Unseen team-response count → badge on "משובים שנשלחו" ──
+  const [unseenResponses, setUnseenResponses] = useState(0);
+  useEffect(() => { getUnseenResponseCount().then(setUnseenResponses); }, []);
+
   // ── Voice availability (async — voices load after page mount) ──
   const [voiceInfo, setVoiceInfo] = useState(getVoiceInfo());
   const vibrationSupported = isVibrationSupported();
@@ -105,6 +124,7 @@ const Settings = () => {
     Promise.all([getSettings(userId), getAvailableClasses()])
       .then(([s, classes]) => {
         setSettings(s);
+        setBaseline(snapshotOf(s));   // remember the saved state for the unsaved-guard
         seedFeedbackSettings(s);   // feed the shared runtime store
         setAvailableClasses(classes);
       })
@@ -155,7 +175,9 @@ const Settings = () => {
   };
 
   // ── Save ──
-  const handleSave = async () => {
+  // Core save — returns true on success. Shared by the "שמור" button and the
+  // "save & leave" path of the unsaved-changes guard.
+  const saveChanges = async () => {
     setSaving(true);
     setError('');
     setSaveOk(false);
@@ -169,15 +191,45 @@ const Settings = () => {
         high_risk_classes:     settings.high_risk_classes,
       });
       setSettings(updated);
+      setBaseline(snapshotOf(updated));
       seedFeedbackSettings(updated);
-      setSaveOk(true);
-      setTimeout(() => setSaveOk(false), 2500);
+      return true;
     } catch (err) {
       const detail = err?.response?.data?.detail;
       setError(typeof detail === 'string' ? detail : 'שמירה נכשלה. נסה שוב.');
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    const ok = await saveChanges();
+    if (ok) {
+      setSaveOk(true);
+      setTimeout(() => setSaveOk(false), 2500);
+    }
+  };
+
+  // True if the current settings differ from the last-saved snapshot.
+  const hasUnsavedChanges = () => !!baseline && !!settings && snapshotOf(settings) !== baseline;
+
+  // Back arrow: warn about unsaved edits instead of leaving silently.
+  const handleBack = () => {
+    if (hasUnsavedChanges()) setShowLeave(true);
+    else navigate('/');
+  };
+
+  const handleSaveAndLeave = async () => {
+    const ok = await saveChanges();
+    setShowLeave(false);
+    if (ok) navigate('/');
+    // On failure the modal closes so the error banner is visible; user stays on page.
+  };
+
+  const handleDiscardAndLeave = () => {
+    setShowLeave(false);
+    navigate('/');
   };
 
   // ── Reset to defaults ──
@@ -187,6 +239,7 @@ const Settings = () => {
     try {
       const defaults = await resetSettings(userId);
       setSettings(defaults);
+      setBaseline(snapshotOf(defaults));
       seedFeedbackSettings(defaults);
     } catch {
       setError('איפוס נכשל. נסה שוב.');
@@ -268,7 +321,7 @@ const Settings = () => {
     >
       {/* ── Header ── */}
       <header className="inner-page-header">
-        <button className="back-btn" onClick={() => navigate('/')} aria-label="חזרה">
+        <button className="back-btn" onClick={handleBack} aria-label="חזרה">
           <ArrowRight size={22} />
         </button>
         <span className="inner-page-title">הגדרות</span>
@@ -533,6 +586,9 @@ const Settings = () => {
         <button className="nav-row-btn" onClick={() => navigate('/feedback/sent')}>
           <CheckCircle size={18} />
           <span>משובים שנשלחו</span>
+          {unseenResponses > 0 && (
+            <span className="nav-row-badge">{unseenResponses > 9 ? '9+' : unseenResponses}</span>
+          )}
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
@@ -569,6 +625,37 @@ const Settings = () => {
 
         <div style={{ height: 40 }} />
       </div>
+
+      {/* Unsaved-changes confirmation on back (centered) */}
+      <AnimatePresence>
+        {showLeave && (
+          <motion.div className="admin-modal-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => !saving && setShowLeave(false)}>
+            <motion.div className="admin-modal-card" onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}>
+              <div className="admin-modal-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                <AlertTriangle size={26} />
+              </div>
+              <h3 className="admin-modal-title">יש לך שינויים שלא נשמרו</h3>
+              <p className="admin-modal-body">
+                שינית את ההגדרות אך עדיין לא שמרת. האם לשמור את השינויים לפני היציאה?
+              </p>
+              <button className="accent-btn" onClick={handleSaveAndLeave} disabled={saving}
+                style={{ width: '100%', justifyContent: 'center' }}>
+                <Save size={16} /> {saving ? 'שומר...' : 'שמור שינויים'}
+              </button>
+              <button className="admin-reset-btn confirm" onClick={handleDiscardAndLeave} disabled={saving}
+                style={{ marginTop: 10 }}>
+                <X size={16} /> צא בלי לשמור
+              </button>
+              <button className="admin-modal-cancel" onClick={() => setShowLeave(false)} disabled={saving}>
+                המשך עריכה
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

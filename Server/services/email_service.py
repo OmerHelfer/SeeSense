@@ -116,6 +116,23 @@ def send_profile_updated_email(to_email: str, name: str):
     send_email(to_email, subject, html)
 
 
+def send_feedback_response_email(to_email: str, name: str):
+    """Notify a user that the team responded to their feedback."""
+    subject = "SeeSense — Your feedback was handled"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2c3e50;">The team responded to your feedback</h2>
+        <p>Hi {name},</p>
+        <p>A member of the SeeSense team has reviewed and handled a feedback you submitted.</p>
+        <p>Open the app → Settings → "משובים שנשלחו" (Sent feedback) to read the response.</p>
+        <br>
+        <p>Thank you for helping us improve,</p>
+        <p><strong>The SeeSense Team</strong></p>
+    </div>
+    """
+    send_email(to_email, subject, html)
+
+
 def send_emergency_contact_verification_email(to_email: str, contact_name: str, user_name: str, code: str):
     """Send verification code to emergency contact."""
     subject = "SeeSense — Emergency Contact Verification"
