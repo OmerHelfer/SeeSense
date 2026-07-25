@@ -264,28 +264,28 @@ const Dashboard = () => {
     speakMessage(next ? 'סריקה הופעלה' : 'סריקה הופסקה');
   };
 
+  /* ── Capture gate ──
+     Predicate handed to CameraView, checked BEFORE the (async) JPEG encode so we
+     never spend CPU encoding a frame we'd only drop. May we capture+send now? */
+  const canCaptureFrame = useCallback(() => {
+    if (!isScanningRef.current || !isAlignedRef.current) return false;
+    const s = visionStreamRef.current;
+    // Bounded-depth backpressure (MAX_INFLIGHT): allow a small number of frames
+    // in flight so the pipe stays full and the server never starves — while the
+    // queue stays bounded (no runaway backlog).
+    return !!s && s.isOpen && s.canSend;
+  }, []);
+
   /* ── Frame capture → WebSocket send ──
      Stable callback (empty deps) — reads live values via refs.
-     Called by CameraView each capture tick with a base64 JPEG data-URL. */
-  const handleFrameCapture = useCallback((base64Frame) => {
-    // Gate: only send when scanning, aligned, and socket is OPEN.
+     Called by CameraView each capture tick with a ready-to-send JPEG Blob. */
+  const handleFrameCapture = useCallback((blob) => {
+    // Re-check the gate at send time: state (alignment / in-flight count) may
+    // have changed during the async encode between canCaptureFrame() and here.
     if (!isScanningRef.current || !isAlignedRef.current) return;
-    if (!visionStreamRef.current?.isOpen) return;
-    // Depth-1 backpressure: don't send a new frame until the previous result is
-    // back. Self-throttles FPS to ~1/RTT and keeps end-to-end latency bounded
-    // (no unbounded frame queue). Captured frames that arrive while a frame is
-    // in flight are simply dropped — we always work on the freshest one.
-    if (!visionStreamRef.current?.canSend) return;
-
-    // Convert base64 data-URL → raw Blob for binary WS send
-    const [header, b64] = base64Frame.split(',');
-    const mime          = header.match(/:(.*?);/)[1];
-    const binary        = atob(b64);
-    const bytes         = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: mime });
-
-    visionStreamRef.current?.sendFrame(blob);
+    const s = visionStreamRef.current;
+    if (!s?.isOpen || !s.canSend) return;
+    s.sendFrame(blob);
   }, []); // stable reference — no deps, reads state through refs
 
   /* ── SOS: single tap ──
@@ -366,7 +366,7 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} inputSize={inputSize} detections={detections} />
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} shouldCapture={canCaptureFrame} captureFps={captureFps} inputSize={inputSize} detections={detections} />
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">

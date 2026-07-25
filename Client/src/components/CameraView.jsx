@@ -22,7 +22,12 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  *
  * Props:
  *   isActive       {boolean}   Start/stop the camera
- *   onFrameCapture {function}  Called with a base64 JPEG data-URL each capture tick
+ *   onFrameCapture {function}  Called with a JPEG Blob each capture tick (ready to
+ *                              send straight over the WebSocket — no base64 copy).
+ *   shouldCapture  {function}  Optional predicate () => boolean. Checked BEFORE the
+ *                              (async) JPEG encode; return false to skip a tick so we
+ *                              don't waste CPU encoding frames the consumer will drop
+ *                              (backpressure / not aligned). Defaults to always-on.
  *   captureFps     {number}    Target capture rate (frames/sec); driven by the
  *                              server's TARGET_FPS. Defaults to 4 until the server
  *                              reports its value on WebSocket connect.
@@ -34,7 +39,7 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  *
  * Frame compression is fixed by JPEG_QUALITY in config/streamConfig.js.
  */
-const CameraView = ({ isActive, onFrameCapture, captureFps = 4, inputSize = DEFAULT_FRAME_SIZE, detections = [] }) => {
+const CameraView = ({ isActive, onFrameCapture, shouldCapture, captureFps = 4, inputSize = DEFAULT_FRAME_SIZE, detections = [] }) => {
   const videoRef     = useRef(null);
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
@@ -45,6 +50,11 @@ const CameraView = ({ isActive, onFrameCapture, captureFps = 4, inputSize = DEFA
   const frameSize    = Math.max(1, Math.round(inputSize) || DEFAULT_FRAME_SIZE);
   const frameSizeRef = useRef(frameSize);
   useEffect(() => { frameSizeRef.current = frameSize; }, [frameSize]);
+
+  // Mirror shouldCapture into a ref so changing it doesn't recreate captureFrame
+  // (which would restart the capture interval).
+  const shouldCaptureRef = useRef(shouldCapture);
+  useEffect(() => { shouldCaptureRef.current = shouldCapture; }, [shouldCapture]);
 
   const [zoom, setZoom]           = useState(1);
   const zoomRef                   = useRef(1);   // mirror for use inside intervals/callbacks
@@ -112,14 +122,25 @@ const CameraView = ({ isActive, onFrameCapture, captureFps = 4, inputSize = DEFA
   // ── Frame capture ────────────────────────────────
 
   /**
-   * Captures a 640×640 JPEG from the current video frame.
+   * Captures a square JPEG (inputSize × inputSize) from the current video frame.
    * The canvas crop is adjusted for the current zoom level so that the
    * extracted region matches what the user actually sees on screen.
+   *
+   * Encoding uses canvas.toBlob (async, off the main thread) rather than
+   * toDataURL (synchronous, blocks the main thread and forces a base64→bytes
+   * copy on the consumer side). The consumer gets a Blob it can send straight
+   * over the WebSocket. We also bail out early — before touching the canvas —
+   * when shouldCapture() says the frame would be dropped, so we never pay the
+   * encode cost for a frame nobody will send.
    */
   const captureFrame = useCallback(() => {
     const video  = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth) return;
+
+    // Cheap early-out: skip the whole draw+encode if the consumer can't use a
+    // frame right now (not scanning/aligned, or backpressure says wait).
+    if (shouldCaptureRef.current && !shouldCaptureRef.current()) return;
 
     const ctx      = canvas.getContext('2d');
     const baseSize = Math.min(video.videoWidth, video.videoHeight);
@@ -137,7 +158,11 @@ const CameraView = ({ isActive, onFrameCapture, captureFps = 4, inputSize = DEFA
     const startY   = (video.videoHeight - cropSize) / 2;
 
     ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, size, size);
-    onFrameCapture?.(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
+    canvas.toBlob(
+      (blob) => { if (blob) onFrameCapture?.(blob); },
+      'image/jpeg',
+      JPEG_QUALITY,
+    );
   }, [onFrameCapture]);
 
   useEffect(() => {
