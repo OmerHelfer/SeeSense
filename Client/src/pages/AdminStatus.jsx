@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Activity, Server, Wifi, Clock, Zap, CheckCircle, XCircle, RotateCcw, AlertTriangle } from 'lucide-react';
+import { ArrowRight, Activity, Server, Wifi, Clock, Zap, Gauge, CheckCircle, XCircle, RotateCcw, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../api/client';
 import { getOverview } from '../services/adminService';
@@ -351,6 +351,15 @@ const AdminStatus = () => {
               value={data.total_frames?.toLocaleString()}
               sub={`${data.success_count} ✓  ${data.failure_count} ✗`}
               color="#22c55e"
+            />
+            <StatCard
+              icon={Gauge}
+              label="תפוקה (Throughput)"
+              value={`${data.throughput?.per_second ?? 0}/שנ׳`}
+              sub={isRange
+                ? 'פריימים לשנייה — ממוצע לאורך הטווח'
+                : `פריימים מוצלחים לשנייה (${Math.round(data.throughput?.window_seconds ?? 10)} שנ׳ אחרונות)`}
+              color="#f59e0b"
             />
           </div>
 

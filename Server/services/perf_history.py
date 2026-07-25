@@ -203,6 +203,9 @@ def query_range(start_ts: int | None, end_ts: int | None = None) -> dict:
     # Span for FPS: from first bucket start to last bucket end (+60s), else 0
     span_seconds = (max_minute + 60 - min_minute) if (min_minute is not None) else 0
     overall_fps = round(total / span_seconds, 2) if span_seconds > 0 else 0.0
+    # Throughput over a range = successful frames per second across the measured span
+    # (the useful-output equivalent of the live 10s-window throughput).
+    throughput_ps = round(success / span_seconds, 2) if span_seconds > 0 else 0.0
 
     return {
         "mode": "range",
@@ -223,6 +226,11 @@ def query_range(start_ts: int | None, end_ts: int | None = None) -> dict:
             "max_ms": _finalize(rtt)["max_ms"],
         },
         "stage_latency": {name: _finalize(s) for name, s in stages.items()},
+        "throughput": {
+            "per_second": throughput_ps,
+            "window_seconds": span_seconds,
+            "frames_in_window": success,
+        },
         "rtt_history": [],  # not available for aggregated ranges (live view only)
         "fps": {
             "server_capacity": 0.0,
