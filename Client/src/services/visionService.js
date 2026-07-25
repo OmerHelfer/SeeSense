@@ -24,6 +24,7 @@ const RECONNECT_DELAY_MS     = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RTT_REPORT_INTERVAL_MS = 5000; // report avg RTT to server every 5s
 const MAX_PENDING_RTT        = 120;  // cap the RTT-pairing FIFO so a lost result can't grow it forever
+const MAX_INFLIGHT_MS        = 3000; // treat an unanswered frame as lost after this (unblock sending)
 
 export class VisionStream {
   /**
@@ -40,10 +41,12 @@ export class VisionStream {
     this._reconnectAttempts = 0;
     this._reconnectTimer    = null;
 
-    // ── Fire-and-forget send ──
-    // Frames are sent as fast as they're captured (no backpressure). Results
-    // arrive in send order (TCP + sequential server), so we keep a FIFO of send
-    // timestamps and pair each incoming result with the oldest one for RTT.
+    // ── Depth-1 backpressure ──
+    // Only one frame is in flight at a time: we don't send the next frame until
+    // the previous result comes back (see `canSend`). This self-throttles the
+    // send rate to ~1/RTT so frames can never pile up into a queue — end-to-end
+    // latency stays bounded (≈ server + network) instead of growing unbounded.
+    // _sendTimes is a FIFO of send timestamps used to pair results for RTT.
     this._sendTimes         = [];     // FIFO of performance.now() for sent-but-unanswered frames
 
     // ── RTT measurement ──
@@ -89,6 +92,21 @@ export class VisionStream {
   /** Rolling RTT stats: { avg, min, max } in ms. */
   get rttStats() {
     return { ...this._rttStats };
+  }
+
+  /**
+   * Depth-1 backpressure gate: may we send another frame right now?
+   * True only when no frame is awaiting a result — so at most one frame is ever
+   * in flight and the queue can't build up. A frame that never gets answered is
+   * treated as lost after MAX_INFLIGHT_MS so a single drop can't wedge sending.
+   */
+  get canSend() {
+    if (this._sendTimes.length === 0) return true;
+    if (performance.now() - this._sendTimes[0] > MAX_INFLIGHT_MS) {
+      this._sendTimes = []; // stale — drop it and allow the next send
+      return true;
+    }
+    return false;
   }
 
   /**

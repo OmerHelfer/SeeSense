@@ -267,9 +267,13 @@ const Dashboard = () => {
      Called by CameraView each capture tick with a base64 JPEG data-URL. */
   const handleFrameCapture = useCallback((base64Frame) => {
     // Gate: only send when scanning, aligned, and socket is OPEN.
-    // Fire-and-forget: no backpressure — every captured frame is sent as-is.
     if (!isScanningRef.current || !isAlignedRef.current) return;
     if (!visionStreamRef.current?.isOpen) return;
+    // Depth-1 backpressure: don't send a new frame until the previous result is
+    // back. Self-throttles FPS to ~1/RTT and keeps end-to-end latency bounded
+    // (no unbounded frame queue). Captured frames that arrive while a frame is
+    // in flight are simply dropped — we always work on the freshest one.
+    if (!visionStreamRef.current?.canSend) return;
 
     // Convert base64 data-URL → raw Blob for binary WS send
     const [header, b64] = base64Frame.split(',');
