@@ -146,8 +146,13 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
 
 # ==================== Detection History ====================
 
-def add_detection_record(user_id: str, record: dict, session_id: str = None) -> str:
-    """Store a detection result in user history. Returns record ID."""
+def build_detection_entry(user_id: str, record: dict, session_id: str = None):
+    """Build a detection-history document with a pre-generated _id (no DB write).
+
+    Returns (record_id_str, entry_dict). The caller can return record_id to the
+    client immediately and persist `entry` asynchronously via insert_detection_entry,
+    keeping the DB write off the hot path.
+    """
     # Extract object summaries (class_name, confidence, distance) for history display
     raw_objects = record.get("objects", [])
     objects_summary = []
@@ -159,6 +164,7 @@ def add_detection_record(user_id: str, record: dict, session_id: str = None) -> 
         })
 
     entry = {
+        "_id": ObjectId(),  # pre-generate so we can return the id before the insert
         "user_id": user_id,
         "session_id": session_id,
         "timestamp": datetime.now().isoformat(),
@@ -168,8 +174,22 @@ def add_detection_record(user_id: str, record: dict, session_id: str = None) -> 
         "objects_detected": len(raw_objects),
         "objects": objects_summary
     }
-    result = _detection_history().insert_one(entry)
-    return str(result.inserted_id)
+    return str(entry["_id"]), entry
+
+
+def insert_detection_entry(entry: dict) -> None:
+    """Persist a pre-built detection-history document (safe to call in a thread)."""
+    try:
+        _detection_history().insert_one(entry)
+    except Exception as e:  # never let a background write crash the stream
+        logger.warning(f"Deferred detection insert failed: {e}")
+
+
+def add_detection_record(user_id: str, record: dict, session_id: str = None) -> str:
+    """Store a detection result in user history synchronously. Returns record ID."""
+    record_id, entry = build_detection_entry(user_id, record, session_id=session_id)
+    insert_detection_entry(entry)
+    return record_id
 
 
 def get_user_history(user_id: str, limit: int = 50, period: str = "all", session_id: str = None) -> list[dict]:

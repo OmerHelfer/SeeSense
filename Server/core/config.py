@@ -9,7 +9,16 @@ MODEL_PATH = "ml_engine/seesense_model.pt"
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
+# Fallback square input size (px), used ONLY if a client connects without sending
+# an input_size. The real knob is the client's INPUT_SIZE (config/streamConfig.js),
+# sent per-connection — you don't need to set the size here. Leave at the model's
+# native 640.
 TARGET_SIZE = 640
+
+# Clamp range for the per-connection input size requested by the client.
+# Smaller = faster inference + smaller uploads, but the model sees less detail.
+MIN_INPUT_SIZE = 160
+MAX_INPUT_SIZE = 640
 
 # ==================== Real-time / Streaming ====================
 # Target capture frame rate (FPS). The client captures + sends frames at this rate.
@@ -19,10 +28,12 @@ TARGET_SIZE = 640
 # admin performance page. Raise for faster reaction to fast objects (cars), lower to
 # reduce load. Change this ONE number to tune the whole pipeline's frame rate; the
 # client reads it automatically when the WebSocket connects.
-TARGET_FPS = 10
+# This is a CEILING — depth-1 backpressure self-throttles the real rate to ~1/RTT,
+# so a high value here just lets the client run as fast as the pipe actually allows.
+TARGET_FPS = 15
 
 # ==================== Inference ====================
-CONFIDENCE_THRESHOLD = 0.3
+CONFIDENCE_THRESHOLD = 0.4
 NMS_IOU_THRESHOLD = 0.45
 
 # ==================== Danger Logic ====================

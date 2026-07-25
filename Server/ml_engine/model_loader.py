@@ -2,7 +2,7 @@ import numpy as np
 import logging
 import torch
 
-from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES
+from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES, TARGET_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ def load_model(model_path: str, mode: str = "mock"):
 
 # ==================== Inference ====================
 
-def run_inference(model, img_input) -> list[dict]:
+def run_inference(model, img_input, imgsz: int = TARGET_SIZE) -> list[dict]:
     """
     Run model and return list of detections.
     Automatically detects model type and uses correct pipeline.
@@ -72,6 +72,10 @@ def run_inference(model, img_input) -> list[dict]:
     For mock: returns empty list
     For ultralytics: passes raw image, ultralytics handles preprocessing
     For custom PyTorch: expects preprocessed tensor from process_image()
+
+    imgsz is the square inference size — the main inference-speed lever.
+    Detections are always returned in the input image's coordinate space, so the
+    caller's overlay stays correct regardless of imgsz.
     """
     # Mock model
     if isinstance(model, MockModel):
@@ -86,6 +90,7 @@ def run_inference(model, img_input) -> list[dict]:
                 source=img_input,
                 conf=CONFIDENCE_THRESHOLD,
                 iou=NMS_IOU_THRESHOLD,
+                imgsz=imgsz,
                 device=DEVICE,
                 verbose=False
             )

@@ -19,10 +19,10 @@ import { haptic, speakMessage } from './feedbackService';
 const PING_INTERVAL_MS    = 5000;   // ping every 5 seconds
 const PING_TIMEOUT_MS     = 4000;   // give up after 4s
 const THRESHOLD_YELLOW    = 250;    // ms — unstable warning
-const THRESHOLD_ORANGE    = 400;    // ms — severe warning
-const THRESHOLD_RED       = 600;    // ms — disconnect threshold
-const RED_CONSECUTIVE     = 3;      // pings above 600ms before disconnect
-const RECOVER_CONSECUTIVE = 2;      // pings below 600ms before reconnect
+const THRESHOLD_ORANGE    = 500;    // ms — severe warning
+const THRESHOLD_RED       = 1000;    // ms — disconnect threshold
+const RED_CONSECUTIVE     = 3;      // pings above THRESHOLD_RED before disconnect
+const RECOVER_CONSECUTIVE = 2;      // pings below THRESHOLD_RED before reconnect
 
 // ── State ────────────────────────────────────────────────
 let _intervalId        = null;

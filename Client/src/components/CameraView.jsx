@@ -4,9 +4,9 @@ import { JPEG_QUALITY } from '../config/streamConfig';
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 
-// Frames are captured and analysed at this fixed square size (see captureFrame
-// below and the server's letterbox resize). YOLO bbox coords arrive in this space.
-const FRAME_SIZE = 640;
+// Fallback square capture/analysis size until the server reports the size it
+// actually uses (via the `inputSize` prop). YOLO bbox coords arrive in this space.
+const DEFAULT_FRAME_SIZE = 640;
 
 // Box colour per danger level — mirrors the app's alert palette (red / amber / cyan HUD).
 const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
@@ -26,16 +26,25 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  *   captureFps     {number}    Target capture rate (frames/sec); driven by the
  *                              server's TARGET_FPS. Defaults to 4 until the server
  *                              reports its value on WebSocket connect.
+ *   inputSize      {number}    Square capture/analysis size (px), driven by the
+ *                              server's reported input size. bbox coords arrive
+ *                              in this space. Defaults to 640 until reported.
  *   detections     {Array}     Latest detections to draw, each { bbox:[x1,y1,x2,y2],
- *                              class_name, confidence, alert_level, motion } in 640×640 space
+ *                              class_name, confidence, alert_level, motion } in inputSize space
  *
  * Frame compression is fixed by JPEG_QUALITY in config/streamConfig.js.
  */
-const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [] }) => {
+const CameraView = ({ isActive, onFrameCapture, captureFps = 4, inputSize = DEFAULT_FRAME_SIZE, detections = [] }) => {
   const videoRef     = useRef(null);
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
   const streamRef    = useRef(null);  // active MediaStream
+
+  // Mirror inputSize into a ref so changing it doesn't recreate captureFrame
+  // (which would restart the capture interval).
+  const frameSize    = Math.max(1, Math.round(inputSize) || DEFAULT_FRAME_SIZE);
+  const frameSizeRef = useRef(frameSize);
+  useEffect(() => { frameSizeRef.current = frameSize; }, [frameSize]);
 
   const [zoom, setZoom]           = useState(1);
   const zoomRef                   = useRef(1);   // mirror for use inside intervals/callbacks
@@ -114,13 +123,20 @@ const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [] 
 
     const ctx      = canvas.getContext('2d');
     const baseSize = Math.min(video.videoWidth, video.videoHeight);
+    const size     = frameSizeRef.current;
+
+    // Keep the offscreen canvas square at the current input size.
+    if (canvas.width !== size || canvas.height !== size) {
+      canvas.width  = size;
+      canvas.height = size;
+    }
 
     // A higher zoom means we sample a smaller central region of the raw video
     const cropSize = baseSize / zoomRef.current;
     const startX   = (video.videoWidth  - cropSize) / 2;
     const startY   = (video.videoHeight - cropSize) / 2;
 
-    ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, 640, 640);
+    ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, size, size);
     onFrameCapture?.(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
   }, [onFrameCapture]);
 
@@ -171,7 +187,7 @@ const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [] 
     const squareSide = baseSize * coverScale;
     const squareLeft = (cW - squareSide) / 2;
     const squareTop  = (cH - squareSide) / 2;
-    const s          = squareSide / FRAME_SIZE; // 640-space → container px
+    const s          = squareSide / frameSize; // inputSize-space → container px
 
     return detections.map((d, i) => {
       const [x1, y1, x2, y2] = d.bbox ?? [0, 0, 0, 0];
@@ -185,7 +201,7 @@ const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [] 
         level: d.alert_level ?? 'none',
       };
     });
-  }, [detections, videoSize, containerSize]);
+  }, [detections, videoSize, containerSize, frameSize]);
 
   // ── Pinch-to-zoom (PointerEvents) ───────────────
 

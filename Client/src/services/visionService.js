@@ -13,6 +13,8 @@
  *   stream.disconnect();
  */
 
+import { INPUT_SIZE } from '../config/streamConfig';
+
 // Derive the WebSocket base URL from the Vite env var.
 // http:// → ws://   |   https:// → wss://
 const WS_BASE = (import.meta.env.VITE_API_URL ?? '')
@@ -133,7 +135,9 @@ export class VisionStream {
   _open() {
     if (!this._active) return;
 
-    const url    = `${WS_BASE}/stream/ws?token=${encodeURIComponent(this._token)}`;
+    // input_size is a request; the server clamps it and reports the size it
+    // actually used in the 'connected' message (see onConnected).
+    const url    = `${WS_BASE}/stream/ws?token=${encodeURIComponent(this._token)}&input_size=${INPUT_SIZE}`;
     const socket = new WebSocket(url);
     socket.binaryType = 'blob'; // we only send binary; server responses are text JSON
     this._socket = socket;

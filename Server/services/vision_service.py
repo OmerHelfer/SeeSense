@@ -10,18 +10,21 @@ logger = logging.getLogger(__name__)
 BLUR_THRESHOLD = 50.0          # Laplacian variance below this = blurry
 OVEREXPOSED_THRESHOLD = 240    # Mean intensity above this = overexposed
 UNIFORM_STD_THRESHOLD = 10     # Std deviation below this = camera covered (solid color)
-MIN_RESOLUTION = 640            # Minimum width or height in pixels
+MIN_RESOLUTION = 120            # Reject only genuinely tiny/garbage frames (px, longest side)
 
 
-def decode_image(image_bytes: bytes) -> np.ndarray:
+def decode_image(image_bytes: bytes, target_size: int = TARGET_SIZE) -> np.ndarray:
     """
     Decode, validate, and resize image.
 
     Pipeline:
     1. Decode bytes → numpy array
     2. Check resolution on original (reject if too small)
-    3. Letterbox resize to 640x640 (for performance + model input)
+    3. Letterbox resize to target_size (square, for performance + model input)
     4. Quality checks on resized image (blur, dark, overexposed, covered)
+
+    target_size is the per-connection input size (client-driven); defaults to
+    TARGET_SIZE. Smaller = faster inference but less detail.
     """
     # Edge case: empty or too small file
     if len(image_bytes) < MIN_IMAGE_BYTES:
@@ -41,8 +44,8 @@ def decode_image(image_bytes: bytes) -> np.ndarray:
             f"Image resolution too low ({w}x{h}). Longest side must be at least {MIN_RESOLUTION}px."
         )
 
-    # 3. Letterbox resize to TARGET_SIZE (640x640)
-    img_resized = letterbox_resize(img, TARGET_SIZE)
+    # 3. Letterbox resize to the target square size
+    img_resized = letterbox_resize(img, target_size)
 
     # 4. Quality checks on resized image (much faster than on 2048x1536)
     validate_image_quality(img_resized)

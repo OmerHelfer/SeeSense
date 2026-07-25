@@ -6,7 +6,7 @@ import asyncio
 import threading
 
 from core.auth import verify_token
-from core.config import MODEL_MODE, TARGET_FPS
+from core.config import MODEL_MODE, TARGET_FPS, TARGET_SIZE, MIN_INPUT_SIZE, MAX_INPUT_SIZE
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
 from services.motion_tracker import get_tracker as get_motion_tracker, clear_tracker
@@ -38,9 +38,9 @@ router = APIRouter(prefix="/stream", tags=["Stream"])
 _inference_lock = threading.Lock()
 
 
-def _run_inference_locked(model, img_input):
+def _run_inference_locked(model, img_input, imgsz):
     with _inference_lock:
-        return run_inference(model, img_input)
+        return run_inference(model, img_input, imgsz=imgsz)
 
 
 # ==================== Auth ====================
@@ -90,7 +90,7 @@ async def session_status(current_user: dict = Depends(verify_token)):
 # ==================== WebSocket ====================
 
 @router.websocket("/ws")
-async def websocket_stream(websocket: WebSocket, token: str = None):
+async def websocket_stream(websocket: WebSocket, token: str = None, input_size: int = None):
     """
     Real-time video streaming via WebSocket.
 
@@ -114,7 +114,16 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
     await websocket.accept()
     from services.presence import mark_active
     mark_active(user_id)
-    logger.info(f"WebSocket connected: user={user_id}")
+
+    # Per-connection input size (client-requested, clamped to a safe range).
+    # This is the square size used for both decode/letterbox and YOLO inference.
+    try:
+        frame_size = int(input_size) if input_size else TARGET_SIZE
+    except (TypeError, ValueError):
+        frame_size = TARGET_SIZE
+    frame_size = max(MIN_INPUT_SIZE, min(MAX_INPUT_SIZE, frame_size))
+
+    logger.info(f"WebSocket connected: user={user_id}, input_size={frame_size}")
 
     # ── 2. Create or resume session ──
     session_id = get_or_create_session(user_id)
@@ -127,6 +136,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
         "type": "connected",
         "session_id": session_id,
         "target_fps": TARGET_FPS,
+        "input_size": frame_size,
         "message": "Stream session active"
     })
 
@@ -181,9 +191,9 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 # Per-stage timings (also persisted to perf_history via record_frame)
                 stage_times = {}
 
-                # Decode and validate
+                # Decode and validate (letterbox to the connection's input size)
                 t0 = time.time()
-                img = decode_image(image_bytes)
+                img = decode_image(image_bytes, frame_size)
                 stage_times["decode_quality"] = (time.time() - t0) * 1000
                 tracker.record_stage("decode_quality", stage_times["decode_quality"])
 
@@ -195,7 +205,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                 # block the async event loop (which would stall /health pings and
                 # make the connection watchdog falsely report "unstable").
                 t1 = time.time()
-                detections = await asyncio.to_thread(_run_inference_locked, model, model_input)
+                detections = await asyncio.to_thread(_run_inference_locked, model, model_input, frame_size)
                 stage_times["inference"] = (time.time() - t1) * 1000
                 tracker.record_stage("inference", stage_times["inference"])
 
@@ -230,10 +240,12 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
 
                 latency = tracker.end_timer(start, success=True)
 
-                # ── Write detection record BEFORE response (need record_id) ──
+                # ── Build the detection record with a pre-generated id (no DB I/O
+                #    on the hot path) so we can return record_id immediately. The
+                #    actual insert is deferred to a background thread below. ──
                 t4 = time.time()
-                from services.user_service import add_detection_record
-                record_id = add_detection_record(user_id, result, session_id=session_id)
+                from services.user_service import build_detection_entry, insert_detection_entry
+                record_id, detection_entry = build_detection_entry(user_id, result, session_id=session_id)
                 stage_times["db_write"] = (time.time() - t4) * 1000
                 tracker.record_stage("db_write", stage_times["db_write"])
 
@@ -255,6 +267,15 @@ async def websocket_stream(websocket: WebSocket, token: str = None):
                     "distance": result["distance"],
                     "objects": result["objects"]
                 })
+
+                # ── Persist the detection record off the hot path (after response).
+                #    Daemon thread mirrors save_frame_count_background — no asyncio
+                #    task to be GC'd, and a failed write can't crash the stream. ──
+                threading.Thread(
+                    target=insert_detection_entry,
+                    args=(detection_entry,),
+                    daemon=True,
+                ).start()
 
                 # ── Frame count update in background ──
                 save_frame_count_background(session_id, frame_count)

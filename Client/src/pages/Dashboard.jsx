@@ -92,6 +92,7 @@ const Dashboard = () => {
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [captureFps, setCaptureFps]       = useState(4);        // driven by server TARGET_FPS on connect
+  const [inputSize, setInputSize]         = useState(640);      // driven by server input_size on connect
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
@@ -223,8 +224,9 @@ const Dashboard = () => {
       const stream = new VisionStream({
         onResult:    handleResult,
         onConnected: (msg) => {
-          console.info('[SeeSense] WS connected, session:', msg.session_id, '| target_fps:', msg.target_fps);
+          console.info('[SeeSense] WS connected, session:', msg.session_id, '| target_fps:', msg.target_fps, '| input_size:', msg.input_size);
           if (msg.target_fps) setCaptureFps(msg.target_fps);
+          if (msg.input_size) setInputSize(msg.input_size);
         },
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
       });
@@ -364,7 +366,7 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} detections={detections} />
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} inputSize={inputSize} detections={detections} />
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">
