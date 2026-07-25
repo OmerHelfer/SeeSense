@@ -92,7 +92,6 @@ const Dashboard = () => {
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [captureFps, setCaptureFps]       = useState(4);        // driven by server TARGET_FPS on connect
-  const [jpegQuality, setJpegQuality]     = useState(0.7);      // lowered on slow links to cut upload time
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
@@ -176,11 +175,6 @@ const Dashboard = () => {
     // Track last record_id for quick feedback linking
     if (result.record_id) lastRecordIdRef.current = result.record_id;
 
-    // Adaptive JPEG quality: on a slow link (high RTT) compress harder so each
-    // frame uploads faster. React skips the re-render when the value is unchanged.
-    const avgRtt = visionStreamRef.current?.rttStats?.avg ?? 0;
-    setJpegQuality(avgRtt > 350 ? 0.5 : avgRtt > 200 ? 0.6 : 0.7);
-
     // Update the live bounding-box overlay every frame (all detected objects,
     // regardless of alert level). Cleared to [] when a frame has no detections.
     setDetections(objects);
@@ -230,10 +224,7 @@ const Dashboard = () => {
         onResult:    handleResult,
         onConnected: (msg) => {
           console.info('[SeeSense] WS connected, session:', msg.session_id, '| target_fps:', msg.target_fps);
-          if (msg.target_fps) {
-            setCaptureFps(msg.target_fps);
-            visionStreamRef.current?.setTargetFps(msg.target_fps);
-          }
+          if (msg.target_fps) setCaptureFps(msg.target_fps);
         },
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
       });
@@ -273,15 +264,12 @@ const Dashboard = () => {
 
   /* ── Frame capture → WebSocket send ──
      Stable callback (empty deps) — reads live values via refs.
-     Called by CameraView every 250 ms with a base64 JPEG data-URL. */
+     Called by CameraView each capture tick with a base64 JPEG data-URL. */
   const handleFrameCapture = useCallback((base64Frame) => {
-    // Gate: only send when scanning, aligned, and socket is OPEN
+    // Gate: only send when scanning, aligned, and socket is OPEN.
+    // Fire-and-forget: no backpressure — every captured frame is sent as-is.
     if (!isScanningRef.current || !isAlignedRef.current) return;
     if (!visionStreamRef.current?.isOpen) return;
-    // Adaptive backpressure: send only while the in-flight window has room.
-    // The window auto-widens on slow links to keep the pipe full (higher FPS)
-    // and stays at 1 on fast links (no queue buildup).
-    if (!visionStreamRef.current?.canSend) return;
 
     // Convert base64 data-URL → raw Blob for binary WS send
     const [header, b64] = base64Frame.split(',');
@@ -372,7 +360,7 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} detections={detections} jpegQuality={jpegQuality} />
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} captureFps={captureFps} detections={detections} />
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">

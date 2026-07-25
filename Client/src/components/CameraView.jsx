@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { JPEG_QUALITY } from '../config/streamConfig';
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
@@ -27,17 +28,14 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  *                              reports its value on WebSocket connect.
  *   detections     {Array}     Latest detections to draw, each { bbox:[x1,y1,x2,y2],
  *                              class_name, confidence, alert_level, motion } in 640×640 space
+ *
+ * Frame compression is fixed by JPEG_QUALITY in config/streamConfig.js.
  */
-const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [], jpegQuality = 0.7 }) => {
+const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [] }) => {
   const videoRef     = useRef(null);
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
   const streamRef    = useRef(null);  // active MediaStream
-
-  // Mirror jpegQuality into a ref so changing it doesn't recreate captureFrame
-  // (which would restart the capture interval).
-  const jpegQualityRef = useRef(jpegQuality);
-  useEffect(() => { jpegQualityRef.current = jpegQuality; }, [jpegQuality]);
 
   const [zoom, setZoom]           = useState(1);
   const zoomRef                   = useRef(1);   // mirror for use inside intervals/callbacks
@@ -123,7 +121,7 @@ const CameraView = ({ isActive, onFrameCapture, captureFps = 4, detections = [],
     const startY   = (video.videoHeight - cropSize) / 2;
 
     ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, 640, 640);
-    onFrameCapture?.(canvas.toDataURL('image/jpeg', jpegQualityRef.current));
+    onFrameCapture?.(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
   }, [onFrameCapture]);
 
   useEffect(() => {
