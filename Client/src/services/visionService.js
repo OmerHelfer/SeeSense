@@ -14,6 +14,7 @@
  */
 
 import { INPUT_SIZE, MAX_INFLIGHT } from '../config/streamConfig';
+import { getClientStageReport } from './clientMetrics';
 
 // Derive the WebSocket base URL from the Vite env var.
 // http:// → ws://   |   https:// → wss://
@@ -240,6 +241,16 @@ export class VisionStream {
             }));
           } catch { /* socket closed */ }
         }
+      }
+
+      // Send client-side stage breakdown (capture/encode/render/feedback) so the
+      // admin dashboard can show where the client's own per-frame time goes. One
+      // small message every 5s — no hot-path cost.
+      const stages = getClientStageReport();
+      if (Object.keys(stages).length > 0) {
+        try {
+          this._socket.send(JSON.stringify({ type: 'client_stage_report', stages }));
+        } catch { /* socket closed */ }
       }
     }, RTT_REPORT_INTERVAL_MS);
   }

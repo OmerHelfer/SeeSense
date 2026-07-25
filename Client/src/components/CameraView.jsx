@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { JPEG_QUALITY } from '../config/streamConfig';
+import { recordClientStage } from '../services/clientMetrics';
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
@@ -157,9 +158,19 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, captureFps = 4, i
     const startX   = (video.videoWidth  - cropSize) / 2;
     const startY   = (video.videoHeight - cropSize) / 2;
 
+    // Stage timing (client breakdown): capture = the synchronous video→canvas draw;
+    // encode = the async JPEG compression (wall time until toBlob's callback fires).
+    // performance.now() deltas are sub-microsecond — no measurable overhead.
+    const tCap = performance.now();
     ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, size, size);
+    recordClientStage('capture', performance.now() - tCap);
+
+    const tEnc = performance.now();
     canvas.toBlob(
-      (blob) => { if (blob) onFrameCapture?.(blob); },
+      (blob) => {
+        recordClientStage('encode', performance.now() - tEnc);
+        if (blob) onFrameCapture?.(blob);
+      },
       'image/jpeg',
       JPEG_QUALITY,
     );

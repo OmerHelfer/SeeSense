@@ -2746,6 +2746,15 @@ button:active {
 
 .afb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.afb-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--text-3);
+  padding: 6px 0;
+}
+
 .afb-btn.take    { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.5); color: #f59e0b; }
 .afb-btn.resolve { background: rgba(34, 197, 94, 0.14);  border-color: rgba(34, 197, 94, 0.5);  color: #22c55e; }
 .afb-btn.assign  { background: rgba(167, 139, 250, 0.14); border-color: rgba(167, 139, 250, 0.5); color: #a78bfa; }

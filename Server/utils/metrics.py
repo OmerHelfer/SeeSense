@@ -46,6 +46,12 @@ class PerformanceTracker:
         # decode_quality, inference, tracking, logic, db_write.
         self.stage_latencies = defaultdict(lambda: deque(maxlen=window_size))
 
+        # Latest CLIENT-side stage breakdown (capture/encode/render/feedback). The
+        # client aggregates its own per-frame timings and reports the avg/min/max
+        # every few seconds, so we just keep the most recent snapshot — never on any
+        # hot path. {stage: {avg_ms,min_ms,max_ms}}.
+        self.client_stages = {}
+
     def reset(self):
         """
         Wipe ALL live metrics and restart timing from now. Backs the admin 'reset'
@@ -64,6 +70,7 @@ class PerformanceTracker:
         self.client_fps_reports.clear()
         self.stage_latencies.clear()
         self.throughput_events.clear()
+        self.client_stages = {}
         logger.info("PerformanceTracker reset — all live metrics cleared")
 
     def start_timer(self) -> float:
@@ -151,6 +158,36 @@ class PerformanceTracker:
             }
         return breakdown
 
+    # ── Client-side stage breakdown (reported by the client) ─────────────
+
+    def record_client_stages(self, stages: dict):
+        """Store the latest client-side stage breakdown (capture/encode/render/feedback).
+        The client sends already-aggregated avg/min/max per stage over its own rolling
+        window every few seconds; we keep the most recent snapshot. Defensive: this is
+        untrusted client input, so validate/clamp and ignore anything malformed. Never
+        runs on the frame hot path (only on the periodic report message)."""
+        if not isinstance(stages, dict):
+            return
+        cleaned = {}
+        for stage, v in list(stages.items())[:16]:
+            if not isinstance(v, dict):
+                continue
+            try:
+                avg = float(v.get("avg"))
+                mn = float(v.get("min"))
+                mx = float(v.get("max"))
+            except (TypeError, ValueError):
+                continue
+            if not all(0 <= x < 60000 for x in (avg, mn, mx)):
+                continue
+            cleaned[str(stage)[:32]] = {
+                "avg_ms": round(avg, 2),
+                "min_ms": round(mn, 2),
+                "max_ms": round(mx, 2),
+            }
+        if cleaned:
+            self.client_stages = cleaned
+
     # ── Server latency stats ─────────────────────────────
 
     def get_avg_latency(self) -> float:
@@ -231,6 +268,7 @@ class PerformanceTracker:
             "client_rtt": self.get_client_rtt_stats(),
             "rtt_history": list(self.rtt_history),
             "stage_latency": self.get_stage_breakdown(),
+            "client_stage_latency": self.client_stages,
             "throughput": self.get_throughput(),
             "fps": {
                 "server_capacity": self.get_recent_fps(),       # תיאורטי - יכולת

@@ -162,6 +162,9 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                         fps = float(data["fps"])
                         if 0 < fps < 100:
                             tracker.record_client_fps(fps)
+                    elif data.get("type") == "client_stage_report" and isinstance(data.get("stages"), dict):
+                        # Client-side per-stage timings (capture/encode/render/feedback).
+                        tracker.record_client_stages(data["stages"])
                 except (json.JSONDecodeError, ValueError, TypeError):
                     pass
                 continue

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Activity, Server, Wifi, Clock, Zap, Gauge, CheckCircle, XCircle, RotateCcw, AlertTriangle } from 'lucide-react';
+import { ArrowRight, Activity, Server, Wifi, Clock, Zap, Gauge, CheckCircle, XCircle, RotateCcw, AlertTriangle, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../api/client';
 import { getOverview } from '../services/adminService';
@@ -71,6 +71,15 @@ const STAGE_LABELS = {
   db_write:       'כתיבה ל-DB',
 };
 const STAGE_ORDER = ['decode_quality', 'inference', 'tracking', 'danger_logic', 'db_write'];
+
+// ── Client-side stage labels (Hebrew) — the on-device half of the pipeline ──
+const CLIENT_STAGE_LABELS = {
+  capture:  'צילום פריים (Canvas)',
+  encode:   'דחיסת JPEG',
+  render:   'ציור תוצאה + HUD',
+  feedback: 'קול + רטט (התראה)',
+};
+const CLIENT_STAGE_ORDER = ['capture', 'encode', 'render', 'feedback'];
 
 // ── Latency Row ──
 const LatencyRow = ({ label, avg, min, max, color, fmt = fmtMs }) => (
@@ -465,6 +474,32 @@ const AdminStatus = () => {
                 ))}
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
                 * נמדד רק על פריימים שעברו את כל השלבים בהצלחה (לא כולל פריימים שנדחו בבדיקת איכות)
+              </p>
+            </div>
+          )}
+
+          {/* ── Stage-by-stage CLIENT latency breakdown (live only) ── */}
+          {!isRange && data.client_stage_latency && Object.keys(data.client_stage_latency).length > 0 && (
+            <div className="admin-section">
+              <h2 className="admin-section-title">
+                <Smartphone size={16} />
+                פירוט זמן עיבוד בלקוח (לפי שלב)
+              </h2>
+              {CLIENT_STAGE_ORDER
+                .filter((key) => data.client_stage_latency[key])
+                .map((key) => (
+                  <LatencyRow
+                    key={key}
+                    label={CLIENT_STAGE_LABELS[key] ?? key}
+                    avg={data.client_stage_latency[key].avg_ms}
+                    min={data.client_stage_latency[key].min_ms}
+                    max={data.client_stage_latency[key].max_ms}
+                    color="#a78bfa"
+                    fmt={fmtStageMs}
+                  />
+                ))}
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
+                * מדידה על מכשיר הלקוח (מדווח כל 5 שנ׳). לא כולל זמן רשת/שרת (מוצג בנפרד כ-RTT). זמין במצב חי בלבד.
               </p>
             </div>
           )}

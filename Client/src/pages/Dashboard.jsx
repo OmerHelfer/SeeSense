@@ -9,6 +9,7 @@ import { VisionStream, setActiveStream }          from '../services/visionServic
 import { haptic, announceDetections, speakMessage, HEBREW_NAMES } from '../services/feedbackService';
 import { emergencyAlert, quickFeedback } from '../services/userService';
 import { startHealthWatch, stopHealthWatch } from '../services/healthService';
+import { recordClientStage } from '../services/clientMetrics';
 
 // ── Constants ────────────────────────────────────────────
 
@@ -181,6 +182,10 @@ const Dashboard = () => {
     if (!isScanningRef.current) return;
     if (result.status === 'paused') return;
 
+    // Client stage timing: "render" = the synchronous work of applying a result
+    // (overlay + HUD state updates). performance.now() deltas are effectively free.
+    const tRender = performance.now();
+
     const level   = result.alert_level ?? 'none';
     const objects = result.objects ?? [];
 
@@ -199,9 +204,13 @@ const Dashboard = () => {
     setDetectionDir(level !== 'none' ? dir : null);
     setDetectedClass(level !== 'none' && cls ? (HEBREW_NAMES[cls] ?? cls) : null);
 
+    recordClientStage('render', performance.now() - tRender);
+
     // "Danger cleared" → one-shot Hebrew "Path Clear" announcement
     if (result.danger_cleared) {
+      const tFb = performance.now();
       speakMessage('נתיב פנוי');
+      recordClientStage('feedback', performance.now() - tFb);
       setDetectionDir(null);
       setDetectedClass(null);
       return;
@@ -212,6 +221,8 @@ const Dashboard = () => {
     // HUD above (alertLevel/detectionDir/detectedClass) still updates live.
     if (!result.alert_is_new) return;
 
+    // "feedback" stage = the voice/haptic dispatch cost (only when an alert fires).
+    const tFb = performance.now();
     if (result.danger) {
       haptic('danger');
       announceDetections(objects, true);   // "סכנה! מכונית מצד ימין"
@@ -221,6 +232,7 @@ const Dashboard = () => {
       announceDetections(objects, false);  // "כלב מצד שמאל"
       showFeedbackBriefly();
     }
+    recordClientStage('feedback', performance.now() - tFb);
   }, [showFeedbackBriefly]);
 
   /* ── Start / Stop scanning ── */

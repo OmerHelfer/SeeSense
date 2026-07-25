@@ -83,6 +83,9 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onU
   const iAmHandler = item.handling_admin_id && item.handling_admin_id === myId;
   const canResolve = item.handling_status === 'in_progress' && (actorLevel >= 2 || iAmHandler);
   const isPending  = item.handling_status === 'pending';
+  // A level-1 admin cannot touch a feedback another admin already took — only the
+  // handler can resolve it, and only a level-2 admin can reassign/override it.
+  const lockedForMe = item.handling_status === 'in_progress' && actorLevel < 2 && !iAmHandler;
 
   return (
     <div className="afb-card">
@@ -156,6 +159,11 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onU
           <button className="afb-btn assign" onClick={() => onAssign(item)} disabled={busy}>
             <UserCheck size={14} /> {item.assigned_admin_id ? 'הקצה מחדש' : 'הקצה לאדמין'}
           </button>
+        )}
+        {lockedForMe && (
+          <span className="afb-locked">
+            <Shield size={13} /> נלקח ע״י {item.handling_admin_name || 'אדמין'} · רק רמה 2 יכול לשנות
+          </span>
         )}
       </div>
     </div>
