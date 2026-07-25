@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getFeedbackAdmin, takeFeedback, resolveFeedback, assignFeedback, getAdmins, getUserByEmail } from '../services/adminService';
+import { parseServerDate } from '../utils/serverDate';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -43,8 +44,8 @@ const FILTERS = [
 ];
 
 function fmtDate(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
+  const d = parseServerDate(ts);
+  if (!d) return '';
   return `${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
 }
 

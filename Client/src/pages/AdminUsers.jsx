@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   getOverview, getAdmins, getUserByEmail, setUserPassword, updateUser, setUserLevel, deleteUserByEmail,
 } from '../services/adminService';
+import { relTime, parseServerDate } from '../utils/serverDate';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -22,21 +23,6 @@ const LEVEL_META = {
   1: { label: 'אדמין רמה 1',  color: '#22d3ee', Icon: Shield },
   2: { label: 'אדמין רמה 2',  color: '#a78bfa', Icon: ShieldCheck },
 };
-
-function relTime(iso) {
-  if (!iso) return 'לא ידוע';
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'הרגע';
-  if (m < 60) return `לפני ${m} דק׳`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `לפני ${h} שע׳`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `לפני ${d} ימים`;
-  const mo = Math.floor(d / 30);
-  if (mo < 12) return `לפני ${mo} חודשים`;
-  return `לפני ${Math.floor(mo / 12)} שנים`;
-}
 
 const StatCard = ({ icon: Icon, label, value, color }) => (
   <div className="admin-stat-card">
@@ -321,7 +307,7 @@ const AdminUsers = () => {
                   <InfoRow label="תאריך לידה" value={target.date_of_birth} />
                   <InfoRow label="גובה" value={target.height_cm && `${target.height_cm} ס״מ`} />
                   <InfoRow label="משקל" value={target.weight_kg && `${target.weight_kg} ק״ג`} />
-                  <InfoRow label="נרשם בתאריך" value={target.created_at ? new Date(target.created_at).toLocaleDateString('he-IL') : '—'} />
+                  <InfoRow label="נרשם בתאריך" value={target.created_at ? parseServerDate(target.created_at).toLocaleDateString('he-IL') : '—'} />
                 </>
               )}
             </div>
