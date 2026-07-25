@@ -32,4 +32,4 @@ export const JPEG_QUALITY = Math.max(0, Math.min(1, 1 - COMPRESSION_PERCENT / 10
  * and reports the value it actually used back on connect, so client + server
  * always agree on the coordinate space.
  */
-export const INPUT_SIZE = 500;
+export const INPUT_SIZE = 640;
