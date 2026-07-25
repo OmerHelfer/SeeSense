@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   getOverview, getAdmins, getUserByEmail, setUserPassword, updateUser, setUserLevel, deleteUserByEmail,
 } from '../services/adminService';
-import { relTime, parseServerDate } from '../utils/serverDate';
+import { relTime, formatServerDateTime } from '../utils/serverDate';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -307,7 +307,7 @@ const AdminUsers = () => {
                   <InfoRow label="תאריך לידה" value={target.date_of_birth} />
                   <InfoRow label="גובה" value={target.height_cm && `${target.height_cm} ס״מ`} />
                   <InfoRow label="משקל" value={target.weight_kg && `${target.weight_kg} ק״ג`} />
-                  <InfoRow label="נרשם בתאריך" value={target.created_at ? parseServerDate(target.created_at).toLocaleDateString('he-IL') : '—'} />
+                  <InfoRow label="נרשם בתאריך" value={target.created_at ? formatServerDateTime(target.created_at) : '—'} />
                 </>
               )}
             </div>

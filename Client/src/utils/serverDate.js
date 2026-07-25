@@ -20,6 +20,21 @@ export function parseServerDate(iso) {
   return new Date(HAS_TZ.test(s) ? s : s + 'Z');
 }
 
+/**
+ * Format a backend timestamp as Israel local time (Asia/Jerusalem), with minutes —
+ * e.g. "25 ביולי, 14:30". Pinned to Israel's timezone so it reads the same for every
+ * viewer regardless of their device's timezone.
+ */
+export function formatServerDateTime(iso) {
+  const d = parseServerDate(iso);
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('he-IL', {
+    timeZone: 'Asia/Jerusalem',
+    day: 'numeric', month: 'short',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
 /** Hebrew relative time ("הרגע" / "לפני N דק׳ / שע׳ / ימים / חודשים / שנים"). */
 export function relTime(iso) {
   const d = parseServerDate(iso);

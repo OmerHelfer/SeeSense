@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Flag, CheckCircle, Trash2, Edit3, ChevronLeft, AlertTriangle, Save, Lock, MessageSquare, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getSubmittedFeedback, deleteFeedback, updateFeedback, markResponsesSeen } from '../services/userService';
-import { parseServerDate } from '../utils/serverDate';
+import { formatServerDateTime } from '../utils/serverDate';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -38,9 +38,7 @@ const HEBREW_NAMES = {
 };
 
 function formatDate(ts) {
-  const d = parseServerDate(ts);
-  if (!d) return '';
-  return `${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+  return formatServerDateTime(ts);
 }
 
 function hebrewName(cls) { return HEBREW_NAMES[cls] || cls || '?'; }
