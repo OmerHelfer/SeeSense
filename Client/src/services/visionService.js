@@ -172,6 +172,16 @@ export class VisionStream {
     socket.onclose = (event) => {
       this._socket = null;
       clearInterval(this._rttReportTimer);
+
+      // 4001 = missing token, 4003 = invalid/expired token (see api/stream.py).
+      // Reconnecting would just replay the same dead token forever, so end the
+      // session instead — the app then redirects to /login.
+      if (event.code === 4001 || event.code === 4003) {
+        this._active = false;
+        import('./sessionExpiry').then(({ notifySessionExpired }) => notifySessionExpired());
+        return;
+      }
+
       // Only reconnect on unexpected closure (code !== 1000)
       if (this._active && event.code !== 1000) {
         this._scheduleReconnect();

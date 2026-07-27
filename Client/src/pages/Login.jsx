@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { login as apiLogin } from '../services/authService';
+import { consumeSessionExpiredNotice } from '../services/sessionExpiry';
 import { Eye, EyeOff, LogIn, Scan } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -25,7 +26,11 @@ const Login = () => {
   const [email, setEmail]             = useState('');
   const [password, setPassword]       = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError]             = useState('');
+  // If we landed here because the JWT expired, explain it instead of just showing
+  // a blank login form the user didn't ask for.
+  const [error, setError]             = useState(
+    () => (consumeSessionExpiredNotice() ? 'החיבור פג תוקף. יש להתחבר מחדש.' : ''),
+  );
   const [loading, setLoading]         = useState(false);
   const { login }  = useAuth();
   const navigate   = useNavigate();

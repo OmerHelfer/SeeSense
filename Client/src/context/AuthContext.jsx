@@ -21,6 +21,23 @@ export const AuthProvider = ({ children }) => {
 
   const isAuthenticated = !!user;
 
+  // Expired/revoked JWT → the API layer reports a 401 here. Tear the session down
+  // locally (no /logout call — the token the server just rejected can't authorise
+  // one) and let ProtectedRoute redirect to /login.
+  useEffect(() => {
+    let unsubscribe;
+    import('../services/sessionExpiry').then(({ setSessionExpiredHandler }) => {
+      unsubscribe = setSessionExpiredHandler(async () => {
+        const { disconnectStream } = await import('../services/visionService');
+        disconnectStream();
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+        setUser(null);
+      });
+    });
+    return () => { if (unsubscribe) unsubscribe(); };
+  }, []);
+
   // Presence heartbeat — while logged in, ping the server every 30s so the user
   // reads as "online" in admin views even when not actively scanning the camera.
   useEffect(() => {

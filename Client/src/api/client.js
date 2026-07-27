@@ -18,4 +18,27 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+/**
+ * Endpoints where a 401 means "wrong credentials", NOT "your session died".
+ * Logging the user out because they mistyped a password would be absurd.
+ */
+const PUBLIC_AUTH_PATHS = ['/users/login', '/users/register', '/users/forgot-password', '/users/reset-password'];
+
+// A 401 on any authenticated call means the JWT is expired/revoked/invalid — end
+// the session so the app redirects to /login instead of spraying console errors.
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const status = error?.response?.status;
+    const url    = error?.config?.url || '';
+    const isPublicAuthCall = PUBLIC_AUTH_PATHS.some((p) => url.includes(p));
+
+    if (status === 401 && !isPublicAuthCall && localStorage.getItem('token')) {
+      const { notifySessionExpired } = await import('../services/sessionExpiry');
+      notifySessionExpired();
+    }
+    return Promise.reject(error);
+  },
+);
+
 export default apiClient;
