@@ -4,21 +4,13 @@
 import os
 os.environ.setdefault("YOLO_AUTOINSTALL", "false")
 
-# Cap the maths thread pools BEFORE torch/numpy/OpenCV are imported — they read
-# these variables at import time, so setting them later has no effect.
-#
-# Why: a container's cgroup caps how much CPU it may USE without changing the core
-# count it SEES. Railway reported os.cpu_count()=48 while the replica limit is
-# 8 vCPU, so torch spawned 48 threads for 8 vCPU worth of CPU — 6x oversubscribed,
-# with the threads spending their time context-switching instead of working. A
-# controlled sweep measured 16 threads on a 16-core machine running 4x SLOWER than
-# 8 threads, and this is the same failure that made ONNX Runtime take 2323ms/frame.
-#
-# Set TORCH_NUM_THREADS=0 to disable the cap and restore the previous behaviour.
-_threads = os.getenv("TORCH_NUM_THREADS", "8")
-if _threads != "0":
-    os.environ.setdefault("OMP_NUM_THREADS", _threads)
-    os.environ.setdefault("MKL_NUM_THREADS", _threads)
+# NOTE: do NOT cap OMP_NUM_THREADS / MKL_NUM_THREADS / torch.set_num_threads here.
+# Capping to 8 (matching the replica's vCPU limit) looked obviously correct —
+# the container reports 48 cores but may only use 8 — and measured harmless
+# locally. In production it was severe: YOLO went 26-36ms -> 149ms and
+# end-to-end 138-160ms -> 805ms. Reverted. This is the second time thread caps
+# have regressed this server, so treat the reported core count as something to
+# observe, not something to correct.
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -156,6 +148,7 @@ def get_system_status(
         live = tracker.get_status()
         data["rtt_history"] = live.get("rtt_history", [])
         data["client_stage_latency"] = live.get("client_stage_latency", {})
+        data["input_size"] = live.get("input_size")
         # Same for the FPS card: capacity / server-actual / client-actual are
         # instantaneous rates the live tracker measures and the per-minute buckets
         # never stored. `overall` stays the all-time average computed from them.

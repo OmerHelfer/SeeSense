@@ -51,6 +51,11 @@ class PerformanceTracker:
         # every few seconds, so we just keep the most recent snapshot — never on any
         # hot path. {stage: {avg_ms,min_ms,max_ms}}.
         self.client_stages = {}
+        # Square input size the most recent connection actually negotiated. Lives
+        # in the client bundle (streamConfig.js) but is clamped server-side, so
+        # this is the only place the EFFECTIVE value is knowable — a stale or
+        # cached client bundle otherwise silently keeps sending the old size.
+        self.last_input_size = None
 
     def reset(self):
         """
@@ -95,6 +100,13 @@ class PerformanceTracker:
         return latency_ms
 
     # ── Client FPS reporting ─────────────────────────────
+
+    def record_input_size(self, size: int):
+        """Note the input size a connection negotiated (called on WS connect)."""
+        try:
+            self.last_input_size = int(size)
+        except (TypeError, ValueError):
+            pass
 
     def record_client_fps(self, fps: float):
         """Record the actual capture rate reported by the client."""
@@ -269,6 +281,7 @@ class PerformanceTracker:
             "rtt_history": list(self.rtt_history),
             "stage_latency": self.get_stage_breakdown(),
             "client_stage_latency": self.client_stages,
+            "input_size": self.last_input_size,
             "throughput": self.get_throughput(),
             "fps": {
                 "server_capacity": self.get_recent_fps(),       # תיאורטי - יכולת

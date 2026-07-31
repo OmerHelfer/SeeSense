@@ -11,14 +11,7 @@ logger = logging.getLogger(__name__)
 # ==================== GPU Detection ====================
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Belt-and-braces to the OMP_NUM_THREADS/MKL_NUM_THREADS set in main.py: those are
-# only read if torch is imported afterwards, which isn't guaranteed for every entry
-# point (tests, scripts, a different ASGI runner). set_num_threads() applies
-# regardless. Skipped when TORCH_NUM_THREADS=0 so the cap can be lifted entirely.
-# See main.py for why this matters (container sees 48 cores, may use 8).
-_torch_threads = int(os.getenv("TORCH_NUM_THREADS", "8"))
-if _torch_threads > 0 and DEVICE == "cpu":
-    torch.set_num_threads(_torch_threads)
+# Torch's own thread count is left alone on purpose — see the note in main.py.
 
 
 def log_runtime_config():

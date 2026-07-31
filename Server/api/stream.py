@@ -124,6 +124,9 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
     frame_size = max(MIN_INPUT_SIZE, min(MAX_INPUT_SIZE, frame_size))
 
     logger.info(f"WebSocket connected: user={user_id}, input_size={frame_size}")
+    # Surfaced on the admin page: this is the size the client ACTUALLY negotiated,
+    # which is the only way to tell a redeployed bundle from a cached one.
+    tracker.record_input_size(frame_size)
 
     # ── 2. Create or resume session ──
     session_id = get_or_create_session(user_id)
