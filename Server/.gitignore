@@ -12,12 +12,8 @@ venv/
 *.pt
 *.pth
 *.onnx
-# Except the deployed model, which must ship in the Docker image.
-# The .onnx is what MODEL_PATH actually loads (see core/config.py) — without this
-# exception it would be ignored, left out of the image, and the server would fail
-# to start in production. The .pt is kept as the source for re-exporting.
+# Except the deployed model, which must ship in the Docker image
 !ml_engine/seesense_model.pt
-!ml_engine/seesense_model.onnx
 
 # Environment & secrets
 .env
