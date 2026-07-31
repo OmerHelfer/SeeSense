@@ -10,20 +10,39 @@ logger = logging.getLogger(__name__)
 
 # ==================== GPU Detection ====================
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-logger.info(f"Inference device: {DEVICE}")
 
-# Thread-pool diagnostics. A container's cgroup caps how much CPU it may USE but
-# does not change the core count the process SEES, so a library can size its pool
-# from the host's cores and oversubscribe badly (this is exactly what made ONNX
-# Runtime take 2323ms/frame here). Logged, not enforced: torch thread caps were
-# tried in this project before and reverted after they caused a regression, so
-# this is here to reveal the numbers, not to change them. If torch_threads is far
-# above the replica's vCPU limit, that is worth investigating.
-logger.info(
-    f"CPU threads — torch intra-op: {torch.get_num_threads()}, "
-    f"inter-op: {torch.get_num_interop_threads()}, os.cpu_count(): {os.cpu_count()}, "
-    f"OMP_NUM_THREADS: {os.environ.get('OMP_NUM_THREADS', 'unset')}"
-)
+# Belt-and-braces to the OMP_NUM_THREADS/MKL_NUM_THREADS set in main.py: those are
+# only read if torch is imported afterwards, which isn't guaranteed for every entry
+# point (tests, scripts, a different ASGI runner). set_num_threads() applies
+# regardless. Skipped when TORCH_NUM_THREADS=0 so the cap can be lifted entirely.
+# See main.py for why this matters (container sees 48 cores, may use 8).
+_torch_threads = int(os.getenv("TORCH_NUM_THREADS", "8"))
+if _torch_threads > 0 and DEVICE == "cpu":
+    torch.set_num_threads(_torch_threads)
+
+
+def log_runtime_config():
+    """
+    Report device + CPU thread-pool settings.
+
+    Called from load_model() rather than at import time on purpose: this module is
+    imported by main.py BEFORE logging.basicConfig() runs, and until then the root
+    logger sits at WARNING, so any INFO logged here would be silently discarded.
+
+    Why the thread counts matter: a container's cgroup caps how much CPU it may USE
+    but does not change the core count the process SEES, so a library can size its
+    pool from the host's cores and oversubscribe badly — that is exactly what made
+    ONNX Runtime take 2323ms/frame here. Reported, not enforced: torch thread caps
+    were tried in this project before and reverted after causing a regression, so
+    this exists to reveal the numbers before anyone changes them again.
+    """
+    logger.info(f"Inference device: {DEVICE}")
+    logger.info(
+        f"CPU threads — torch intra-op: {torch.get_num_threads()}, "
+        f"inter-op: {torch.get_num_interop_threads()}, "
+        f"os.cpu_count(): {os.cpu_count()}, "
+        f"OMP_NUM_THREADS: {os.environ.get('OMP_NUM_THREADS', 'unset')}"
+    )
 
 
 # ==================== Mock Model (Testing Mode) ====================
@@ -48,6 +67,8 @@ def load_model(model_path: str, mode: str = "mock"):
         "pretrained" — Pretrained YOLO from ultralytics (e.g. yolov8n.pt)
         "custom"     — Your own model trained with pure PyTorch
     """
+    log_runtime_config()
+
     if mode == "mock":
         logger.warning("Testing mode — Mock Model active")
         return MockModel()

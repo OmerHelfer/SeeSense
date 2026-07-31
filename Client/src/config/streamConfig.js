@@ -32,7 +32,7 @@ export const JPEG_QUALITY = Math.max(0, Math.min(1, 1 - COMPRESSION_PERCENT / 10
  * and reports the value it actually used back on connect, so client + server
  * always agree on the coordinate space.
  */
-export const INPUT_SIZE = 640;
+export const INPUT_SIZE = 512;
 
 /**
  * Pipeline depth — how many frames may be "in flight" (sent, awaiting a result)
@@ -50,7 +50,7 @@ export const INPUT_SIZE = 640;
  *
  * At depth 4 we're hitting the ceiling (~23.5 FPS). For a blind pedestrian safety
  * app, 22 FPS is plenty smooth, and 216ms total lag = 3m at 50km/h reaction
- * distance — acceptable for urban use. Bounded queue (no fire-and-forget backlog);
+ * distance — acceptable for urban use. Bounded queue (no fire-and-forget backlog); 
  * also capped by server TARGET_FPS.
  */
 export const MAX_INFLIGHT = 5;

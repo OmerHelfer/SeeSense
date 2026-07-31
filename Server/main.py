@@ -4,6 +4,22 @@
 import os
 os.environ.setdefault("YOLO_AUTOINSTALL", "false")
 
+# Cap the maths thread pools BEFORE torch/numpy/OpenCV are imported — they read
+# these variables at import time, so setting them later has no effect.
+#
+# Why: a container's cgroup caps how much CPU it may USE without changing the core
+# count it SEES. Railway reported os.cpu_count()=48 while the replica limit is
+# 8 vCPU, so torch spawned 48 threads for 8 vCPU worth of CPU — 6x oversubscribed,
+# with the threads spending their time context-switching instead of working. A
+# controlled sweep measured 16 threads on a 16-core machine running 4x SLOWER than
+# 8 threads, and this is the same failure that made ONNX Runtime take 2323ms/frame.
+#
+# Set TORCH_NUM_THREADS=0 to disable the cap and restore the previous behaviour.
+_threads = os.getenv("TORCH_NUM_THREADS", "8")
+if _threads != "0":
+    os.environ.setdefault("OMP_NUM_THREADS", _threads)
+    os.environ.setdefault("MKL_NUM_THREADS", _threads)
+
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
