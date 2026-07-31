@@ -165,10 +165,28 @@ def _flush(bucket: dict):
         logger.error(f"perf_history flush failed: {e}")
 
 
-def flush_now():
+# Minimum gap between on-demand flushes. The admin page polls every 3s, and each
+# poll deepcopied every bucket and wrote one doc per active user — CPU and Mongo
+# work competing for the same vCPUs the model runs on, so simply watching the page
+# degraded the thing being measured. Throttling costs at most this much freshness
+# on the in-progress minute, which is well under one bucket.
+_FLUSH_MIN_INTERVAL_S = 20
+_last_flush_at = 0.0
+
+
+def flush_now(force: bool = False):
     """Persist the current in-progress buckets so queries include the most recent
-    (sub-minute) data. Upsert keyed by (minute_ts, user_id) → no double counting."""
+    (sub-minute) data. Upsert keyed by (minute_ts, user_id) → no double counting.
+
+    Throttled: repeat calls within _FLUSH_MIN_INTERVAL_S are no-ops. Pass force=True
+    when completeness matters more than cost (before a reset, on shutdown).
+    """
+    global _last_flush_at
+    now = time.time()
     with _lock:
+        if not force and (now - _last_flush_at) < _FLUSH_MIN_INTERVAL_S:
+            return
+        _last_flush_at = now
         # deepcopy, not dict(): a shallow copy shares the nested lat/rtt/stages
         # dicts with the live bucket, so record_frame keeps mutating them while
         # the write runs outside the lock. That persists a torn doc — frames /

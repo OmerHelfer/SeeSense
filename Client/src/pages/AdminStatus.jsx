@@ -499,6 +499,17 @@ const AdminStatus = () => {
                     fmt={fmtStageMs}
                   />
                 ))}
+              {/* The size the client actually negotiated, not what the repo says.
+                  INPUT_SIZE lives in the client bundle, so a cached or un-redeployed
+                  bundle keeps sending the old size — and since it directly sets how
+                  much work YOLO does, that is otherwise only inferable by comparing
+                  inference times. */}
+              {data.input_size && (
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 6 }}>
+                  גודל קלט בפועל: <strong dir="ltr">{data.input_size}×{data.input_size}</strong>
+                  {' '}(מה שהלקוח שולח בפועל)
+                </p>
+              )}
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
                 * נמדד רק על פריימים שעברו את כל השלבים בהצלחה (לא כולל פריימים שנדחו בבדיקת איכות)
               </p>
