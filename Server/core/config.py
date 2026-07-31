@@ -19,7 +19,6 @@ load_dotenv()
 # = 1-2) and verify on Railway, not just locally. The .onnx file is still in the
 # repo. Related: the reverted torch/OMP thread caps noted in the project history.
 MODEL_PATH = "ml_engine/seesense_model.pt"
-MODEL_PATH = "ml_engine/seesense_model.pt"
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
