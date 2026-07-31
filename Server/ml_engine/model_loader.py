@@ -2,9 +2,57 @@ import numpy as np
 import logging
 import torch
 
-from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES, TARGET_SIZE, MODEL_PATH
+from core.config import (
+    CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES, TARGET_SIZE, MODEL_PATH,
+    ONNX_NUM_THREADS,
+)
 
 logger = logging.getLogger(__name__)
+
+
+# ==================== ONNX Runtime thread cap ====================
+
+_onnx_threads_configured = False
+
+
+def _configure_onnx_threads():
+    """
+    Cap ONNX Runtime's thread pool before any session is created.
+
+    Ultralytics builds its session as `InferenceSession(weight, providers=...)`
+    with no SessionOptions, so ONNX Runtime falls back to its default: one intra-op
+    thread per CPU core it can see. Inside a container it sees the HOST's cores
+    (e.g. 32) while being scheduled only a fraction of one vCPU — so the threads
+    fight over a sliver of CPU, context-switch constantly, and starve the whole
+    process. That is what took YOLO to 2323ms on Railway and dragged even OpenCV
+    decode from 2.4ms to 139ms.
+
+    There is no environment variable for this (modern ONNX Runtime builds don't use
+    OpenMP, so OMP_NUM_THREADS won't do it), and Ultralytics exposes no hook — so we
+    wrap the constructor to inject our SessionOptions. Idempotent.
+    """
+    global _onnx_threads_configured
+    if _onnx_threads_configured:
+        return
+    try:
+        import onnxruntime
+    except ImportError:
+        return
+
+    original = onnxruntime.InferenceSession
+
+    def _session_with_thread_cap(*args, **kwargs):
+        if kwargs.get("sess_options") is None:
+            opts = onnxruntime.SessionOptions()
+            opts.intra_op_num_threads = ONNX_NUM_THREADS   # threads inside one op
+            opts.inter_op_num_threads = 1                  # ops run one at a time
+            opts.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+            kwargs["sess_options"] = opts
+        return original(*args, **kwargs)
+
+    onnxruntime.InferenceSession = _session_with_thread_cap
+    _onnx_threads_configured = True
+    logger.info(f"ONNX Runtime thread cap applied: intra_op={ONNX_NUM_THREADS}, inter_op=1")
 
 
 # ==================== Device Detection ====================
@@ -85,6 +133,9 @@ def load_model(model_path: str, mode: str = "mock"):
     #     return model
     if mode == "custom":
         from ultralytics import YOLO
+        # Must run BEFORE YOLO() builds the session — see _configure_onnx_threads.
+        if str(model_path).lower().endswith(".onnx"):
+            _configure_onnx_threads()
         logger.info(f"Loading custom YOLO model from {model_path}...")
         model = YOLO(model_path)
         logger.info(f"Custom model loaded successfully on {DEVICE}")

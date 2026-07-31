@@ -5,20 +5,39 @@ load_dotenv()
 
 
 # ==================== Model ====================
-# PyTorch model. REVERTED FROM ONNX (2026-07-31) — see below before trying again.
+# Which weights to serve. Env-overridable so the ONNX/PyTorch choice can be flipped
+# on Railway (a variable change + restart) WITHOUT a code deploy — set
+#     MODEL_PATH=ml_engine/seesense_model.onnx
+# to try ONNX, and simply clear the variable to fall straight back to PyTorch.
 #
-# ONNX Runtime measured 1.54x FASTER locally (99ms -> 64ms, identical detections)
-# but was catastrophically SLOWER on Railway: YOLO 31ms -> 2323ms avg, and even
-# decode+quality 2.4ms -> 139ms. Everything slowed down, not just inference, which
-# points at CPU starvation rather than the model itself: ONNX Runtime sizes its
-# thread pool from the HOST's core count, but a container only gets a fraction of
-# a vCPU, so it oversubscribes massively and thrashes. (Local dev never showed it —
-# a laptop has the cores it thinks it has.)
+# History (2026-07-31): a first ONNX attempt benchmarked 1.54x faster locally
+# (99ms -> 64ms, identical detections) but was 75x SLOWER on Railway — YOLO
+# 31ms -> 2323ms, and decode+quality 2.4ms -> 139ms too. OpenCV work slowing down
+# as well proved it wasn't the model: the whole container was CPU-starved.
+# Ultralytics builds its ONNX session as InferenceSession(weight, providers=...)
+# with no SessionOptions, so ONNX Runtime sized its thread pool from the HOST's
+# core count while the container only gets a fraction of a vCPU -> oversubscription
+# and thrashing. A laptop never reproduces it: it really has the cores it counts.
+# ONNX_NUM_THREADS below is the fix; see _configure_onnx_threads in model_loader.
+MODEL_PATH = os.getenv("MODEL_PATH", "ml_engine/seesense_model.pt")
+
+# Thread cap for ONNX Runtime. Containers are scheduled a fraction of a vCPU, so
+# the default (one thread per host core) thrashes. Ignored when serving PyTorch.
 #
-# To retry ONNX, cap the thread pool FIRST (OMP_NUM_THREADS / intra_op_num_threads
-# = 1-2) and verify on Railway, not just locally. The .onnx file is still in the
-# repo. Related: the reverted torch/OMP thread caps noted in the project history.
-MODEL_PATH = "ml_engine/seesense_model.pt"
+# Measured on the same frame, both engines capped to the same budget (avg ms):
+#     threads   PyTorch    ONNX     winner
+#         1      108.9     204.2    PyTorch 1.88x
+#         2      107.6     116.6    PyTorch 1.08x
+#         4      105.5      78.9    ONNX    1.34x
+#         8      112.4      61.6    ONNX    1.82x
+#
+# So ONNX only wins with >=4 usable threads. PyTorch is flat (~105-112ms) whatever
+# it is given; ONNX scales hard — excellent on a big host, worse than PyTorch on a
+# small one. That is the whole story of the Railway regression, and it is why the
+# default stays on PyTorch: on the current plan ONNX has nothing to offer.
+# Revisit if the server ever gets >=4 dedicated vCPUs (or a GPU, which is a
+# different path entirely — see onnxruntime-gpu in requirements.txt).
+ONNX_NUM_THREADS = int(os.getenv("ONNX_NUM_THREADS", "2"))
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
