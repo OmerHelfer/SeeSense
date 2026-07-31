@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+import os
 import torch
 
 from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES, TARGET_SIZE
@@ -10,6 +11,19 @@ logger = logging.getLogger(__name__)
 # ==================== GPU Detection ====================
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 logger.info(f"Inference device: {DEVICE}")
+
+# Thread-pool diagnostics. A container's cgroup caps how much CPU it may USE but
+# does not change the core count the process SEES, so a library can size its pool
+# from the host's cores and oversubscribe badly (this is exactly what made ONNX
+# Runtime take 2323ms/frame here). Logged, not enforced: torch thread caps were
+# tried in this project before and reverted after they caused a regression, so
+# this is here to reveal the numbers, not to change them. If torch_threads is far
+# above the replica's vCPU limit, that is worth investigating.
+logger.info(
+    f"CPU threads — torch intra-op: {torch.get_num_threads()}, "
+    f"inter-op: {torch.get_num_interop_threads()}, os.cpu_count(): {os.cpu_count()}, "
+    f"OMP_NUM_THREADS: {os.environ.get('OMP_NUM_THREADS', 'unset')}"
+)
 
 
 # ==================== Mock Model (Testing Mode) ====================
