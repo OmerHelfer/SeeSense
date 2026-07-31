@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Activity, Server, Wifi, Clock, Zap, Gauge, CheckCircle, XCircle, RotateCcw, AlertTriangle, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -103,7 +103,7 @@ const STAGE_ORDER = ['decode_quality', 'inference', 'tracking', 'danger_logic', 
 
 // ── Client-side stage labels (Hebrew) — the on-device half of the pipeline ──
 const CLIENT_STAGE_LABELS = {
-  capture:  'צילום פריים (Canvas)',
+  capture:  'צילום פריים',
   encode:   'דחיסת JPEG',
   render:   'ציור תוצאה + HUD',
   feedback: 'קול + רטט (התראה)',
@@ -321,6 +321,24 @@ const AdminStatus = () => {
 
   const isRange = data?.mode === 'range';
 
+  // "לקוח בלבד" — the on-device cost of producing one frame, to sit alongside
+  // "שרת בלבד" and End-to-End. Only capture + encode count: those are the two
+  // stages a frame passes through BEFORE it is sent, so together they're the
+  // client's share of the send path (render/feedback happen after the reply and
+  // would double-count if added here). Live mode only — client stages aren't
+  // persisted per-minute, so they don't exist for a historical range.
+  const clientOnly = useMemo(() => {
+    const cs = data?.client_stage_latency;
+    if (isRange || !cs) return null;
+    const parts = ['capture', 'encode'].map((k) => cs[k]).filter(Boolean);
+    if (parts.length === 0) return null;
+    return {
+      avg: parts.reduce((s, p) => s + (p.avg_ms ?? 0), 0),
+      min: parts.reduce((s, p) => s + (p.min_ms ?? 0), 0),
+      max: parts.reduce((s, p) => s + (p.max_ms ?? 0), 0),
+    };
+  }, [data, isRange]);
+
   return (
     <motion.div
       className="inner-page admin-status-page"
@@ -463,6 +481,19 @@ const AdminStatus = () => {
               max={data.server_latency?.max_ms}
               color="#a78bfa"
             />
+            {/* Client-only = the on-device cost of PRODUCING a frame (capture + encode).
+                render/feedback are excluded on purpose: they happen after the result
+                comes back, so they aren't part of the send path this row compares. */}
+            {clientOnly && (
+              <LatencyRow
+                label="לקוח בלבד"
+                avg={clientOnly.avg}
+                min={clientOnly.min}
+                max={clientOnly.max}
+                color="#f472b6"
+                fmt={fmtStageMs}
+              />
+            )}
             <LatencyRow
               label="End-to-End"
               avg={data.client_rtt?.avg_ms}
