@@ -5,17 +5,21 @@ load_dotenv()
 
 
 # ==================== Model ====================
-# ONNX build of the trained model. Same weights, same maths — ONNX Runtime just
-# executes them with an inference-only engine (fused Conv+BN+ReLU, constant
-# folding, CPU-tuned kernels) instead of PyTorch's training-oriented one.
-# Verified against seesense_model.pt on the same image: identical detections,
-# 0.00px bbox difference, max confidence delta 1e-6, ~1.5x faster on CPU.
-# Regenerate after retraining:
-#     YOLO("seesense_model.pt").export(format="onnx", imgsz=640, simplify=True, opset=12)
-# NOTE: the graph is fixed at 640. A client requesting a smaller input_size still
-# works (Ultralytics resizes to fit), but gains no server-side speed — with ONNX,
-# INPUT_SIZE only shrinks the upload, it no longer shrinks inference.
-MODEL_PATH = "ml_engine/seesense_model.onnx"
+# PyTorch model. REVERTED FROM ONNX (2026-07-31) — see below before trying again.
+#
+# ONNX Runtime measured 1.54x FASTER locally (99ms -> 64ms, identical detections)
+# but was catastrophically SLOWER on Railway: YOLO 31ms -> 2323ms avg, and even
+# decode+quality 2.4ms -> 139ms. Everything slowed down, not just inference, which
+# points at CPU starvation rather than the model itself: ONNX Runtime sizes its
+# thread pool from the HOST's core count, but a container only gets a fraction of
+# a vCPU, so it oversubscribes massively and thrashes. (Local dev never showed it —
+# a laptop has the cores it thinks it has.)
+#
+# To retry ONNX, cap the thread pool FIRST (OMP_NUM_THREADS / intra_op_num_threads
+# = 1-2) and verify on Railway, not just locally. The .onnx file is still in the
+# repo. Related: the reverted torch/OMP thread caps noted in the project history.
+MODEL_PATH = "ml_engine/seesense_model.pt"
+MODEL_PATH = "ml_engine/seesense_model.pt"
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
