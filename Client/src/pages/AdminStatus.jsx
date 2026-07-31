@@ -38,6 +38,35 @@ const fmtUptime = (seconds) => {
 
 const fmtMs = (ms) => ms > 0 ? `${Math.round(ms)}ms` : '—';
 
+// Formats a time SPAN (not a point in time) into "X <unit> אחרונות" — picks
+// whichever unit actually fits (seconds → minutes → hours → days → weeks),
+// instead of always dividing by 60,000 and calling it "minutes" even when the
+// span is really hours or days (e.g. a stale point sitting in a count-capped
+// history buffer from a much earlier session).
+const formatSpanLabel = (spanMs) => {
+  const sec = Math.round(spanMs / 1000);
+  if (sec < 60) return `${sec} שניות אחרונות`;
+
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} דקות אחרונות`;
+
+  const hours = Math.floor(min / 60);
+  const remMin = min % 60;
+  if (hours < 24) {
+    return remMin > 0 ? `${hours} שעות ו-${remMin} דקות אחרונות` : `${hours} שעות אחרונות`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  if (days < 7) {
+    return remHours > 0 ? `${days} ימים ו-${remHours} שעות אחרונות` : `${days} ימים אחרונות`;
+  }
+
+  const weeks = Math.floor(days / 7);
+  const remDays = days % 7;
+  return remDays > 0 ? `${weeks} שבועות ו-${remDays} ימים אחרונות` : `${weeks} שבועות אחרונות`;
+};
+
 // For the per-stage breakdown, a value under 1ms is REAL data (a stage that took
 // e.g. 0.3ms), not "missing" — so show it with one decimal (e.g. "0.4ms") rather
 // than the "—" that fmtMs uses for zero. Only a truly absent value shows "—".
@@ -194,12 +223,11 @@ const RttChart = ({ history }) => {
     }
 
     // X-axis label — computed from actual timestamps, not a hardcoded guess.
-    // rtt_history is reported every ~5s from the client, up to 60 points,
-    // so the real span can be several minutes, not a fixed "30 seconds".
-    const spanMs = history[history.length - 1].ts - history[0].ts;
-    const spanLabel = spanMs >= 60000
-      ? `${Math.round(spanMs / 60000)} דקות אחרונות`
-      : `${Math.round(spanMs / 1000)} שניות אחרונות`;
+    // rtt_history is capped by COUNT (60 points), not by time, so if the points
+    // aren't evenly spaced (e.g. a stale point from a session hours/days ago is
+    // still sitting in the buffer) the real span can be hours or days, not just
+    // minutes — format whichever unit actually fits, not always "X דקות".
+    const spanLabel = formatSpanLabel(history[history.length - 1].ts - history[0].ts);
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
     ctx.textAlign = 'center';
     ctx.fillText(spanLabel, w / 2, h - 4);
