@@ -60,6 +60,10 @@ async def lifespan(app: FastAPI):
     connect()
     from services.user_service import migrate_admin_levels
     migrate_admin_levels()
+    # Anchor the all-users performance clock to the oldest existing bucket if it
+    # was never recorded. Must happen before any reset can delete that bucket.
+    from services.perf_history import backfill_recording_start
+    backfill_recording_start()
     app.state.model = load_model(MODEL_PATH, mode=MODEL_MODE)
     app.state.start_time = time.time()
     logger.info("Server is ready")

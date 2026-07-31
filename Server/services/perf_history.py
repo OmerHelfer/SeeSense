@@ -10,6 +10,10 @@ collection. Range queries then aggregate the buckets between two timestamps.
 NOTE: history only exists going forward from when this module started recording —
 there is no retroactive data. A reset (reset_history) drops everything.
 
+The moment recording began is stored separately, as a single doc in `perf_meta`,
+so the measured span the admin page shows is a clock rather than a property of
+whichever buckets happen to still exist. See "Recording-start marker" below.
+
 Each bucket doc:
 {
   minute_ts: <epoch seconds, minute-aligned>,   # key, together with user_id
@@ -47,6 +51,71 @@ _bucket_minute = None
 
 def _col():
     return get_db()["perf_history"]
+
+
+def _meta_col():
+    return get_db()["perf_meta"]
+
+
+# ==================== Recording-start marker ====================
+#
+# The all-users measured span used to be derived from the oldest bucket in the
+# collection. That made it a function of surviving data rather than a clock:
+# deleting one user's buckets (a scoped reset, or TTL expiry) removed the row
+# that WAS the minimum, so the global span silently jumped forward. The origin
+# is now stored explicitly and only a global reset clears it.
+
+_META_ID = "recording"
+
+# Set once we know the marker exists, so the common case costs no write. Only a
+# global reset clears it (a scoped reset must not touch the marker).
+_recording_start_known = False
+
+
+def note_recording_start(ts: int):
+    """Record `ts` as the moment recording began, unless a marker already exists.
+
+    $setOnInsert, so the earliest writer wins and repeat calls are harmless —
+    concurrent bucket flushes all racing to create it is fine.
+    """
+    global _recording_start_known
+    try:
+        _meta_col().update_one(
+            {"_id": _META_ID},
+            {"$setOnInsert": {"started_at": int(ts)}},
+            upsert=True,
+        )
+        _recording_start_known = True
+    except Exception as e:
+        logger.error(f"perf_history recording-start write failed: {e}")
+
+
+def get_recording_start() -> int | None:
+    """Epoch second recording began, or None if nothing has been recorded yet."""
+    try:
+        doc = _meta_col().find_one({"_id": _META_ID})
+        return doc.get("started_at") if doc else None
+    except Exception as e:
+        logger.error(f"perf_history recording-start read failed: {e}")
+        return None
+
+
+def backfill_recording_start():
+    """Adopt the oldest existing bucket as the origin, for history recorded before
+    the marker existed. Called at startup so the marker is always in place before
+    any reset can delete the bucket it would have been derived from.
+    """
+    global _recording_start_known
+    try:
+        if _meta_col().find_one({"_id": _META_ID}):
+            _recording_start_known = True
+            return
+        oldest = _col().find_one({}, sort=[("minute_ts", 1)])
+        if oldest and oldest.get("minute_ts") is not None:
+            note_recording_start(oldest["minute_ts"])
+            logger.info(f"perf_history recording start backfilled to {oldest['minute_ts']}")
+    except Exception as e:
+        logger.error(f"perf_history recording-start backfill failed: {e}")
 
 
 # ==================== Accumulation ====================
@@ -151,6 +220,11 @@ def _flush(bucket: dict):
     # Skip empty buckets (no frames and no rtt samples)
     if bucket["frames"] == 0 and bucket["rtt"]["n"] == 0:
         return
+    # Anchor the recording clock to this bucket's minute the first time anything
+    # is persisted. Done here rather than in record_frame so the hot path stays
+    # free of Mongo, and the minute_ts is an accurate origin either way.
+    if not _recording_start_known:
+        note_recording_start(bucket["minute_ts"])
     try:
         # Keyed by (minute_ts, user_id) so re-flushing the in-progress minute
         # overwrites rather than duplicates. Legacy docs written before per-user
@@ -283,6 +357,21 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
     # (the useful-output equivalent of the live 10s-window throughput).
     throughput_ps = round(success / span_seconds, 2) if span_seconds > 0 else 0.0
 
+    # The span the PAGE displays ("טווח נמדד") is a clock, not a property of the
+    # surviving rows: for the all-users view it runs from the recording-start
+    # marker, so resetting one user cannot move it. Per-user views keep meaning
+    # "since that user's first recorded frame", which is what their label says.
+    # span_seconds above stays bucket-derived — it is the FPS/throughput divisor,
+    # where dividing by wall-clock time (including long idle stretches) would
+    # understate the measured rates.
+    recording_start = get_recording_start() if user_id is None else None
+    if recording_start is not None:
+        display_first = recording_start
+        display_span = max(0, int(time.time()) - recording_start)
+    else:
+        display_first = min_minute
+        display_span = span_seconds
+
     return {
         "mode": "range",
         "user_id": user_id,
@@ -290,11 +379,12 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
             "start_ts": start_ts,
             "end_ts": end_ts,
             "buckets": len(buckets),
-            "span_seconds": span_seconds,
-            "first_ts": min_minute,
+            "span_seconds": span_seconds,   # bucket-derived; the FPS divisor
+            "first_ts": display_first,      # clock origin for the displayed span
+            "oldest_bucket_ts": min_minute,
             "last_ts": max_minute,
         },
-        "uptime_seconds": span_seconds,
+        "uptime_seconds": display_span,
         "total_frames": total,
         "success_count": success,
         "failure_count": fail,
@@ -332,14 +422,26 @@ def reset_history(user_id: str | None = None):
     The in-progress in-memory bucket is discarded FIRST in both cases: it is
     already-counted data that has not been written yet, so leaving it would let
     the next flush immediately re-create rows for a user who was just reset.
+
+    Only the global case clears the recording-start marker. A scoped reset must
+    leave it alone — the all-users clock is not that user's to restart, and
+    resetting it was exactly the bug this marker exists to prevent.
     """
-    global _buckets, _bucket_minute
+    global _buckets, _bucket_minute, _recording_start_known
     with _lock:
         if user_id is None:
             _buckets = {}
             _bucket_minute = None
         else:
             _buckets.pop(user_id, None)
+
+    if user_id is None:
+        try:
+            _meta_col().delete_one({"_id": _META_ID})
+            _recording_start_known = False
+        except Exception as e:
+            logger.error(f"perf_history recording-start reset failed: {e}")
+            raise
 
     try:
         result = _col().delete_many({} if user_id is None else {"user_id": user_id})

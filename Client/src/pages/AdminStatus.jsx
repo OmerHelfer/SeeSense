@@ -13,12 +13,22 @@ const pageVariants = {
 };
 
 // ── Helpers ──
+// Elapsed span as a live clock. Always shows seconds, and rolls into days once
+// past 24h ("יום אחד, 3:05:12"). Hebrew needs three forms for the day count:
+// singular, dual (יומיים), and plural.
 const fmtUptime = (seconds) => {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  const total = Math.max(0, Math.floor(seconds || 0));
+  const days = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+
+  const clock = days > 0 || h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+  if (days === 0) return clock;
+
+  const dayLabel = days === 1 ? 'יום אחד' : days === 2 ? 'יומיים' : `${days} ימים`;
+  return `${dayLabel}, ${clock}`;
 };
 
 const fmtMs = (ms) => ms > 0 ? `${Math.round(ms)}ms` : '—';
@@ -308,6 +318,24 @@ const AdminStatus = () => {
     setSearchParams({}, { replace: true });
   };
 
+  // Local 1s tick for the measured-span clock. The server's uptime_seconds comes
+  // from minute-aligned buckets, so on its own it sits still and then jumps a
+  // whole minute; deriving the span from the first bucket's timestamp against the
+  // current clock lets it run smoothly between the 3s data refreshes.
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const measuredSpan = useMemo(() => {
+    const first = data?.range?.first_ts;
+    // No buckets yet (or an unexpected future timestamp) → fall back to the
+    // server's own figure rather than showing a nonsense duration.
+    if (!first || nowSec < first) return data?.uptime_seconds ?? 0;
+    return nowSec - first;
+  }, [data, nowSec]);
+
   const handleReset = async () => {
     setResetting(true);
     try {
@@ -404,7 +432,7 @@ const AdminStatus = () => {
             <StatCard
               icon={Clock}
               label="טווח נמדד"
-              value={fmtUptime(data.uptime_seconds)}
+              value={fmtUptime(measuredSpan)}
               color="#22d3ee"
             />
             {/* Capacity / actual / client are live rates from the in-memory tracker,
