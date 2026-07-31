@@ -22,8 +22,17 @@ Each bucket doc:
   lat:   {sum, min, max, n},                     # server-side per-frame latency (ms)
   rtt:   {sum, min, max, n},                     # client-reported end-to-end RTT (ms)
   frames, success, fail,                          # counts
-  stages: { <stage>: {sum, min, max, n}, ... }    # per-pipeline-stage latency (ms)
+  stages: { <stage>: {sum, min, max, n}, ... },   # per-pipeline-stage latency (ms)
+  first_frame_ts, last_frame_ts,                  # epoch secs of this minute's first
+                                                  # and last frame — the ACTIVE span
+                                                  # inside the minute (see below)
 }
+
+first_frame_ts / last_frame_ts exist so a rate can be measured against time actually
+spent streaming rather than against the calendar. A bucket is a whole minute, but a
+user may have streamed for eight seconds of it; dividing by the minute reports an FPS
+six times lower than the one the user experienced. Buckets written before these
+fields existed have neither, and fall back to assuming the whole minute.
 """
 
 import copy
@@ -152,6 +161,11 @@ def _new_bucket(minute_ts: int, user_id: str | None = None) -> dict:
         "success": 0,
         "fail": 0,
         "stages": {},
+        # Wall-clock of the first and last frame in this minute. Their difference is
+        # the time genuinely spent streaming, which is what FPS should be measured
+        # against — see the module docstring.
+        "first_frame_ts": None,
+        "last_frame_ts": None,
     }
 
 
@@ -189,9 +203,13 @@ def record_frame(latency_ms: float, success: bool, stages: dict | None = None,
     history. Omitting it still counts toward the global totals — attribution is
     additive, never a filter on the aggregate.
     """
+    now = time.time()
     with _lock:
         _rollover_locked()
         bucket = _bucket_for_locked(user_id)
+        if bucket["first_frame_ts"] is None:
+            bucket["first_frame_ts"] = now
+        bucket["last_frame_ts"] = now
         bucket["frames"] += 1
         if success:
             bucket["success"] += 1
@@ -298,6 +316,41 @@ def _agg_metric(dst: dict, src: dict):
         dst["max"] = src["max"] if dst["max"] is None else max(dst["max"], src["max"])
 
 
+def _active_span(bucket: dict) -> tuple[float, int, int]:
+    """How long this bucket was actually streaming, and the frames to credit to it.
+
+    Returns (seconds, frames, successes) to be summed across buckets; dividing the
+    summed frames by the summed seconds gives FPS over time spent streaming.
+
+    n frames spanning (last - first) seconds cover n-1 intervals, so the real
+    duration is one average interval longer than the timestamps suggest:
+    span * n / (n - 1). That makes frames / duration reduce to the jitter-free
+    (n - 1) / span rate metrics.py uses, while still yielding a duration that can
+    be summed and displayed.
+
+    A single frame is skipped entirely: one sample cannot establish a rate, and
+    charging it a whole minute of "streaming time" would drag the average down
+    with an interval nobody measured.
+
+    Buckets written before the timestamps existed fall back to the whole minute —
+    the old behaviour, which is the best that can be said about data that was
+    never recorded.
+    """
+    frames = bucket.get("frames", 0)
+    if frames <= 0:
+        return 0.0, 0, 0
+    successes = bucket.get("success", 0)
+
+    first, last = bucket.get("first_frame_ts"), bucket.get("last_frame_ts")
+    if first is None or last is None:
+        return 60.0, frames, successes          # legacy bucket
+
+    span = last - first
+    if frames < 2 or span <= 0:
+        return 0.0, 0, 0
+    return span * frames / (frames - 1), frames, successes
+
+
 def _finalize(metric: dict) -> dict:
     n = metric["n"]
     return {
@@ -336,6 +389,8 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
     stages: dict[str, dict] = {}
     total = success = fail = 0
     min_minute = max_minute = None
+    active_seconds = 0.0
+    active_frames = active_success = 0
 
     for b in buckets:
         _agg_metric(lat, b.get("lat", {}))
@@ -349,6 +404,10 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
         if m is not None:
             min_minute = m if min_minute is None else min(min_minute, m)
             max_minute = m if max_minute is None else max(max_minute, m)
+        dur, n_frames, n_success = _active_span(b)
+        active_seconds += dur
+        active_frames += n_frames
+        active_success += n_success
 
     # Span for FPS: from first bucket start to last bucket end (+60s), else 0
     span_seconds = (max_minute + 60 - min_minute) if (min_minute is not None) else 0
@@ -356,6 +415,14 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
     # Throughput over a range = successful frames per second across the measured span
     # (the useful-output equivalent of the live 10s-window throughput).
     throughput_ps = round(success / span_seconds, 2) if span_seconds > 0 else 0.0
+
+    # The rates a person actually experienced: measured only over time spent
+    # streaming. `overall_fps` above divides by the calendar, so it is really
+    # "capacity x duty cycle" — a user who streams 3 minutes an hour reads ~1.5 FPS
+    # while every one of their frames came back at 30. Both are reported: this is
+    # the rate, that is the utilisation.
+    active_fps = round(active_frames / active_seconds, 2) if active_seconds > 0 else 0.0
+    active_throughput = round(active_success / active_seconds, 2) if active_seconds > 0 else 0.0
 
     # The span the PAGE displays ("טווח נמדד") is a clock, not a property of the
     # surviving rows: for the all-users view it runs from the recording-start
@@ -383,6 +450,11 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
             "first_ts": display_first,      # clock origin for the displayed span
             "oldest_bucket_ts": min_minute,
             "last_ts": max_minute,
+            # Time actually spent streaming. For one user this is their real
+            # session time; aggregated over everyone it is the SUM of concurrent
+            # sessions, so it can exceed the calendar span. The page labels the
+            # two cases differently.
+            "active_seconds": round(active_seconds),
         },
         "uptime_seconds": display_span,
         "total_frames": total,
@@ -396,8 +468,12 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
         },
         "stage_latency": {name: _finalize(s) for name, s in stages.items()},
         "throughput": {
+            # Successful frames per second of streaming — the rate that was really
+            # achieved. `per_second` keeps the old calendar-based figure alongside.
+            "active_per_second": active_throughput,
             "per_second": throughput_ps,
             "window_seconds": span_seconds,
+            "active_seconds": round(active_seconds),
             "frames_in_window": success,
         },
         "rtt_history": [],  # not available for aggregated ranges (live view only)
@@ -405,7 +481,8 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
             "server_capacity": 0.0,
             "server_actual": 0.0,
             "client_actual": 0.0,
-            "overall": overall_fps,
+            "active": active_fps,       # while streaming — comparable to the live rates
+            "overall": overall_fps,     # over the calendar — rate x utilisation
         },
     }
 

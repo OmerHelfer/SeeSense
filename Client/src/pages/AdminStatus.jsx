@@ -336,6 +336,15 @@ const AdminStatus = () => {
     return nowSec - first;
   }, [data, nowSec]);
 
+  // Rates measured over time actually spent streaming. The server reports both
+  // these and the calendar-based figures; fall back to the calendar ones so an
+  // older server (or history recorded before per-bucket timestamps existed) still
+  // renders a number rather than a blank card.
+  const activeSeconds = data?.range?.active_seconds ?? 0;
+  const userFps = data?.fps?.active ?? data?.fps?.overall ?? 0;
+  const throughputPs = data?.throughput?.active_per_second
+    ?? data?.throughput?.per_second ?? 0;
+
   const handleReset = async () => {
     setResetting(true);
     try {
@@ -433,18 +442,31 @@ const AdminStatus = () => {
               icon={Clock}
               label="טווח נמדד"
               value={fmtUptime(measuredSpan)}
+              // Streaming time is what the FPS card divides by, so it belongs next
+              // to the calendar span: together they explain why a 30 FPS stream can
+              // average 1.5 over the period. Summed across users it is session time,
+              // not wall-clock (concurrent sessions overlap) — hence the two labels.
+              sub={activeSeconds > 0
+                ? `${data.user ? 'זמן שידור בפועל' : 'זמן שידור מצטבר'}: ${fmtUptime(activeSeconds)}`
+                : undefined}
               color="#22d3ee"
             />
             {/* Capacity / actual / client are live rates from the in-memory tracker,
                 so they describe the SERVER right now — not the searched user. When
-                scoped to one person, show that person's own average instead rather
-                than put process-wide numbers under their name. */}
+                scoped to one person, show that person's own rate instead rather than
+                put process-wide numbers under their name.
+
+                That per-user rate is measured over time spent streaming, which is
+                what makes it comparable to the live gauge beside it. Dividing by the
+                calendar instead (fps.overall) answers a different question — how much
+                of the period was used — so it rides along in the sub-line rather than
+                masquerading as the same "FPS" the global view shows. */}
             <StatCard
               icon={Zap}
               label={data.user ? 'FPS ממוצע (למשתמש)' : 'FPS שרת (יכולת)'}
-              value={data.user ? (data.fps?.overall ?? 0) : (data.fps?.server_capacity ?? 0)}
+              value={data.user ? userFps : (data.fps?.server_capacity ?? 0)}
               sub={data.user
-                ? 'לאורך כל התקופה'
+                ? `בזמן שידור בפועל · לאורך כל התקופה: ${data.fps?.overall ?? 0}`
                 : `בפועל: ${data.fps?.server_actual ?? 0} | לקוח: ${data.fps?.client_actual ?? 0}`}
               color="#a78bfa"
             />
@@ -455,11 +477,16 @@ const AdminStatus = () => {
               sub={`${data.success_count} ✓  ${data.failure_count} ✗`}
               color="#22c55e"
             />
+            {/* Same correction as the FPS card: successful frames per second of
+                streaming, not per second of calendar. */}
             <StatCard
               icon={Gauge}
               label="תפוקה (Throughput)"
-              value={`${data.throughput?.per_second ?? 0}/שנ׳`}
-              sub="פריימים מוצלחים לשנייה — ממוצע"
+              value={`${throughputPs}/שנ׳`}
+              sub={`פריימים מוצלחים לשנייה — בזמן שידור בפועל${
+                data.throughput?.per_second != null
+                  ? ` · לאורך כל התקופה: ${data.throughput.per_second}`
+                  : ''}`}
               color="#f59e0b"
             />
           </div>
