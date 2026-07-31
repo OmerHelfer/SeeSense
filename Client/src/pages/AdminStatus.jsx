@@ -1,24 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Activity, Server, Wifi, Clock, Zap, Gauge, CheckCircle, XCircle, RotateCcw, AlertTriangle, Smartphone } from 'lucide-react';
+import { ArrowRight, Activity, Server, Wifi, Clock, Zap, Gauge, CheckCircle, XCircle, RotateCcw, AlertTriangle, Smartphone, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../api/client';
 import { getOverview } from '../services/adminService';
-
-// Time-range presets for the performance history selector.
-const RANGE_PRESETS = [
-  { key: 'live',  label: 'חי' },
-  { key: 'start', label: 'מההתחלה' },
-  { key: '30m',   label: '30 דק׳' },
-  { key: '1h',    label: 'שעה' },
-  { key: '1d',    label: 'יום' },
-  { key: '1w',    label: 'שבוע' },
-  { key: '1mo',   label: 'חודש' },
-  { key: '3mo',   label: '3 ח׳' },
-  { key: '6mo',   label: '6 ח׳' },
-  { key: '1y',    label: 'שנה' },
-  { key: 'custom', label: 'מותאם' },
-];
 
 // ── Animation variants (match Settings page) ──
 const pageVariants = {
@@ -251,14 +236,15 @@ const AdminStatus = () => {
   const [error, setError]     = useState(null);
   const intervalRef = useRef(null);
 
-  // Selected time range: { range, start, end }. Presets set start/end null.
-  const [sel, setSel]         = useState({ range: 'live', start: null, end: null });
-  const selRef                = useRef(sel);
-  useEffect(() => { selRef.current = sel; }, [sel]);
+  // Scope of the report: null = every user, or an email to drill into one.
+  // There is no time selector any more — the page always reports the full recorded
+  // history, which is what the persisted per-minute buckets already hold.
+  const [scope, setScope]     = useState(null);      // applied email (or null)
+  const scopeRef              = useRef(scope);
+  useEffect(() => { scopeRef.current = scope; }, [scope]);
 
-  // Custom range picker (datetime-local strings)
-  const [customStart, setCustomStart] = useState('');
-  const [customEnd,   setCustomEnd]   = useState('');
+  const [emailInput, setEmailInput] = useState('');  // what's typed in the box
+  const [notFound, setNotFound]     = useState(false);
 
   // Reset confirmation
   const [showReset, setShowReset] = useState(false);
@@ -268,42 +254,41 @@ const AdminStatus = () => {
   useEffect(() => { getOverview().then((o) => setActorLevel(o.actor_level ?? 0)).catch(() => {}); }, []);
 
   const fetchStatus = async () => {
-    const s = selRef.current;
-    // Custom range needs both ends chosen before it can be fetched
-    if (s.range === 'custom' && (!s.start || !s.end)) { setLoading(false); return; }
+    const email = scopeRef.current;
     try {
-      const params = { range: s.range };
-      if (s.range === 'custom') { params.start = s.start; params.end = s.end; }
-      const res = await apiClient.get('/get_system_status', { params });
+      const res = await apiClient.get('/get_system_status', {
+        params: email ? { email } : {},
+      });
       setData(res.data);
       setError(null);
+      setNotFound(false);
     } catch (err) {
-      if (err.response?.status === 403) {
-        setError('אין הרשאת אדמין');
-      } else {
-        setError('שגיאה בטעינת נתונים');
-      }
+      const status = err.response?.status;
+      if (status === 403)      setError('אין הרשאת אדמין');
+      else if (status === 404) { setNotFound(true); setError(null); }
+      else                     setError('שגיאה בטעינת נתונים');
     } finally {
       setLoading(false);
     }
   };
 
-  // Re-fetch (and restart the auto-refresh) whenever the selected range changes.
+  // Re-fetch (and restart auto-refresh) whenever the scope changes.
   useEffect(() => {
     fetchStatus();
     clearInterval(intervalRef.current);
     intervalRef.current = setInterval(fetchStatus, 3000); // refresh every 3s
     return () => clearInterval(intervalRef.current);
-  }, [sel]);
+  }, [scope]);
 
-  const applyCustom = () => {
-    if (!customStart || !customEnd) return;
-    // datetime-local → epoch seconds
-    setSel({
-      range: 'custom',
-      start: Math.floor(new Date(customStart).getTime() / 1000),
-      end:   Math.floor(new Date(customEnd).getTime() / 1000),
-    });
+  const applySearch = (e) => {
+    e?.preventDefault();
+    const v = emailInput.trim();
+    setScope(v || null);          // empty box => back to all users
+  };
+
+  const clearSearch = () => {
+    setEmailInput('');
+    setScope(null);
   };
 
   const handleReset = async () => {
@@ -319,17 +304,16 @@ const AdminStatus = () => {
     }
   };
 
-  const isRange = data?.mode === 'range';
-
   // "לקוח בלבד" — the on-device cost of producing one frame, to sit alongside
   // "שרת בלבד" and End-to-End. Only capture + encode count: those are the two
   // stages a frame passes through BEFORE it is sent, so together they're the
   // client's share of the send path (render/feedback happen after the reply and
-  // would double-count if added here). Live mode only — client stages aren't
-  // persisted per-minute, so they don't exist for a historical range.
+  // would double-count if added here). Present only for the all-users view: client
+  // stage timings are process-wide, so the server omits them when scoped to one
+  // user rather than misattribute other people's numbers.
   const clientOnly = useMemo(() => {
     const cs = data?.client_stage_latency;
-    if (isRange || !cs) return null;
+    if (!cs) return null;
     const parts = ['capture', 'encode'].map((k) => cs[k]).filter(Boolean);
     if (parts.length === 0) return null;
     return {
@@ -337,7 +321,7 @@ const AdminStatus = () => {
       min: parts.reduce((s, p) => s + (p.min_ms ?? 0), 0),
       max: parts.reduce((s, p) => s + (p.max_ms ?? 0), 0),
     };
-  }, [data, isRange]);
+  }, [data]);
 
   return (
     <motion.div
@@ -358,46 +342,55 @@ const AdminStatus = () => {
 
       <div className="inner-page-body">
 
-      {/* ── Time-range selector ── */}
-      <div className="admin-range-bar">
-        {RANGE_PRESETS.map((p) => (
-          <button
-            key={p.key}
-            className={`admin-range-chip${sel.range === p.key ? ' active' : ''}`}
-            onClick={() => setSel({ range: p.key, start: null, end: null })}
-          >
-            {p.label}
+      {/* ── Scope: all users, or drill into one by email ── */}
+      <form className="admin-scope-bar" onSubmit={applySearch}>
+        <Search size={16} className="admin-scope-icon" />
+        <input
+          type="email"
+          placeholder="חפש לפי אימייל (ריק = כל המשתמשים)"
+          value={emailInput}
+          onChange={(e) => setEmailInput(e.target.value)}
+          dir="ltr"
+        />
+        <button type="submit" className="admin-scope-btn">הצג</button>
+        {scope && (
+          <button type="button" className="admin-scope-btn ghost" onClick={clearSearch}>
+            הכל
           </button>
-        ))}
-      </div>
+        )}
+      </form>
 
-      {/* Custom date range picker */}
-      {sel.range === 'custom' && (
-        <div className="admin-custom-range">
-          <label>מ־<input type="datetime-local" value={customStart} onChange={(e) => setCustomStart(e.target.value)} /></label>
-          <label>עד<input type="datetime-local" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} /></label>
-          <button className="admin-range-chip active" onClick={applyCustom} disabled={!customStart || !customEnd}>הצג</button>
-        </div>
-      )}
+      {notFound && <div className="admin-error">לא נמצא משתמש עם אימייל זה</div>}
 
       {loading && <div className="admin-loading">טוען נתוני ביצועים...</div>}
       {error   && <div className="admin-error">{error}</div>}
 
       {data && (
         <div className="admin-content">
+          {/* ── Who this report covers ── */}
+          {data.user && (
+            <div className="admin-scope-note">
+              <Smartphone size={13} />
+              <span>
+                מציג נתונים של <strong>{data.user.name || data.user.email}</strong>
+                {' '}<span dir="ltr">({data.user.email})</span> — מאז הפריים הראשון שנרשם עבורו
+              </span>
+            </div>
+          )}
+
           {/* ── Top stat cards ── */}
           <div className="admin-stats-grid">
             <StatCard
               icon={Clock}
-              label={isRange ? 'טווח נמדד' : 'זמן פעילות'}
+              label="טווח נמדד"
               value={fmtUptime(data.uptime_seconds)}
               color="#22d3ee"
             />
             <StatCard
               icon={Zap}
-              label={isRange ? 'FPS ממוצע' : 'FPS שרת (יכולת)'}
-              value={isRange ? (data.fps?.overall ?? 0) : (data.fps?.server_capacity ?? 0)}
-              sub={isRange ? 'לאורך הטווח' : `בפועל: ${data.fps?.server_actual ?? 0} | לקוח: ${data.fps?.client_actual ?? 0}`}
+              label="FPS ממוצע"
+              value={data.fps?.overall ?? 0}
+              sub="לאורך כל התקופה"
               color="#a78bfa"
             />
             <StatCard
@@ -411,64 +404,20 @@ const AdminStatus = () => {
               icon={Gauge}
               label="תפוקה (Throughput)"
               value={`${data.throughput?.per_second ?? 0}/שנ׳`}
-              sub={isRange
-                ? 'פריימים לשנייה — ממוצע לאורך הטווח'
-                : `פריימים מוצלחים לשנייה (${Math.round(data.throughput?.window_seconds ?? 10)} שנ׳ אחרונות)`}
+              sub="פריימים מוצלחים לשנייה — ממוצע"
               color="#f59e0b"
             />
           </div>
 
-          {/* Range info note (aggregated ranges only) */}
-          {isRange && (
-            <div className="admin-range-note">
-              <AlertTriangle size={13} />
-              <span>נתונים מצטברים מרגע הפעלת השמירה — טווחים ארוכים יתמלאו עם הזמן. ({data.range?.buckets ?? 0} דקות נתונים)</span>
-            </div>
-          )}
-
-          {/* ── FPS comparison (live only — server/client real-time rates) ── */}
-          {!isRange && (
-          <div className="admin-section">
-            <h2 className="admin-section-title">
-              <Zap size={16} />
-              השוואת קצב פריימים (FPS)
-            </h2>
-
-            <div className="admin-latency-row">
-              <span className="admin-latency-label" style={{ borderRightColor: '#22c55e' }}>
-                לקוח (שולח)
-              </span>
-              <div className="admin-latency-values">
-                <div className="admin-latency-cell">
-                  <span className="admin-latency-num">{data.fps?.client_actual ?? 0}</span>
-                  <span className="admin-latency-tag">בפועל</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="admin-latency-row">
-              <span className="admin-latency-label" style={{ borderRightColor: '#a78bfa' }}>
-                שרת (מעבד)
-              </span>
-              <div className="admin-latency-values">
-                <div className="admin-latency-cell">
-                  <span className="admin-latency-num">{data.fps?.server_actual ?? 0}</span>
-                  <span className="admin-latency-tag">בפועל</span>
-                </div>
-                <div className="admin-latency-cell">
-                  <span className="admin-latency-num">{data.fps?.server_capacity ?? 0}</span>
-                  <span className="admin-latency-tag">יכולת</span>
-                </div>
-                <div className="admin-latency-cell">
-                  <span className="admin-latency-num">{data.fps?.overall ?? 0}</span>
-                  <span className="admin-latency-tag">מאז התחלה</span>
-                </div>
-              </div>
-            </div>
+          <div className="admin-range-note">
+            <AlertTriangle size={13} />
+            <span>
+              נתונים מצטברים מרגע הפעלת השמירה ({data.range?.buckets ?? 0} דקות נתונים).
+              {data.user && ' נתונים לפי משתמש נאספים רק מהרגע שהתכונה הופעלה.'}
+            </span>
           </div>
-          )}
 
-          {/* ── Latency comparison ── */}
+          {/* ── Response-time comparison ── */}
           <div className="admin-section">
             <h2 className="admin-section-title">
               <Activity size={16} />
@@ -538,7 +487,7 @@ const AdminStatus = () => {
           )}
 
           {/* ── Stage-by-stage CLIENT latency breakdown (live only) ── */}
-          {!isRange && data.client_stage_latency && Object.keys(data.client_stage_latency).length > 0 && (
+          {data.client_stage_latency && Object.keys(data.client_stage_latency).length > 0 && (
             <div className="admin-section">
               <h2 className="admin-section-title">
                 <Smartphone size={16} />

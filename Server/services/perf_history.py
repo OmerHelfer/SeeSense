@@ -12,7 +12,8 @@ there is no retroactive data. A reset (reset_history) drops everything.
 
 Each bucket doc:
 {
-  minute_ts: <epoch seconds, minute-aligned>,   # unique key
+  minute_ts: <epoch seconds, minute-aligned>,   # key, together with user_id
+  user_id: <str | None>,                         # who produced these frames
   created_at: <datetime, for TTL expiry>,
   lat:   {sum, min, max, n},                     # server-side per-frame latency (ms)
   rtt:   {sum, min, max, n},                     # client-reported end-to-end RTT (ms)
@@ -35,7 +36,12 @@ logger = logging.getLogger(__name__)
 RETENTION_SECONDS = 400 * 24 * 3600
 
 _lock = threading.Lock()
-_bucket = None  # current in-progress minute accumulator
+# Current in-progress minute, accumulated per user: {user_id or _UNATTRIBUTED: bucket}.
+# One doc per (minute, user) is written on rollover — with a handful of concurrent
+# users that is a few small writes a minute, and it is what makes a per-user view
+# possible without a second storage path.
+_buckets: dict = {}
+_bucket_minute = None
 
 
 def _col():
@@ -59,9 +65,16 @@ def _current_minute() -> int:
     return int(time.time() // 60) * 60
 
 
-def _new_bucket(minute_ts: int) -> dict:
+# Bucket key used for samples that arrive without a user_id. Kept distinct from a
+# real user id so it can never be returned by a per-user query, while still being
+# counted in the global totals.
+_UNATTRIBUTED = "_global"
+
+
+def _new_bucket(minute_ts: int, user_id: str | None = None) -> dict:
     return {
         "minute_ts": minute_ts,
+        "user_id": user_id,
         "created_at": datetime.utcnow(),
         "lat": _new_metric(),
         "rtt": _new_metric(),
@@ -73,38 +86,58 @@ def _new_bucket(minute_ts: int) -> dict:
 
 
 def _rollover_locked():
-    """Ensure _bucket is the current minute; flush the previous one if it rolled over.
-    Caller must hold _lock."""
-    global _bucket
+    """Ensure _buckets holds the current minute; flush the previous minute's buckets
+    if it rolled over. Caller must hold _lock."""
+    global _buckets, _bucket_minute
     minute = _current_minute()
-    if _bucket is None:
-        _bucket = _new_bucket(minute)
-    elif _bucket["minute_ts"] != minute:
-        completed = _bucket
-        _bucket = _new_bucket(minute)
-        _flush_async(completed)
+    if _bucket_minute is None:
+        _bucket_minute = minute
+    elif _bucket_minute != minute:
+        completed = _buckets
+        _buckets = {}
+        _bucket_minute = minute
+        for b in completed.values():
+            _flush_async(b)
 
 
-def record_frame(latency_ms: float, success: bool, stages: dict | None = None):
-    """Record one processed frame (latency + success + optional per-stage times)."""
+def _bucket_for_locked(user_id: str | None) -> dict:
+    """Get (or create) this minute's bucket for a user. Caller must hold _lock."""
+    key = user_id or _UNATTRIBUTED
+    bucket = _buckets.get(key)
+    if bucket is None:
+        bucket = _new_bucket(_bucket_minute, user_id)
+        _buckets[key] = bucket
+    return bucket
+
+
+def record_frame(latency_ms: float, success: bool, stages: dict | None = None,
+                 user_id: str | None = None):
+    """
+    Record one processed frame (latency + success + optional per-stage times).
+
+    user_id attributes the sample to a user so the admin page can show one user's
+    history. Omitting it still counts toward the global totals — attribution is
+    additive, never a filter on the aggregate.
+    """
     with _lock:
         _rollover_locked()
-        _bucket["frames"] += 1
+        bucket = _bucket_for_locked(user_id)
+        bucket["frames"] += 1
         if success:
-            _bucket["success"] += 1
+            bucket["success"] += 1
         else:
-            _bucket["fail"] += 1
-        _acc(_bucket["lat"], latency_ms)
+            bucket["fail"] += 1
+        _acc(bucket["lat"], latency_ms)
         if stages:
             for name, ms in stages.items():
-                _acc(_bucket["stages"].setdefault(name, _new_metric()), ms)
+                _acc(bucket["stages"].setdefault(name, _new_metric()), ms)
 
 
-def record_rtt(rtt_ms: float):
+def record_rtt(rtt_ms: float, user_id: str | None = None):
     """Record one client-reported end-to-end RTT sample."""
     with _lock:
         _rollover_locked()
-        _acc(_bucket["rtt"], rtt_ms)
+        _acc(_bucket_for_locked(user_id)["rtt"], rtt_ms)
 
 
 # ==================== Flushing ====================
@@ -118,17 +151,28 @@ def _flush(bucket: dict):
     if bucket["frames"] == 0 and bucket["rtt"]["n"] == 0:
         return
     try:
-        _col().replace_one({"minute_ts": bucket["minute_ts"]}, bucket, upsert=True)
+        # Keyed by (minute_ts, user_id) so re-flushing the in-progress minute
+        # overwrites rather than duplicates. Legacy docs written before per-user
+        # attribution have no user_id field; {"user_id": None} matches those too,
+        # which is correct — they are unattributed by definition.
+        _col().replace_one(
+            {"minute_ts": bucket["minute_ts"], "user_id": bucket.get("user_id")},
+            bucket,
+            upsert=True,
+        )
     except Exception as e:
         logger.error(f"perf_history flush failed: {e}")
 
 
 def flush_now():
-    """Persist the current in-progress bucket so range queries include the most
-    recent (sub-minute) data. Upsert keyed by minute_ts → no double counting."""
+    """Persist the current in-progress buckets so queries include the most recent
+    (sub-minute) data. Upsert keyed by (minute_ts, user_id) → no double counting."""
     with _lock:
-        if _bucket and (_bucket["frames"] > 0 or _bucket["rtt"]["n"] > 0):
-            _flush(dict(_bucket))
+        pending = [dict(b) for b in _buckets.values()
+                   if b["frames"] > 0 or b["rtt"]["n"] > 0]
+    # Flush outside the lock — a slow write must not stall the frame hot path.
+    for b in pending:
+        _flush(b)
 
 
 # ==================== Querying ====================
@@ -165,15 +209,23 @@ def _finalize(metric: dict) -> dict:
     }
 
 
-def query_range(start_ts: int | None, end_ts: int | None = None) -> dict:
+def query_range(start_ts: int | None, end_ts: int | None = None,
+                user_id: str | None = None) -> dict:
     """
     Aggregate all minute buckets in [start_ts, end_ts] into a status report shaped
     like PerformanceTracker.get_status() (minus the live-only rtt_history chart).
     start_ts=None means "since the beginning of recording".
+
+    user_id restricts the aggregate to one user's frames. Note that only data
+    recorded AFTER per-user attribution was added carries a user_id — older buckets
+    are unattributed and are correctly excluded from a per-user view (we don't know
+    whose they were) while still counting toward the global totals.
     """
     flush_now()  # include the current partial minute
 
     query = {}
+    if user_id is not None:
+        query["user_id"] = user_id
     if start_ts is not None:
         query["minute_ts"] = {"$gte": int(start_ts)}
     if end_ts is not None:
@@ -209,11 +261,14 @@ def query_range(start_ts: int | None, end_ts: int | None = None) -> dict:
 
     return {
         "mode": "range",
+        "user_id": user_id,
         "range": {
             "start_ts": start_ts,
             "end_ts": end_ts,
             "buckets": len(buckets),
             "span_seconds": span_seconds,
+            "first_ts": min_minute,
+            "last_ts": max_minute,
         },
         "uptime_seconds": span_seconds,
         "total_frames": total,
@@ -245,9 +300,10 @@ def query_range(start_ts: int | None, end_ts: int | None = None) -> dict:
 
 def reset_history():
     """Drop all persisted performance history (part of the admin 'reset' button)."""
-    global _bucket
+    global _buckets, _bucket_minute
     with _lock:
-        _bucket = None
+        _buckets = {}
+        _bucket_minute = None
     try:
         _col().delete_many({})
         logger.info("perf_history reset — all persisted buckets dropped")

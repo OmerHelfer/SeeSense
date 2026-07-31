@@ -31,6 +31,10 @@ def _ensure_indexes(db):
     from services.perf_history import RETENTION_SECONDS
     db["perf_history"].create_index("minute_ts")
     db["perf_history"].create_index("created_at", expireAfterSeconds=RETENTION_SECONDS)
+    # Per-user lookups (admin "search by email") filter on user_id and sort by time.
+    # Compound so a single user's whole history is one index range scan rather than
+    # a collection scan across every user's minutes.
+    db["perf_history"].create_index([("user_id", 1), ("minute_ts", 1)])
     logger.info("MongoDB TTL indexes ensured")
 
 

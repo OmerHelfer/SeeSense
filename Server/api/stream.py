@@ -157,7 +157,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                         rtt = float(data["rtt_ms"])
                         if 0 < rtt < 30000:
                             tracker.record_client_rtt(rtt)
-                            perf_history.record_rtt(rtt)
+                            perf_history.record_rtt(rtt, user_id=user_id)
                     elif data.get("type") == "fps_report" and "fps" in data:
                         fps = float(data["fps"])
                         if 0 < fps < 100:
@@ -253,7 +253,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 tracker.record_stage("db_write", stage_times["db_write"])
 
                 # ── Persist this frame's metrics to per-minute history ──
-                perf_history.record_frame(latency, True, stage_times)
+                perf_history.record_frame(latency, True, stage_times, user_id=user_id)
 
                 # ── Send result with record_id ──
                 await websocket.send_json({
@@ -284,7 +284,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 save_frame_count_background(session_id, frame_count)
 
             except ValueError as e:
-                perf_history.record_frame(tracker.end_timer(start, success=False), False)
+                perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
                 # Even on bad frames, check if danger state changed (e.g. user moved away)
                 danger_cleared = check_danger_cleared(user_id, False)
                 await websocket.send_json({
@@ -296,7 +296,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 })
 
             except Exception as e:
-                perf_history.record_frame(tracker.end_timer(start, success=False), False)
+                perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
                 logger.error(f"WS frame error: {e}", exc_info=True)
                 await websocket.send_json({
                     "type": "error",

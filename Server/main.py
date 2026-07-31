@@ -124,35 +124,51 @@ async def health_check():
 
 @app.get("/get_system_status", summary="Admin Only — System Performance")
 async def get_system_status(
-    range: str = "live",
-    start: int | None = None,
-    end: int | None = None,
+    email: str | None = None,
     current_user: dict = Depends(verify_admin),
 ):
     """
-    Admin only — server performance metrics.
+    Admin only — server performance metrics, aggregated over all recorded history.
 
-    range="live" (default) → real-time in-memory stats (since last reset/restart),
-        including the RTT live chart and FPS breakdown.
-    range in {start,30m,1h,1d,1w,1mo,3mo,6mo,1y} → aggregated from persisted
-        per-minute history over that lookback window.
-    range="custom" with start/end (epoch seconds) → aggregated over [start, end].
+    No email → totals across every user, since recording began.
+    email=<user email> → that user's own totals, since their first recorded frame.
+
+    Always the full history rather than a selectable window: the persisted
+    per-minute buckets already cover the whole retention period, so a lookback
+    parameter only ever narrowed what was shown.
     """
-    import time as _time
     from services import perf_history
+    from services.user_service import get_user_by_email
 
-    if range == "live":
-        return tracker.get_status()
+    if not email:
+        data = perf_history.query_range(None, None)
+        # Persisted buckets carry the all-time totals but not the two live-only
+        # views: the RTT chart is a rolling in-memory series, and the client stage
+        # breakdown is whatever the connected clients last reported. Merge them in
+        # so one request still returns everything the page shows.
+        live = tracker.get_status()
+        data["rtt_history"] = live.get("rtt_history", [])
+        data["client_stage_latency"] = live.get("client_stage_latency", {})
+        return data
 
-    if range == "custom":
-        return perf_history.query_range(start, end)
+    user = get_user_by_email(email.strip())
+    if not user:
+        raise HTTPException(status_code=404, detail="No user with that email")
 
-    if range not in perf_history.RANGE_SECONDS:
-        raise HTTPException(status_code=400, detail=f"Invalid range: {range}")
-
-    lookback = perf_history.RANGE_SECONDS[range]
-    start_ts = None if lookback is None else int(_time.time()) - lookback
-    return perf_history.query_range(start_ts, None)
+    data = perf_history.query_range(None, None, user_id=user["user_id"])
+    # Deliberately NOT merged for a single user: the RTT chart and the client stage
+    # timings are process-wide, so showing them beside one user's totals would
+    # attribute other people's numbers to them.
+    data["rtt_history"] = []
+    data["client_stage_latency"] = {}
+    # Echo identity so the page can label whose data it is showing.
+    data["user"] = {
+        "user_id": user["user_id"],
+        "email": user.get("email"),
+        "name": user.get("name"),
+        "created_at": user.get("created_at"),
+    }
+    return data
 
 
 @app.post("/reset_system_status", summary="Super Admin Only — Reset All Performance Data")

@@ -2316,64 +2316,79 @@ button:active {
 
 /* ── Time-range selector ── */
 
-.admin-range-bar {
+/* Scope bar — search performance data by user email (empty = all users) */
+.admin-scope-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 14px;
+  padding: 6px 10px;
+  background: var(--glass-bg, rgba(255, 255, 255, 0.03));
+  border: 1.5px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
   direction: rtl;
 }
 
-.admin-range-chip {
-  padding: 5px 12px;
+.admin-scope-icon { flex: 0 0 auto; color: rgba(255, 255, 255, 0.4); }
+
+.admin-scope-bar input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.82rem;
+  padding: 4px 2px;
+}
+
+.admin-scope-bar input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+  /* placeholder is Hebrew even though the field itself is LTR for the address */
+  direction: rtl;
+  text-align: right;
+}
+
+.admin-scope-btn {
+  flex: 0 0 auto;
+  padding: 5px 14px;
   border-radius: 999px;
-  border: 1.5px solid var(--glass-border, rgba(255, 255, 255, 0.12));
-  background: var(--glass-bg, rgba(255, 255, 255, 0.03));
-  color: rgba(255, 255, 255, 0.6);
+  border: 1.5px solid #22d3ee;
+  background: rgba(34, 211, 238, 0.12);
+  color: #22d3ee;
   font-size: 0.76rem;
   font-family: inherit;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.admin-range-chip.active {
-  border-color: #22d3ee;
-  background: rgba(34, 211, 238, 0.12);
-  color: #22d3ee;
-}
+.admin-scope-btn:hover { background: rgba(34, 211, 238, 0.2); }
 
-.admin-range-chip:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.admin-custom-range {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  direction: rtl;
-}
-
-.admin-custom-range label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.76rem;
+.admin-scope-btn.ghost {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: transparent;
   color: rgba(255, 255, 255, 0.6);
 }
 
-.admin-custom-range input {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  color: #fff;
-  font-family: inherit;
+.admin-scope-btn.ghost:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* Banner naming the user a scoped report belongs to */
+.admin-scope-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 10px;
   font-size: 0.76rem;
-  padding: 5px 8px;
-  color-scheme: dark;
+  color: rgba(233, 224, 255, 0.9);
+  direction: rtl;
 }
+
+.admin-scope-note strong { color: #c4b5fd; }
 
 .admin-range-note {
   display: flex;
