@@ -34,6 +34,17 @@ def _configure_onnx_threads():
     global _onnx_threads_configured
     if _onnx_threads_configured:
         return
+
+    # 0 = leave ONNX Runtime's defaults alone (the original, uncapped behaviour).
+    if ONNX_NUM_THREADS <= 0:
+        logger.warning(
+            "ONNX thread cap DISABLED (ONNX_NUM_THREADS=0) — ONNX Runtime will size its "
+            "pool from the host core count. On a CPU-limited container this is what caused "
+            "the 2323ms/frame regression. Set ONNX_NUM_THREADS=2 to re-enable the cap."
+        )
+        _onnx_threads_configured = True
+        return
+
     try:
         import onnxruntime
     except ImportError:

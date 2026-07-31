@@ -19,7 +19,7 @@ load_dotenv()
 # core count while the container only gets a fraction of a vCPU -> oversubscription
 # and thrashing. A laptop never reproduces it: it really has the cores it counts.
 # ONNX_NUM_THREADS below is the fix; see _configure_onnx_threads in model_loader.
-MODEL_PATH = os.getenv("MODEL_PATH", "ml_engine/seesense_model.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "ml_engine/seesense_model.onnx")
 
 # Thread cap for ONNX Runtime. Containers are scheduled a fraction of a vCPU, so
 # the default (one thread per host core) thrashes. Ignored when serving PyTorch.
@@ -37,7 +37,15 @@ MODEL_PATH = os.getenv("MODEL_PATH", "ml_engine/seesense_model.pt")
 # default stays on PyTorch: on the current plan ONNX has nothing to offer.
 # Revisit if the server ever gets >=4 dedicated vCPUs (or a GPU, which is a
 # different path entirely — see onnxruntime-gpu in requirements.txt).
-ONNX_NUM_THREADS = int(os.getenv("ONNX_NUM_THREADS", "2"))
+#
+# 0 = DO NOT CAP: let ONNX Runtime pick its own thread count, i.e. the original
+# behaviour that caused the 2323ms regression. Currently the default, by request,
+# so the unpatched behaviour can be observed on the real host.
+# To restore the safe configuration without a deploy, set on Railway:
+#     MODEL_PATH=ml_engine/seesense_model.pt      (back to PyTorch entirely)
+#   or
+#     ONNX_NUM_THREADS=2                          (keep ONNX, re-enable the cap)
+ONNX_NUM_THREADS = int(os.getenv("ONNX_NUM_THREADS", "0"))
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
