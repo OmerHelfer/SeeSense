@@ -24,28 +24,38 @@ MODEL_PATH = os.getenv("MODEL_PATH", "ml_engine/seesense_model.onnx")
 # Thread cap for ONNX Runtime. Containers are scheduled a fraction of a vCPU, so
 # the default (one thread per host core) thrashes. Ignored when serving PyTorch.
 #
-# Measured on the same frame, both engines capped to the same budget (avg ms):
+# Measured on the same frame, both engines capped to the same budget (avg ms),
+# on a 16-core laptop:
 #     threads   PyTorch    ONNX     winner
 #         1      108.9     204.2    PyTorch 1.88x
 #         2      107.6     116.6    PyTorch 1.08x
-#         4      105.5      78.9    ONNX    1.34x
-#         8      112.4      61.6    ONNX    1.82x
+#         4      105.5      85.2    ONNX    1.24x
+#         6        —        68.2
+#         8      112.4      60.8    ONNX    1.85x   <-- peak
+#        12        —        98.1            (past the core count: degrading)
+#        16        —       241.0            (4x WORSE than 8)
 #
-# So ONNX only wins with >=4 usable threads. PyTorch is flat (~105-112ms) whatever
-# it is given; ONNX scales hard — excellent on a big host, worse than PyTorch on a
-# small one. That is the whole story of the Railway regression, and it is why the
-# default stays on PyTorch: on the current plan ONNX has nothing to offer.
-# Revisit if the server ever gets >=4 dedicated vCPUs (or a GPU, which is a
-# different path entirely — see onnxruntime-gpu in requirements.txt).
+# The shape is the whole story: ONNX scales up to the number of cores it can
+# really use, then collapses. PyTorch stays flat (~105-112ms) regardless.
 #
-# 0 = DO NOT CAP: let ONNX Runtime pick its own thread count, i.e. the original
-# behaviour that caused the 2323ms regression. Currently the default, by request,
-# so the unpatched behaviour can be observed on the real host.
-# To restore the safe configuration without a deploy, set on Railway:
-#     MODEL_PATH=ml_engine/seesense_model.pt      (back to PyTorch entirely)
-#   or
-#     ONNX_NUM_THREADS=2                          (keep ONNX, re-enable the cap)
-ONNX_NUM_THREADS = int(os.getenv("ONNX_NUM_THREADS", "0"))
+# Why the Railway regression happened: a cgroup vCPU limit caps how much CPU the
+# container may USE, but does not change what /proc/cpuinfo REPORTS. ONNX Runtime
+# sizes its pool from the reported host cores (far more than 8), so it landed deep
+# in the right-hand side of that table — hence 2323ms/frame, and OpenCV decode
+# dragged from 2.4ms to 139ms alongside it.
+#
+# Set to match the Railway replica limit (8 vCPU). Lower it to 6 if the rest of the
+# request path (decode, FastAPI, DB) looks starved, since inference at 8 can occupy
+# the entire allocation on its own.
+#
+# 0 = DO NOT CAP: let ONNX Runtime size its own pool. That is the unpatched
+# behaviour that produced the 2323ms regression — leave it at 0 only to reproduce
+# the fault deliberately.
+#
+# Escape hatches, both env vars, no deploy needed:
+#     ONNX_NUM_THREADS=6                       (if 8 starves the rest of the app)
+#     MODEL_PATH=ml_engine/seesense_model.pt   (abandon ONNX, back to PyTorch)
+ONNX_NUM_THREADS = int(os.getenv("ONNX_NUM_THREADS", "8"))
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================
