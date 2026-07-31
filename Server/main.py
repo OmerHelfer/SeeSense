@@ -156,6 +156,16 @@ def get_system_status(
         live = tracker.get_status()
         data["rtt_history"] = live.get("rtt_history", [])
         data["client_stage_latency"] = live.get("client_stage_latency", {})
+        # Same for the FPS card: capacity / server-actual / client-actual are
+        # instantaneous rates the live tracker measures and the per-minute buckets
+        # never stored. `overall` stays the all-time average computed from them.
+        live_fps = live.get("fps", {})
+        data["fps"] = {
+            **data.get("fps", {}),
+            "server_capacity": live_fps.get("server_capacity", 0.0),
+            "server_actual":   live_fps.get("server_actual", 0.0),
+            "client_actual":   live_fps.get("client_actual", 0.0),
+        }
         return data
 
     user = get_user_by_email(email.strip())

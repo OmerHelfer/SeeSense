@@ -388,11 +388,17 @@ const AdminStatus = () => {
               value={fmtUptime(data.uptime_seconds)}
               color="#22d3ee"
             />
+            {/* Capacity / actual / client are live rates from the in-memory tracker,
+                so they describe the SERVER right now — not the searched user. When
+                scoped to one person, show that person's own average instead rather
+                than put process-wide numbers under their name. */}
             <StatCard
               icon={Zap}
-              label="FPS ממוצע"
-              value={data.fps?.overall ?? 0}
-              sub="לאורך כל התקופה"
+              label={data.user ? 'FPS ממוצע (למשתמש)' : 'FPS שרת (יכולת)'}
+              value={data.user ? (data.fps?.overall ?? 0) : (data.fps?.server_capacity ?? 0)}
+              sub={data.user
+                ? 'לאורך כל התקופה'
+                : `בפועל: ${data.fps?.server_actual ?? 0} | לקוח: ${data.fps?.client_actual ?? 0}`}
               color="#a78bfa"
             />
             <StatCard
