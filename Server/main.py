@@ -188,14 +188,46 @@ def get_system_status(
     return data
 
 
-@app.post("/reset_system_status", summary="Super Admin Only — Reset All Performance Data")
-async def reset_system_status(current_user: dict = Depends(verify_super_admin)):
-    """Super admin (level 2) only — wipe ALL performance data (live metrics +
-    persisted history) and start counting fresh. Irreversible."""
+@app.post("/reset_system_status", summary="Super Admin Only — Reset Performance Data")
+def reset_system_status(
+    email: str | None = None,
+    current_user: dict = Depends(verify_super_admin),
+):
+    """
+    Super admin (level 2) only. Irreversible.
+
+    No email → wipe everything: the live in-memory metrics and every user's
+        persisted history.
+    email=<user> → wipe only that user's persisted history.
+
+    A scoped reset deliberately does NOT touch the live tracker: it is
+    process-wide (capacity, RTT chart, client stages are not attributed per
+    user), so clearing it would destroy every other user's live metrics as a
+    side effect of resetting one person.
+    """
     from services import perf_history
-    tracker.reset()
-    perf_history.reset_history()
-    return {"status": "success", "message": "All performance data reset"}
+    from services.user_service import get_user_by_email
+
+    if not email:
+        tracker.reset()
+        perf_history.reset_history()
+        logger.warning(f"ALL performance data reset by {current_user.get('email')}")
+        return {"status": "success", "scope": "all", "message": "All performance data reset"}
+
+    user = get_user_by_email(email.strip())
+    if not user:
+        raise HTTPException(status_code=404, detail="No user with that email")
+
+    perf_history.reset_history(user_id=user["user_id"])
+    logger.warning(
+        f"Performance data reset for {user.get('email')} by {current_user.get('email')}"
+    )
+    return {
+        "status": "success",
+        "scope": "user",
+        "email": user.get("email"),
+        "message": f"Performance data reset for {user.get('email')}",
+    }
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

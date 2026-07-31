@@ -304,14 +304,29 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
 
 # ==================== Reset ====================
 
-def reset_history():
-    """Drop all persisted performance history (part of the admin 'reset' button)."""
+def reset_history(user_id: str | None = None):
+    """
+    Drop persisted performance history (part of the admin 'reset' button).
+
+    user_id=None wipes everything. Passing a user_id deletes only that user's
+    buckets and leaves every other user's history untouched.
+
+    The in-progress in-memory bucket is discarded FIRST in both cases: it is
+    already-counted data that has not been written yet, so leaving it would let
+    the next flush immediately re-create rows for a user who was just reset.
+    """
     global _buckets, _bucket_minute
     with _lock:
-        _buckets = {}
-        _bucket_minute = None
+        if user_id is None:
+            _buckets = {}
+            _bucket_minute = None
+        else:
+            _buckets.pop(user_id, None)
+
     try:
-        _col().delete_many({})
-        logger.info("perf_history reset — all persisted buckets dropped")
+        result = _col().delete_many({} if user_id is None else {"user_id": user_id})
+        scope = "all users" if user_id is None else f"user {user_id}"
+        logger.info(f"perf_history reset — dropped {result.deleted_count} buckets for {scope}")
     except Exception as e:
         logger.error(f"perf_history reset failed: {e}")
+        raise

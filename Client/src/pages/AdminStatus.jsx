@@ -296,7 +296,11 @@ const AdminStatus = () => {
   const handleReset = async () => {
     setResetting(true);
     try {
-      await apiClient.post('/reset_system_status');
+      // Scope the wipe to whoever is on screen. Sending no email wipes EVERY
+      // user, so this must follow the view rather than default to "everything".
+      await apiClient.post('/reset_system_status', null, {
+        params: scope ? { email: scope } : {},
+      });
       setShowReset(false);
       fetchStatus();
     } catch {
@@ -531,11 +535,15 @@ const AdminStatus = () => {
             </div>
           )}
 
-          {/* ── Reset all performance data (super admin / level 2 only) ── */}
+          {/* ── Reset performance data (super admin / level 2 only) ──
+               Scoped to whatever is on screen, and the label says which, so the
+               button can't read as "reset this user" while wiping everyone. */}
           {actorLevel >= 2 && (
             <button className="admin-reset-btn" onClick={() => setShowReset(true)}>
               <RotateCcw size={16} />
-              אפס את כל נתוני הביצועים
+              {scope
+                ? `אפס נתוני ביצועים של ${data.user?.name || scope}`
+                : 'אפס את כל נתוני הביצועים (כל המשתמשים)'}
             </button>
           )}
         </div>
@@ -560,14 +568,27 @@ const AdminStatus = () => {
               transition={{ duration: 0.2 }}
             >
               <div className="admin-modal-icon"><AlertTriangle size={26} /></div>
-              <h3 className="admin-modal-title">לאפס את כל נתוני הביצועים?</h3>
+              <h3 className="admin-modal-title">
+                {scope ? 'לאפס את נתוני המשתמש?' : 'לאפס את נתוני כל המשתמשים?'}
+              </h3>
               <p className="admin-modal-body">
-                פעולה זו תמחק <strong>לצמיתות</strong> את כל מדדי הביצועים — גם את הנתונים החיים
-                וגם את כל ההיסטוריה השמורה (לכל הטווחים). הספירה תתחיל מאפס. <strong>אי אפשר לבטל.</strong>
+                {scope ? (
+                  <>
+                    פעולה זו תמחק <strong>לצמיתות</strong> את היסטוריית הביצועים של{' '}
+                    <strong>{data.user?.name || scope}</strong> <span dir="ltr">({scope})</span> בלבד.
+                    נתוני שאר המשתמשים לא ייפגעו. <strong>אי אפשר לבטל.</strong>
+                  </>
+                ) : (
+                  <>
+                    פעולה זו תמחק <strong>לצמיתות</strong> את כל מדדי הביצועים של{' '}
+                    <strong>כל המשתמשים</strong> — גם את הנתונים החיים וגם את כל ההיסטוריה
+                    השמורה. הספירה תתחיל מאפס. <strong>אי אפשר לבטל.</strong>
+                  </>
+                )}
               </p>
               <button className="admin-reset-btn confirm" onClick={handleReset} disabled={resetting}>
                 <RotateCcw size={16} />
-                {resetting ? 'מאפס...' : 'כן, אפס הכל'}
+                {resetting ? 'מאפס...' : (scope ? 'כן, אפס משתמש זה' : 'כן, אפס הכל')}
               </button>
               <button className="admin-modal-cancel" onClick={() => setShowReset(false)} disabled={resetting}>
                 ביטול
