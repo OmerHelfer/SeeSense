@@ -1,3 +1,10 @@
+# Ultralytics tries to pip-install missing optional deps at runtime (it attempts
+# to fetch `onnx` the first time it touches the ONNX model, even though only
+# `onnxruntime` is needed to run one). A server must never install packages while
+# serving — set before any ultralytics import so the check is a no-op.
+import os
+os.environ.setdefault("YOLO_AUTOINSTALL", "false")
+
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager

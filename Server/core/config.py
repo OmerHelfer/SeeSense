@@ -5,7 +5,17 @@ load_dotenv()
 
 
 # ==================== Model ====================
-MODEL_PATH = "ml_engine/seesense_model.pt"
+# ONNX build of the trained model. Same weights, same maths — ONNX Runtime just
+# executes them with an inference-only engine (fused Conv+BN+ReLU, constant
+# folding, CPU-tuned kernels) instead of PyTorch's training-oriented one.
+# Verified against seesense_model.pt on the same image: identical detections,
+# 0.00px bbox difference, max confidence delta 1e-6, ~1.5x faster on CPU.
+# Regenerate after retraining:
+#     YOLO("seesense_model.pt").export(format="onnx", imgsz=640, simplify=True, opset=12)
+# NOTE: the graph is fixed at 640. A client requesting a smaller input_size still
+# works (Ultralytics resizes to fit), but gains no server-side speed — with ONNX,
+# INPUT_SIZE only shrinks the upload, it no longer shrinks inference.
+MODEL_PATH = "ml_engine/seesense_model.onnx"
 MODEL_MODE = "custom"  # "mock" | "pretrained" | "custom"
 
 # ==================== Preprocessing ====================

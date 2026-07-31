@@ -2,13 +2,46 @@ import numpy as np
 import logging
 import torch
 
-from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES, TARGET_SIZE
+from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES, TARGET_SIZE, MODEL_PATH
 
 logger = logging.getLogger(__name__)
 
-# ==================== GPU Detection ====================
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-logger.info(f"Inference device: {DEVICE}")
+
+# ==================== Device Detection ====================
+
+def _select_device() -> str:
+    """
+    Pick the inference device for the configured model.
+
+    A CUDA-capable GPU is not enough on its own for an ONNX model: the plain
+    'onnxruntime' package is a CPU-only build with no CUDA execution provider,
+    and asking it for CUDA fails at inference time with
+        "no data transfer registered for copying tensors from Device:[...]"
+    — i.e. it loads fine and only blows up on the first frame. So for .onnx we
+    additionally require the CUDA provider to actually be present, and fall back
+    to CPU when it isn't. (To use a GPU with ONNX, install onnxruntime-gpu
+    instead of onnxruntime.) PyTorch .pt models keep the plain torch check.
+    """
+    if not torch.cuda.is_available():
+        return "cpu"
+
+    if str(MODEL_PATH).lower().endswith(".onnx"):
+        try:
+            import onnxruntime
+            if "CUDAExecutionProvider" not in onnxruntime.get_available_providers():
+                logger.warning(
+                    "GPU present but onnxruntime has no CUDA provider — running ONNX on CPU. "
+                    "Install onnxruntime-gpu to use the GPU."
+                )
+                return "cpu"
+        except ImportError:
+            return "cpu"
+
+    return "cuda"
+
+
+DEVICE = _select_device()
+logger.info(f"Inference device: {DEVICE} (model: {MODEL_PATH})")
 
 
 # ==================== Mock Model (Testing Mode) ====================

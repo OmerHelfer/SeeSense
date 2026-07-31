@@ -10,6 +10,10 @@ bcrypt
 torchvision
 python-dotenv
 ultralytics
+# Inference engine for the ONNX model (see MODEL_PATH in core/config.py).
+# CPU build — if this ever runs on a GPU host, swap for onnxruntime-gpu
+# (do NOT install both; they conflict over the same package namespace).
+onnxruntime
 scipy
 pymongo[srv]
 motor
