@@ -123,7 +123,7 @@ async def health_check():
 
 
 @app.get("/get_system_status", summary="Admin Only — System Performance")
-async def get_system_status(
+def get_system_status(
     email: str | None = None,
     current_user: dict = Depends(verify_admin),
 ):
@@ -136,6 +136,13 @@ async def get_system_status(
     Always the full history rather than a selectable window: the persisted
     per-minute buckets already cover the whole retention period, so a lookback
     parameter only ever narrowed what was shown.
+
+    Deliberately a sync `def` (FastAPI runs it in the threadpool): everything it
+    does — flush_now's writes and the unbounded find() over every bucket — is
+    BLOCKING pymongo. As `async def` that ran on the event loop, so one admin poll
+    stalled the whole server, including the streaming WebSocket a user is walking
+    with. Measured locally: find() over 50k buckets = ~1.1s, and the admin page
+    polls this every 3s.
     """
     from services import perf_history
     from services.user_service import get_user_by_email

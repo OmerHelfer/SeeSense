@@ -265,7 +265,9 @@ const AdminStatus = () => {
     } catch (err) {
       const status = err.response?.status;
       if (status === 403)      setError('אין הרשאת אדמין');
-      else if (status === 404) { setNotFound(true); setError(null); }
+      // Drop the previous scope's report too: leaving it on screen under "no such
+      // user" reads as if those numbers belong to the email that was just searched.
+      else if (status === 404) { setNotFound(true); setError(null); setData(null); }
       else                     setError('שגיאה בטעינת נתונים');
     } finally {
       setLoading(false);

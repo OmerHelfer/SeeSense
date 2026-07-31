@@ -128,6 +128,21 @@ const Dashboard = () => {
   // 'idle' | 'sending' | 'sent'  (single tap → sending → sent → idle)
   const [sosState, setSosState]       = useState('idle');
 
+  /* ── Tear everything down if the page unmounts mid-scan ──
+     Navigating to /settings unmounts Dashboard (routes are keyed by pathname), and
+     CameraView already releases the camera on unmount — but the WebSocket and the
+     health watchdog live outside React and kept running: an orphan stream session
+     (user stuck "online", session never stopped) plus a 5s ping loop that speaks
+     Hebrew connection alerts over whatever page the user is now on. */
+  useEffect(() => () => {
+    visionStreamRef.current?.disconnect();
+    visionStreamRef.current = null;
+    setActiveStream(null);
+    stopHealthWatch();
+    clearTimeout(feedbackTimerRef.current);
+    clearTimeout(quickReportTimerRef.current);
+  }, []);
+
   useEffect(() => { isScanningRef.current = isScanning;        }, [isScanning]);
   useEffect(() => { isAlignedRef.current  = isAligned;         }, [isAligned]);
   useEffect(() => { userIdRef.current     = user?.id ?? 'default'; }, [user]);

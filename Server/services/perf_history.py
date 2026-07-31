@@ -22,6 +22,7 @@ Each bucket doc:
 }
 """
 
+import copy
 import time
 import threading
 import logging
@@ -168,7 +169,12 @@ def flush_now():
     """Persist the current in-progress buckets so queries include the most recent
     (sub-minute) data. Upsert keyed by (minute_ts, user_id) → no double counting."""
     with _lock:
-        pending = [dict(b) for b in _buckets.values()
+        # deepcopy, not dict(): a shallow copy shares the nested lat/rtt/stages
+        # dicts with the live bucket, so record_frame keeps mutating them while
+        # the write runs outside the lock. That persists a torn doc — frames /
+        # success / fail frozen at copy time, but lat.n and the stage counts as
+        # of whenever the BSON encoder happened to read them.
+        pending = [copy.deepcopy(b) for b in _buckets.values()
                    if b["frames"] > 0 or b["rtt"]["n"] > 0]
     # Flush outside the lock — a slow write must not stall the frame hot path.
     for b in pending:

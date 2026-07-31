@@ -149,6 +149,14 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
             # Receive either binary (frame) or text (rtt report) messages
             message = await websocket.receive()
 
+            # Raw receive() RETURNS the disconnect message — only the typed
+            # helpers (receive_text/_bytes/_json) raise WebSocketDisconnect. Left
+            # unhandled it fell through to `continue`, and the next receive() then
+            # raised RuntimeError, so every normal disconnect was logged as an
+            # "unexpected error" with a traceback and the clean branch below never ran.
+            if message["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(message.get("code", 1000))
+
             # ── Text message: RTT or FPS report from client ──
             if "text" in message:
                 try:
@@ -178,6 +186,12 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
 
             start = tracker.start_timer()
             frame_count += 1
+            # end_timer() is what increments the frame counters, so it must run
+            # exactly once per frame. Without this flag a failure AFTER the
+            # success call below (in practice: send_json on a socket the client
+            # just closed) ran the handler's end_timer too, counting the same
+            # frame as both a success and a failure and adding a bogus latency sample.
+            counted = False
 
             try:
                 # Check if paused (from cache — 0ms, not DB — 71ms)
@@ -189,6 +203,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                         "frame": frame_count
                     })
                     tracker.end_timer(start, success=True)
+                    counted = True
                     continue
 
                 # Per-stage timings (also persisted to perf_history via record_frame)
@@ -242,6 +257,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 alert_is_new = has_new_alert(user_id, result["objects"])
 
                 latency = tracker.end_timer(start, success=True)
+                counted = True
 
                 # ── Build the detection record with a pre-generated id (no DB I/O
                 #    on the hot path) so we can return record_id immediately. The
@@ -284,7 +300,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 save_frame_count_background(session_id, frame_count)
 
             except ValueError as e:
-                perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
+                if not counted:
+                    perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
                 # Even on bad frames, check if danger state changed (e.g. user moved away)
                 danger_cleared = check_danger_cleared(user_id, False)
                 await websocket.send_json({
@@ -296,7 +313,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 })
 
             except Exception as e:
-                perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
+                if not counted:
+                    perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
                 logger.error(f"WS frame error: {e}", exc_info=True)
                 await websocket.send_json({
                     "type": "error",
