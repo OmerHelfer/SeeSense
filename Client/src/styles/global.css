@@ -3606,3 +3606,27 @@ button:active {
   color: var(--caution);
   filter: drop-shadow(0 0 8px rgba(255, 159, 10, 0.7));
 }
+/* "Show this user's performance" — jumps from AdminUsers into the scoped report */
+.au-perf-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.1);
+  color: #22d3ee;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.au-perf-btn:hover {
+  background: rgba(34, 211, 238, 0.18);
+  border-color: rgba(34, 211, 238, 0.55);
+}

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   ArrowRight, Search, Users, Wifi, WifiOff, Shield, ShieldCheck,
   KeyRound, Edit2, Save, X, Trash2, AlertTriangle, CheckCircle,
-  ChevronLeft, Phone, Mail, LifeBuoy,
+  ChevronLeft, Phone, Mail, LifeBuoy, Activity,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -272,6 +272,16 @@ const AdminUsers = () => {
                 </div>
               ))}
             </div>
+
+            {/* Jump straight to this user's performance report. The email is passed
+                as a query param so the link is shareable and survives a refresh. */}
+            <button
+              className="au-perf-btn"
+              onClick={() => navigate(`/admin/status?email=${encodeURIComponent(target.email)}`)}
+            >
+              <Activity size={15} />
+              הצג ביצועים של משתמש זה
+            </button>
 
             {/* Info / edit */}
             <div className="au-section">

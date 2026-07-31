@@ -315,7 +315,7 @@ const SentFeedback = () => {
                             <button className="sf-response" onClick={() => setResponseView(item)}>
                               <span className="sf-response-label">
                                 <MessageSquare size={12} /> תשובת הצוות
-                                {item.handling_admin_name ? ` · ${item.handling_admin_name}` : ''}
+                                {item.handling_admin_name && <> · <bdi>{item.handling_admin_name}</bdi></>}
                               </span>
                               <p className="sf-response-preview">{item.admin_response}</p>
                               <span className="sf-response-more">הצג הודעה מלאה ›</span>
@@ -372,10 +372,16 @@ const SentFeedback = () => {
                 <MessageSquare size={26} />
               </div>
               <h3 className="admin-modal-title">תשובת הצוות</h3>
+              {/* <bdi> isolates each part from the RTL paragraph around it. As one
+                  concatenated string the bidi algorithm reordered the Latin name, the
+                  digits and the Hebrew month against each other — "Omer Helfer ·
+                  25 ביולי, 20:54" rendered as "20:54 ביולי, Omer Helfer · 25". */}
               {responseView.handling_admin_name && (
                 <p className="admin-modal-body" style={{ marginBottom: 8, color: 'var(--safe)' }}>
-                  {responseView.handling_admin_name}
-                  {responseView.resolved_at ? ` · ${formatDate(responseView.resolved_at)}` : ''}
+                  <bdi>{responseView.handling_admin_name}</bdi>
+                  {responseView.resolved_at && (
+                    <> · <bdi>{formatDate(responseView.resolved_at)}</bdi></>
+                  )}
                 </p>
               )}
               <p className="sf-response-full">{responseView.admin_response}</p>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Activity, Server, Wifi, Clock, Zap, Gauge, CheckCircle, XCircle, RotateCcw, AlertTriangle, Smartphone, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../api/client';
@@ -231,6 +231,9 @@ const RttChart = ({ history }) => {
 
 const AdminStatus = () => {
   const navigate = useNavigate();
+  // ?email=... lets AdminUsers deep-link straight into one user's report.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const emailParam = searchParams.get('email');
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -239,11 +242,21 @@ const AdminStatus = () => {
   // Scope of the report: null = every user, or an email to drill into one.
   // There is no time selector any more — the page always reports the full recorded
   // history, which is what the persisted per-minute buckets already hold.
-  const [scope, setScope]     = useState(null);      // applied email (or null)
+  const [scope, setScope]     = useState(emailParam);   // applied email (or null)
   const scopeRef              = useRef(scope);
   useEffect(() => { scopeRef.current = scope; }, [scope]);
 
-  const [emailInput, setEmailInput] = useState('');  // what's typed in the box
+  const [emailInput, setEmailInput] = useState(emailParam ?? '');  // what's typed in the box
+
+  // Follow the URL when it changes (deep link, back/forward) without fighting
+  // the search box: only react when the param genuinely differs from the scope.
+  useEffect(() => {
+    const next = emailParam || null;
+    if (next !== scopeRef.current) {
+      setScope(next);
+      setEmailInput(next ?? '');
+    }
+  }, [emailParam]);
   const [notFound, setNotFound]     = useState(false);
 
   // Reset confirmation
@@ -286,11 +299,13 @@ const AdminStatus = () => {
     e?.preventDefault();
     const v = emailInput.trim();
     setScope(v || null);          // empty box => back to all users
+    setSearchParams(v ? { email: v } : {}, { replace: true });
   };
 
   const clearSearch = () => {
     setEmailInput('');
     setScope(null);
+    setSearchParams({}, { replace: true });
   };
 
   const handleReset = async () => {
@@ -419,14 +434,6 @@ const AdminStatus = () => {
               sub="פריימים מוצלחים לשנייה — ממוצע"
               color="#f59e0b"
             />
-          </div>
-
-          <div className="admin-range-note">
-            <AlertTriangle size={13} />
-            <span>
-              נתונים מצטברים מרגע הפעלת השמירה ({data.range?.buckets ?? 0} דקות נתונים).
-              {data.user && ' נתונים לפי משתמש נאספים רק מהרגע שהתכונה הופעלה.'}
-            </span>
           </div>
 
           {/* ── Response-time comparison ── */}
