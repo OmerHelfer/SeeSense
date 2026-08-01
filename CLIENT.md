@@ -1,0 +1,686 @@
+# SeeSense — Client Documentation
+
+Complete reference for everything built on the frontend side of SeeSense.
+
+---
+
+## 1. What the client is
+
+A **mobile-first, right-to-left, Hebrew-language web app** that turns a phone into a navigation
+aid for blind and visually-impaired pedestrians. It:
+
+- Opens the **rear camera**, captures a square JPEG frame several times a second, and streams the
+  frames to the server over a **WebSocket**.
+- Draws **live bounding boxes** over the camera feed and renders a neon HUD (corner brackets,
+  scan sweep, status badge, spirit level).
+- Speaks alerts in **Hebrew** through the Web Speech API and fires **haptic** vibration patterns,
+  respecting per-user channel/intensity/voice preferences.
+- Uses the phone's **gyroscope** to check the camera is held upright, and refuses to send frames
+  while it isn't.
+- Runs a **connection health watchdog** that warns (and eventually stops scanning) when latency
+  degrades.
+- Has a one-tap **SOS button** that sends GPS coordinates to verified emergency contacts.
+- Ships a full account area: profile, settings, detection history, feedback flows, SOS history —
+  plus **three admin pages** (system performance, user management, feedback triage).
+
+It is a plain Vite SPA (not a bundled native app), designed to be opened in a phone browser.
+
+---
+
+## 2. Tech stack
+
+| Concern | Choice |
+|---|---|
+| Framework | React **19** |
+| Build tool | Vite **8** |
+| Routing | react-router-dom **7** (`BrowserRouter`) |
+| Animation | framer-motion **12** (`AnimatePresence`, `motion.*`, `layout`) |
+| Icons | lucide-react |
+| HTTP | axios (single pre-configured instance) |
+| Real-time | native `WebSocket` (binary send, JSON receive) |
+| Camera | `navigator.mediaDevices.getUserMedia` + `<canvas>` |
+| Overlay | inline `<svg>` |
+| Speech | Web Speech API (`SpeechSynthesisUtterance`) |
+| Haptics | Vibration API (`navigator.vibrate`) |
+| Sensors | `DeviceOrientationEvent`, `navigator.geolocation` |
+| Zoom | `PointerEvent` pinch + `MediaStreamTrack.applyConstraints({zoom})` |
+| Styling | one hand-written `global.css` design system (~3600 lines), no CSS framework |
+| Fonts | Montserrat (display) + Inter (body), from Google Fonts |
+| Linting | ESLint 9 flat config + react-hooks + react-refresh |
+| State | React state + Context; two module-level singleton stores (no Redux/Zustand) |
+
+---
+
+## 3. Directory layout
+
+```
+Client/
+├── index.html                  # lang="he" dir="rtl", viewport-fit=cover, font preconnect
+├── vite.config.js              # react plugin + an ngrok host allowlist entry
+├── eslint.config.js
+├── package.json
+├── .env / .env.production      # VITE_API_URL, VITE_WS_URL
+│
+└── src/
+    ├── main.jsx                # createRoot + StrictMode
+    ├── App.jsx                 # router, ProtectedRoute, AnimatePresence, global SoundToggle
+    │
+    ├── api/
+    │   └── client.js           # axios instance + JWT & 401 interceptors
+    │
+    ├── config/
+    │   └── streamConfig.js     # ⭐ the streaming performance knobs
+    │
+    ├── context/
+    │   └── AuthContext.jsx     # session, localStorage persistence, presence heartbeat
+    │
+    ├── hooks/
+    │   └── useOrientation.js   # gyroscope + iOS permission handling
+    │
+    ├── components/
+    │   ├── CameraView.jsx      # ⭐ camera, capture loop, pinch zoom, bbox overlay
+    │   └── SoundToggle.jsx     # floating global mute button
+    │
+    ├── services/
+    │   ├── visionService.js    # ⭐ VisionStream — WebSocket + backpressure + RTT
+    │   ├── feedbackService.js  # ⭐ haptics + Hebrew TTS + the settings runtime store
+    │   ├── healthService.js    # connection watchdog
+    │   ├── clientMetrics.js    # client-side stage timings
+    │   ├── authService.js      # login / register
+    │   ├── userService.js      # profile, history, feedback, contacts, SOS, passwords
+    │   ├── settingsService.js  # detection settings
+    │   ├── adminService.js     # admin user + feedback management
+    │   └── sessionExpiry.js    # bridge from the axios interceptor into React
+    │
+    ├── pages/                  # 15 route components (see §12)
+    │
+    ├── utils/
+    │   └── serverDate.js       # timezone-correct parsing/formatting of server timestamps
+    │
+    └── styles/
+        └── global.css          # the whole design system
+```
+
+---
+
+## 4. Environment and configuration
+
+`.env` / `.env.production` define `VITE_API_URL` (and `VITE_WS_URL`, currently unused — the
+WebSocket URL is *derived* from `VITE_API_URL`). Reading env vars only through
+`import.meta.env` keeps the same code working locally, over an ngrok tunnel, and on Railway.
+
+`vite.config.js` adds an ngrok hostname to `server.allowedHosts` — needed because a phone can't
+reach a laptop's `localhost`, and camera + gyroscope APIs require a **secure context (HTTPS)**,
+so real-device testing was done through an HTTPS tunnel.
+
+---
+
+## 5. Routing and app shell (`App.jsx`)
+
+`AuthProvider` → `BrowserRouter` → `AnimatedRoutes` → global `SoundToggle`.
+
+`ProtectedRoute` reads `isAuthenticated` from context and redirects to `/login` otherwise.
+`AnimatePresence mode="wait"` keyed on `location.pathname` gives every navigation a transition.
+
+| Route | Page | Access |
+|---|---|---|
+| `/login` | Login | public |
+| `/register` | Register | public |
+| `/forgot-password` | ForgotPassword | public |
+| `/reset-password` | ResetPassword | public |
+| `/` | **Dashboard** (camera) | protected |
+| `/settings` | Settings | protected |
+| `/profile` | Profile | protected |
+| `/contacts` | EmergencyContacts | protected |
+| `/history` | History | protected |
+| `/sos-history` | SOSHistory | protected |
+| `/feedback/general` | GeneralFeedback | protected |
+| `/feedback/pending` | PendingFeedback | protected |
+| `/feedback/sent` | SentFeedback | protected |
+| `/admin/status` | AdminStatus | protected + admin (server-enforced) |
+| `/admin/users` | AdminUsers | protected + admin (server-enforced) |
+| `/admin/feedback` | AdminFeedback | protected + admin (server-enforced) |
+
+Admin routes are behind `ProtectedRoute` only — the links are hidden unless `user.is_admin`, and
+the **server** enforces the actual permission (a non-admin hitting the URL gets a 403 which the
+page renders as "אין הרשאת אדמין").
+
+---
+
+## 6. Authentication (`context/AuthContext.jsx`)
+
+- Two localStorage keys: `token` (must match what the axios interceptor reads) and
+  `seesense_user`. The session is **rehydrated on mount**, so a page refresh doesn't log you out.
+- `login(userData, token)` normalises the backend's `user_id` into `id` so every consumer can use
+  `user.id`.
+- `logout()` disconnects the active vision stream **first**, then calls `POST /users/logout` to
+  blacklist the token server-side, then clears storage and state.
+- **Session-expiry handling** — on mount, AuthContext registers a handler with
+  `sessionExpiry`. When the axios interceptor sees a 401 on an authenticated call, that handler
+  disconnects the stream and clears storage locally. It deliberately does **not** call `/logout`,
+  because the token the server just rejected can't authorise that request. `ProtectedRoute` then
+  redirects on its own once `isAuthenticated` flips false.
+- **Presence heartbeat** — while logged in, `POST /users/heartbeat` fires immediately and then
+  every 30 s, so the user reads as "online" in admin views even when not scanning. Cleanly
+  cancelled on unmount / logout.
+
+### `services/sessionExpiry.js`
+A tiny pub/sub bridge, because the axios interceptor is plain JS and cannot call a React hook.
+
+- `setSessionExpiredHandler(fn)` → returns an unsubscribe function.
+- `notifySessionExpired()` — guarded by an `alreadyFiring` flag, because a dead token 401s
+  *every* in-flight request at once and a burst of 401s must not trigger a burst of logouts. The
+  flag re-arms after 1 s so late 401s from the same dead session are also swallowed.
+- Writes a `sessionStorage` notice so `/login` can explain *why* you're back there
+  ("החיבור פג תוקף. יש להתחבר מחדש.") instead of showing a blank form you didn't ask for.
+
+### `api/client.js`
+```js
+axios.create({ baseURL: import.meta.env.VITE_API_URL, timeout: 8000 })
+```
+- **Request interceptor** attaches `Authorization: Bearer <token>` when a token exists.
+- **Response interceptor** calls `notifySessionExpired()` on a 401 — but **only** for
+  authenticated calls. `PUBLIC_AUTH_PATHS` (`/users/login`, `/users/register`,
+  `/users/forgot-password`, `/users/reset-password`) are excluded, because a 401 there means
+  "wrong credentials", not "your session died"; logging someone out for mistyping a password
+  would be absurd.
+
+---
+
+## 7. Streaming configuration (`config/streamConfig.js`) ⭐
+
+Four numbers control the whole capture/upload pipeline, each documented in the file.
+
+### `COMPRESSION_PERCENT = 50` → `JPEG_QUALITY = 1 - pct/100`
+One knob for frame compression. 0 % = sharpest/largest/slowest, 100 % = blockiest/smallest/
+fastest. Mapped to the canvas `toBlob` quality argument.
+
+### `INPUT_SIZE = 512`
+The square capture and detection size. This is **the biggest performance lever**: the server runs
+YOLO at this size, so smaller means faster inference *and* smaller uploads. 640 gives most
+detail; 512/416/320 get progressively faster but the model sees less (may miss small or distant
+objects). Multiples of 32 are preferred. The server clamps the request and reports back the size
+it actually used, so client and server always agree on the bbox coordinate space.
+
+### `MAX_INFLIGHT = 5`
+Pipeline depth — how many frames may be in flight (sent, awaiting a result) at once. The
+trade-off is documented with the measured model:
+
+```
+per-frame latency ≈ network_RTT + depth × server_processing_time
+throughput        ≈ min(1/server_time, depth / network_RTT)
+```
+
+With `INPUT_SIZE=512` (~41 ms/frame server-side) and a measured ~131 ms network RTT:
+
+| depth | throughput | latency | note |
+|---|---|---|---|
+| 1 | ~7 FPS | ~131 ms | server sits idle |
+| 2 | ~13 FPS | ~172 ms | |
+| 4 | ~22 FPS | ~216 ms | ~96 % efficiency; hits the ~23.5 FPS ceiling |
+
+The reasoning recorded in the file: for a blind-pedestrian safety app 22 FPS is plenty smooth,
+and 216 ms of total lag ≈ 3 m of reaction distance at 50 km/h — acceptable for urban use. It is a
+**bounded** queue, not fire-and-forget, so a slow server can never build an unbounded backlog.
+The effective rate is additionally capped by the server's `TARGET_FPS`.
+
+---
+
+## 8. `VisionStream` — the WebSocket client (`services/visionService.js`) ⭐
+
+A class wrapping one streaming session, constructed with `{ onResult, onError, onConnected }`.
+
+### URL derivation
+`VITE_API_URL` is transformed: `https://` → `wss://`, `http://` → `ws://`, then
+`/stream/ws?token=<jwt>&input_size=<INPUT_SIZE>`. `socket.binaryType = 'blob'` (only binary goes
+up; responses are text JSON).
+
+### Bounded-depth backpressure
+`_sendTimes` is a FIFO of `performance.now()` timestamps for sent-but-unanswered frames.
+
+```js
+get canSend() {
+  // prune entries older than MAX_INFLIGHT_MS (3000) — a lost result must not wedge the pipe
+  return this._sendTimes.length < Math.max(1, MAX_INFLIGHT);
+}
+```
+
+Depth 1 caps throughput at `1/RTT` even when the server is idle; a small depth keeps the network
+pipe full so throughput approaches `depth/RTT` while each frame's latency stays about one RTT.
+The 3-second stale-entry prune means a dropped result can't permanently block sending. The FIFO
+is also capped at `MAX_PENDING_RTT = 120` entries.
+
+### RTT measurement
+Results arrive in send order, so `_recordRtt()` pops the oldest send timestamp and pairs it with
+the incoming result. Both `result` **and** `error` messages record an RTT — an error still means
+that frame is done, and its FIFO entry must be cleared. A rolling 50-sample buffer feeds
+`{avg, min, max}` stats exposed via `rttStats`.
+
+### Periodic reporting (every 5 s)
+Three small text messages, none of them on the frame hot path:
+- `rtt_report` — average RTT
+- `fps_report` — actual capture FPS, from the last 30 send timestamps
+- `client_stage_report` — the aggregated client stage breakdown from `clientMetrics`
+
+All three are wrapped in `try/catch` in case the socket closed mid-send.
+
+### Reconnection policy
+- Close code **1000** (clean/intentional) → no reconnect.
+- Close code **4001** (missing token) or **4003** (invalid/expired token) → **do not reconnect**;
+  reconnecting would just replay the same dead token forever. Instead, fire
+  `notifySessionExpired()` so the app logs out and redirects to `/login`.
+- Any other unexpected close → retry after `RECONNECT_DELAY_MS = 3000`, up to
+  `MAX_RECONNECT_ATTEMPTS = 5`, then give up and report an error.
+
+### Module-level active-stream reference
+`setActiveStream()` / `disconnectStream()` / `getActiveStreamRtt()` let AuthContext tear the
+socket down on logout or session expiry without holding a React ref.
+
+---
+
+## 9. Camera and capture (`components/CameraView.jsx`) ⭐
+
+### Props
+`isActive`, `onFrameCapture(blob)`, `shouldCapture()`, `captureFps`, `inputSize`, `detections`.
+
+### Lifecycle
+`getUserMedia({ video: { facingMode: 'environment', width: {ideal:1280}, height: {ideal:720} }, audio: false })`.
+On denial: a Hebrew alert explaining camera access is mandatory. Tracks are stopped and `srcObject`
+cleared on teardown, and zoom resets when deactivated.
+
+### Pinch-to-zoom
+Tracked via `PointerEvent`s in a `Map` keyed by `pointerId`, with `setPointerCapture` so events
+keep arriving if a finger leaves the element. Zoom range 1–5×. It tries **native hardware zoom
+first** (`track.applyConstraints({ advanced: [{ zoom }] })`, clamped to the device's reported
+capability range) for better image quality, and always applies a CSS `scale()` as the visual
+fallback. `touchAction: 'none'` stops the browser's own scroll/zoom from interfering.
+
+### The capture pipeline
+1. **Cheap early-out first.** `shouldCapture()` is checked *before* touching the canvas, so a
+   frame the consumer would drop (not scanning, not aligned, or backpressure says wait) costs
+   essentially nothing — no draw, no encode.
+2. Keep the offscreen canvas square at the current `inputSize`.
+3. **Zoom-aware crop**: a higher zoom samples a smaller central region of the raw video, so the
+   captured frame matches what the user actually sees.
+4. `ctx.drawImage(...)` → timed as the **`capture`** stage.
+5. `canvas.toBlob(cb, 'image/jpeg', JPEG_QUALITY)` → timed as the **`encode`** stage. `toBlob` is
+   used rather than `toDataURL` because it is async (doesn't block the main thread) and hands back
+   a Blob that goes straight onto the WebSocket with no base64 → bytes copy.
+
+### Polling faster than the send rate
+```js
+const target  = Math.max(1, Math.min(30, captureFps || 4));
+const pollFps = Math.min(60, target * 3);
+setInterval(captureFrame, 1000 / pollFps);
+```
+An in-flight slot frees the instant a *result* arrives, which never aligns with a fixed timer. If
+we only polled at the send rate, a freed slot would idle for up to a full interval — dead time
+that caps throughput well below the pipeline-depth ceiling. Polling ~3× faster shrinks that wait
+so effective FPS climbs toward `depth/RTT`, at no latency cost, and the extra ticks are near-free
+because of the early-out above.
+
+### Detection overlay geometry
+The hardest bit of maths in the client: mapping a bbox in `inputSize × inputSize` space onto
+on-screen pixels.
+
+The captured frame is the **centre square** (side = `min(videoW, videoH)`) of the raw video. The
+`<video>` uses `object-fit: cover`, so it's scaled by `coverScale = max(cW/vW, cH/vH)` and
+centred. That centre square therefore becomes a centred square of side
+`squareSide = baseSize × coverScale` in container coordinates, at offset
+`((cW - squareSide)/2, (cH - squareSide)/2)`. Scaling factor from detection space to container
+pixels is `squareSide / inputSize`.
+
+Zoom is applied as an **identical CSS `scale()` on both the video and the SVG**, so mapping is
+done in *pre-zoom* space and the boxes track the feed at any zoom level. Stroke widths, font
+sizes and padding are divided by `zoom` so they stay screen-constant.
+
+Boxes are keyed by `track_id` when available (stable identity across frames → smooth animation
+instead of remount flicker). Colours mirror the alert palette: `high` `#ff3b30`, `low` `#eab308`,
+`none` `#00f0ff`. Labels flip above/below the box so they never fall off-screen, and use
+`paintOrder="stroke"` with a dark outline for legibility over any background.
+
+### Ref mirroring
+`inputSize` and `shouldCapture` are mirrored into refs, because putting them in `captureFrame`'s
+dependency array would recreate the callback and **restart the capture interval** on every change.
+
+---
+
+## 10. Orientation (`hooks/useOrientation.js`)
+
+Reads `DeviceOrientationEvent`. "Aligned" means the phone is held upright:
+`|beta - 90| ≤ 15°`.
+
+Platform split, which is the whole reason this is a hook:
+- **Android / desktop** — the listener attaches immediately on mount; permission state is
+  `granted`.
+- **iOS 13+** — `DeviceOrientationEvent.requestPermission()` **must** be called from a user
+  gesture. So the hook exposes `requestPermission()`, and `Dashboard.toggleScan()` awaits it
+  inside the "start scanning" button handler. Idempotent, and handles dismissal/denial.
+
+Returns `{ beta, gamma, isAligned, permissionState, requestPermission }`.
+
+---
+
+## 11. Dashboard — the camera page (`pages/Dashboard.jsx`)
+
+The main screen. State: `isScanning`, `alertLevel`, `healthStatus`, `healthRtt`, `detectionDir`,
+`detectedClass`, `detections`, `quickReportState`, `feedbackState`, `sosState`,
+`showLogoutConfirm`, plus `captureFps` / `inputSize` (both driven by the server's `connected`
+message).
+
+### Start / stop scanning (`toggleScan`)
+Starting: `await requestPermission()` (iOS gyro) → construct `VisionStream` with the result
+handler → `connect(token)` → register as the active stream → `startHealthWatch(...)`.
+Stopping: disconnect, reset all HUD state, `stopHealthWatch()`.
+Either way: a haptic pulse (`start`/`stop`) and a spoken confirmation
+("סריקה הופעלה" / "סריקה הופסקה").
+
+### Result handling (`handleResult`)
+Runs per frame, and is a `useCallback` with a stable reference (live values read through refs) so
+it never causes a re-subscribe:
+1. Ignore if not scanning, or if `status === 'paused'`.
+2. Store `record_id` (used to link a quick feedback report to the exact frame).
+3. Update the overlay (`setDetections`), `alertLevel`, and the leading object's direction and
+   Hebrew class name. Timed as the **`render`** stage.
+4. If `danger_cleared` → speak "נתיב פנוי" once, clear the direction HUD, return.
+5. **Gate voice + haptics on `alert_is_new`.** The server computes this per `track_id`, so the
+   same still-present object doesn't re-trigger TTS/vibration on every frame — while the visual
+   HUD keeps updating live. This is the single most important detail for the app not being
+   unbearable to use.
+6. `danger` → `haptic('danger')` + `announceDetections(objects, true)` (→ "סכנה! מכונית מצד ימין");
+   `low` → `haptic('detection')` + `announceDetections(objects, false)`. Both briefly show the
+   "wrong detection?" button. Timed as the **`feedback`** stage.
+
+### Capture gate (`canCaptureFrame`)
+`isScanning && isAligned && stream.isOpen && stream.canSend`. Handed to CameraView and checked
+before the encode. `handleFrameCapture` **re-checks the same conditions at send time**, because
+alignment or the in-flight count may have changed during the async encode.
+
+### HUD elements
+- **Corner brackets** — grey → cyan (scanning) → green (aligned).
+- **Status badge** — `IDLE` → `LIVE` (scanning, not aligned) → `TRACKING` (scanning + aligned).
+- **Scan sweep line** — only while scanning *and* aligned, i.e. only while frames are actually
+  being sent. Honest feedback rather than decoration.
+- **`SpiritLevel`** — a gyroscope bubble that moves with `gamma` (left/right) and `beta - 90`
+  (front/back), clamped to the container radius, glowing green when aligned. Label
+  "⬤ מיושר" / "◯ יישר מצלמה".
+- **Tilt warning** — a full overlay "הטה את המכשיר" while scanning but not aligned.
+- **Direction indicator** — arrow (← → ↑) + Hebrew class name + direction word, colour-coded by
+  alert level.
+- **Alert overlay** — a pill "⚠ סכנה קרובה" / "! שים לב" with `role="alert"` and
+  `aria-live="assertive"`; the viewport gets a pulsing red border on high danger.
+- **`HealthDot`** — colour-coded dot + Hebrew label. The **millisecond number is shown only to
+  admins (level ≥ 1)** — regular users get the dot and label. `dir="ltr"` on the number so RTL
+  layout doesn't reorder "87 ms" into "ms 87".
+- **Quick report button** (bottom-left, always visible while scanning) — one tap files a
+  `wrong_detection` report against the last `record_id`, with haptic + spoken confirmation and a
+  2.5 s cooldown.
+- **Contextual feedback button** — appears for 3.5 s after any alert.
+- **SOS button** — single tap (deliberately *not* long-press): `getCurrentPosition` with a 5 s
+  timeout and high accuracy, falling back to `(0, 0)` on failure so the alert still goes out.
+  States `idle → sending → sent → idle`, with haptic and spoken confirmation.
+- **Logout confirmation modal** and a floating glass **tab bar** (יציאה / בית / הגדרות).
+
+---
+
+## 12. Pages
+
+| Page | What it does |
+|---|---|
+| **Login** | Email + password, show/hide toggle, mesh-blob animated background, maps the backend's "Invalid email or password" to a Hebrew message, and surfaces the session-expired notice. |
+| **Register** | Name, email, phone, ISO country code, optional date of birth, password (min 6). Uppercases the country code before sending. Redirects to `/login` on success. |
+| **ForgotPassword** | Sends a reset code; then shows a success state explaining the 15-minute validity and a button that forwards the email to `/reset-password` via router state. |
+| **ResetPassword** | Email (pre-filled), 6-digit numeric-only code, new password + confirmation with live mismatch styling. |
+| **Dashboard** | See §11. |
+| **Settings** | The hub. Categories: **כללי** (profile / SOS history / detection history / a collapsible "scan settings" accordion), **משוב** (general / pending / sent, with an unread-response badge), **ניהול** (admin pages, only when `user.is_admin`). Scan settings contains sensitivity, alert channel, volume + vibration sliders, TTS voice, and the 14-class high-risk chip grid with select-all/clear-all. Has an **unsaved-changes guard** on back (save / discard / keep editing) driven by a `snapshotOf()` JSON comparison with arrays sorted, so class reordering isn't a false diff. Feedback-store fields write *through* the shared store so the floating mute button stays in sync. |
+| **Profile** | View/edit personal details (email read-only), unsaved-changes guard, shortcut to contacts, and a "danger zone" self-delete with confirmation. |
+| **EmergencyContacts** | Three modes in one page: `list` / `add` / `verify`. Add sends a code to the contact's email; verify takes the 6 digits with resend support; contacts show verified/pending status; cap of 5 enforced in the UI. |
+| **History** | Records **grouped by session**, expandable, first session auto-expanded. Summary tiles: today's alerts, total scans, and a **safety score** (`1 - dangerFrames/totalFrames`). Period filter chips. Each frame row shows time, alert badge, Hebrew object names, distance, and a flag/check icon indicating whether feedback already exists. Tapping a row opens a bottom action sheet: report an error (type chips + notes) or delete the record. |
+| **SOSHistory** | Expandable cards per alert: timestamp, contact count, GPS coordinates with a "פתח במפות" link, and the full list of notified contacts. Handles the GPS-unavailable `(0,0)` case explicitly. |
+| **GeneralFeedback** | Type chips + free-text description, not linked to any detection. |
+| **PendingFeedback** | Quick reports awaiting notes. List → form view showing the **detection snapshot** ("what was detected in this frame"), editable type, notes, then submit. |
+| **SentFeedback** | Submitted reports with their admin handling status (ממתין / בטיפול / טופל). Shows the **team's response** when resolved, with a "תשובה חדשה" pill for unseen ones and a modal for the full text; calls `markResponsesSeen()` on load to clear the badge. Editing is **locked** once an admin takes the report (shows a lock icon instead of the edit button, mirroring the server's 409). |
+| **AdminStatus** | The performance dashboard. Auto-refreshes every 3 s. Eleven range presets (חי / מההתחלה / 30 דק׳ / שעה / יום / שבוע / חודש / 3 ח׳ / 6 ח׳ / שנה / מותאם) plus a custom `datetime-local` picker converted to epoch seconds. Stat cards (uptime or measured span, FPS, frames, throughput), an FPS comparison table (client actual vs server actual/capacity/overall), a latency comparison (**שרת בלבד** / **לקוח בלבד** / **End-to-End** + an estimated network figure), per-stage breakdowns for both server and client, and a **hand-drawn canvas RTT chart** with grid, gradient fill, threshold lines at 100/150/200 ms, and a span label computed from real timestamps. The reset-everything button is gated to level 2. |
+| **AdminUsers** | Stat cards (total / online / offline / **admins online**, the last being a clickable modal). Email lookup → a full user card: presence + level badges, data counts (detections / feedback / sessions / contacts / SOS), editable details, full emergency-contact list, password reset, admin-level chips (L2 only), permanent delete (L2 only, not self). The admins modal sorts online-first by level, then offline by most-recently-seen, and clicking an admin opens their full detail. Level-1 admins see an explanatory hint instead of management controls when viewing another admin. |
+| **AdminFeedback** | Triage queue. Stat cards double as filters (הכל / ממתין / בטיפול / טופל). Each card shows the submitting user (clickable → a details modal), type, date, detection snapshot, notes, who is handling it, and the resolution note. Actions by permission: **קח לטיפול** (L1+), **סמן כטופל** (handler or L2, requires a response note), **הקצה לאדמין** (L2 only). A level-1 admin looking at someone else's in-progress item sees a lock explaining only level 2 can override. After an action the single item is patched **in place** and stats recomputed locally, so filter and scroll position survive. |
+
+---
+
+## 13. Feedback service — haptics, TTS and the settings store (`services/feedbackService.js`) ⭐
+
+This module does three jobs.
+
+### (a) A runtime settings store
+Single source of truth for the four "feedback" preferences (`volume_intensity`,
+`vibration_intensity`, `alert_type`, `voice_gender`). The **DB is the durable store**; this
+mirrors it into `localStorage` so values are available instantly on load and — crucially — are
+actually *applied* when producing sound or vibration. Exposes `getFeedbackSettings()`,
+`setFeedbackSettings(patch)`, `seedFeedbackSettings(dbSettings)` and a `subscribeFeedback()`
+pub/sub so the Settings sliders and the floating mute button stay in sync with each other.
+
+### (b) Haptics
+Named patterns in milliseconds:
+
+| Name | Pattern | Meaning |
+|---|---|---|
+| `start` | `[60,30,60]` | scanning started |
+| `stop` | `[80]` | scanning stopped |
+| `aligned` | `[30]` | device just became aligned |
+| `detection` | `[100,50,100]` | low-level object detected |
+| `danger` | `[200,100,200,100,400]` | high-danger object nearby |
+
+Gated by `alert_type` and `vibration_intensity`. The Vibration API can't change amplitude, only
+duration — so intensity **scales the vibrating pulses** (even indices) while leaving the pauses
+(odd indices) intact. `isVibrationSupported()` lets Settings warn that iOS Safari/Chrome has no
+Vibration API at all.
+
+### (c) Hebrew text-to-speech
+- `HEBREW_NAMES` maps all **14** backend class names to Hebrew (מכונית, אופניים, בור בכביש,
+  קורקינט…). The backend's `alert_message` is English, so the client always composes its own
+  Hebrew utterance.
+- **Voice selection** — the TTS voice list loads asynchronously in most browsers, so it's cached
+  and refreshed on the `voiceschanged` event. Hebrew voices are filtered by `lang` starting with
+  `he`; gender is best-effort matched against name hints (`carmit`/`female`/`אישה` vs
+  `asaf`/`male`/`גבר`), falling back to "not the opposite gender", then to the first Hebrew voice.
+  `getVoiceInfo()` tells Settings how many Hebrew voices exist so it can warn that gender choice
+  may not sound different on this device.
+- **Throttling** — a 3-second cooldown, tracked separately for arbitrary messages
+  (`speakMessage`) and for object announcements (`announceDetections`, additionally keyed on the
+  class name so a *different* object can interrupt).
+- `announceDetections(objects, isDanger)` builds e.g. `"סכנה! מכונית מצד ימין"` from the class
+  name plus a direction suffix (`מצד שמאל` / `מצד ימין` / `ממול`).
+- `previewVoice()` bypasses the cooldown so choosing a voice in Settings plays a sample
+  immediately. `announceMute()` bypasses **both** the cooldown and the audio gate — otherwise
+  "שמע כבוי" would be inaudible exactly when you need to hear it.
+- **Mute is derived, not a separate flag**: "muted" ⇔ the audio channel produces no sound.
+  `setMuted(true)` sets volume 0 and cancels any in-flight speech; unmuting restores 0.8 and, if
+  `alert_type` was `haptic`, switches it to `both` so audio is actually audible.
+
+---
+
+## 14. Health watchdog (`services/healthService.js`)
+
+Polls `GET /health` every 5 s (4 s timeout) and measures RTT.
+
+| Level | Threshold | Behaviour |
+|---|---|---|
+| GREEN | < 100 ms | healthy, no feedback |
+| YELLOW | ≥ 100 ms | speaks "החיבור לא יציב" **once** |
+| ORANGE | ≥ 150 ms | speaks "החיבור חלש מאוד, מומלץ לעבור למקום עם קליטה טובה יותר" once |
+| RED | ≥ 200 ms × **3 consecutive** | haptic `danger` + "החיבור אבד, הסריקה הופסקה", fires `onDisconnect` |
+
+Recovery from RED needs **2 consecutive** pings below the red threshold, then haptic `aligned` +
+"החיבור חזר, הסריקה ממשיכה" and `onReconnect`. A timeout or network error is treated as
+infinitely slow. The announce-once flags reset on recovery, so a genuinely new degradation is
+still announced.
+
+Consecutive streaks rather than single readings are what stop one unlucky ping from killing an
+otherwise fine scanning session.
+
+---
+
+## 15. Client metrics (`services/clientMetrics.js`)
+
+Mirrors the server's per-stage breakdown for the **on-device** half of the pipeline. Four stages:
+
+| Stage | Measures |
+|---|---|
+| `capture` | `drawImage` — video frame → offscreen canvas |
+| `encode` | `canvas.toBlob` — JPEG compression (wall time until the callback) |
+| `render` | applying a returned result: overlay boxes + HUD state |
+| `feedback` | dispatching TTS + haptics for a new alert (only when one fires) |
+
+(The network round trip between `encode` and `render` is RTT, measured separately.)
+
+Zero-overhead by design: each record is one array push on a bounded 100-sample rolling buffer,
+no timers, nothing allocated on the hot path. `getClientStageReport()` aggregates to avg/min/max
+per stage; VisionStream ships it once every ~5 s piggy-backed on the existing RTT report, and it
+surfaces on the admin dashboard as "פירוט זמן עיבוד בלקוח".
+
+---
+
+## 16. Service layer
+
+| Module | Responsibility |
+|---|---|
+| `authService` | `register`, `login` |
+| `userService` | Profile (get/update/delete/heartbeat), contacts (get/add/verify/resend/remove), SOS (`emergencyAlert`, `getEmergencyAlerts`), history (get/delete one/clear all), feedback (quick, general, from-history, pending, submitted, submit, update, delete, `getFeedbackRecordIds` → a `Set` for History's badges, unseen count, mark seen), passwords (`forgotPassword`, `resetPassword`) |
+| `settingsService` | `getSettings`, `updateSettings`, `getAvailableClasses`, `resetSettings` |
+| `adminService` | `getOverview`, `getAdmins`, `getUserByEmail`, `setUserPassword`, `updateUser`, `setUserLevel`, `deleteUserByEmail`, `getFeedbackAdmin`, `takeFeedback`, `resolveFeedback`, `assignFeedback` |
+| `visionService` | `VisionStream` + active-stream helpers |
+| `feedbackService` | Haptics, TTS, feedback-settings store |
+| `healthService` | `startHealthWatch`, `stopHealthWatch`, `getHealthStatus`, `getLastPingRtt` |
+| `clientMetrics` | `recordClientStage`, `getClientStageReport`, `resetClientStages` |
+| `sessionExpiry` | Interceptor → React bridge |
+
+Two small details worth noting: `submitFeedback()` picks the right endpoint automatically —
+`/update` when there are notes or a type change, `/submit` otherwise. And axios `DELETE` with a
+JSON body requires the `data` key in the config object, which is why `removeContact` and
+`deleteUserByEmail` look slightly unusual.
+
+---
+
+## 17. Timezone handling (`utils/serverDate.js`)
+
+A real bug, fixed properly. The server writes timestamps with `datetime.now().isoformat()`,
+which on the UTC Railway host produces a UTC value **with no timezone marker**
+(`"2026-07-25T11:30:00.123456"`). Browsers parse a marker-less ISO string as **local** time, so
+every relative time was off by the viewer's UTC offset — a just-now event displayed as "3h ago"
+in Israel (UTC+3 in summer).
+
+- `parseServerDate(iso)` — appends `Z` when the string carries no `Z` and no `±HH:MM` offset,
+  leaving already-qualified strings untouched.
+- `formatServerDateTime(iso)` — formats in `he-IL` **pinned to `Asia/Jerusalem`**, so a timestamp
+  reads the same for every viewer regardless of their device timezone.
+- `relTime(iso)` — Hebrew relative time: הרגע / לפני N דק׳ / שע׳ / ימים / חודשים / שנים.
+
+Used by AdminUsers, AdminFeedback and SentFeedback.
+
+---
+
+## 18. Design system (`styles/global.css`)
+
+Hand-written, ~3600 lines, no framework. "Premium Dark Futuristic — Dark Glassmorphism · Neon HUD
+· Mobile-first".
+
+### Tokens
+- **Palette** — `--bg #000`, `--bg-1 #060a0f`, `--bg-2 #0d1117`; accents `--cyan #00F0FF`,
+  `--yellow #EAFF00`, `--purple #7B2FFF`; semantic `--danger #FF3B30`, `--caution #FF9F0A`,
+  `--safe #00E5A0`; text at 100 % / 65 % / 35 % opacity.
+- **Glass surfaces** — `--glass-bg rgba(255,255,255,0.04)`, `--glass-border …0.09`, plus a shine
+  layer, used with `backdrop-filter`.
+- **Glows** — cyan / danger / safe box-shadow presets for the neon look.
+- **Radii** — `--r-xs 8px` through `--r-xl 32px`.
+- **Safe areas** — `--sat/--sab/--sal/--sar` from `env(safe-area-inset-*)`, so the HUD and tab bar
+  clear the iPhone notch and home indicator (paired with `viewport-fit=cover` in `index.html`).
+- **Typography** — Montserrat display, Inter body.
+
+### Global rules
+`direction: rtl` on `<body>`, `overflow: hidden` and `height: -webkit-fill-available` (the iOS
+Safari 100vh workaround), `user-select: none` and `-webkit-tap-highlight-color: transparent` for
+an app-like feel, and a visible `:focus-visible` cyan outline for keyboard accessibility.
+
+### Notable components
+Mesh-blob animated auth backgrounds; the whole HUD (corner brackets with pulse keyframes, scan
+sweep, spirit level, live badge with blinking dot, alert overlay with `danger-pulse-border`, tilt
+warning with a rocking animation); glass sections, segmented controls, neon-fill range sliders,
+class chips, nav rows with badges; admin stat cards, latency rows, range chips, modal cards; the
+floating tab bar and sound toggle.
+
+---
+
+## 19. Build and deploy
+
+```
+npm install
+npm run dev      # Vite dev server (HMR)
+npm run build    # production bundle → dist/
+npm run preview  # serve the built bundle
+npm run lint     # ESLint
+```
+
+Deployed on Railway alongside the server. `.env.production` points `VITE_API_URL` at the
+deployed backend; the WebSocket URL is derived from it, so `https` automatically becomes `wss`.
+
+**Device testing needs HTTPS** — `getUserMedia`, `DeviceOrientationEvent` and `geolocation` all
+require a secure context, so local phone testing went through an ngrok tunnel (hence the
+`allowedHosts` entry in `vite.config.js`).
+
+---
+
+## 20. Accessibility notes
+
+The primary user cannot see the screen, so non-visual feedback *is* the interface:
+
+- Every alert has an audio and/or haptic channel; the visual HUD is secondary (useful for a
+  sighted companion, and for development).
+- `aria-label` on every icon-only button, `aria-pressed` on toggles, `aria-current` on the active
+  tab, `role="alert"` + `aria-live="assertive"` on the danger overlay, `aria-live="polite"` on the
+  tilt warning, `aria-hidden` on decorative HUD layers so a screen reader doesn't read them.
+- Spoken confirmation for every state change: scan on/off, mute on/off, feedback sent, SOS sent
+  or failed, connection degraded/lost/restored, "נתיב פנוי" when danger clears.
+- Alert dedup exists precisely so the audio channel stays usable — an alert every frame would be
+  worse than no alert.
+- Large tap targets, and the SOS button is a single tap (no long-press, no gesture to learn).
+
+---
+
+## 21. Known issues and cleanup opportunities
+
+Observations from reading the current code:
+
+- **`EmergencyContacts.jsx` line 212 uses `=` instead of `===`:**
+  `{c.status='verified' ? (...) : (...)}`. The assignment always evaluates truthy, so **every**
+  contact renders as "מאומת" and the local object is mutated — pending contacts lose their
+  "אמת עכשיו" button. This is a genuine bug and the highest-value one-character fix in the
+  client.
+- **Hebrew class-name maps are out of sync.** `feedbackService.HEBREW_NAMES` has all 14 classes,
+  but `Settings.CLASS_META` has only 10 (the four newer classes — `bollard`, `crosswalk`,
+  `pothole`, `scooter` — fall back to the raw English name with a `●` bullet), and the local
+  `HEBREW_NAMES` copies in `History`, `AdminFeedback`, `PendingFeedback` and `SentFeedback` still
+  list `bus`/`truck` (not in the model) while missing the four new ones. Worth extracting one
+  shared map.
+- **Timezone fix not applied everywhere.** `History.jsx`, `PendingFeedback.jsx` and
+  `SOSHistory.jsx` still call `new Date(ts)` directly instead of `parseServerDate`, so their
+  displayed times are skewed by the viewer's UTC offset — exactly the bug `serverDate.js` was
+  written to fix.
+- **`healthService` thresholds contradict its own documentation.** The constants are 100/150/200
+  ms, but the file header says 250/400/600 and the inline comments say "Above 300ms" / "Below
+  300ms". The values were tightened (commit "fix: adjust health thresholds") and the comments
+  weren't updated. Also worth noting the current thresholds are aggressive: a mobile network
+  regularly exceeds 100 ms, so YELLOW will fire often.
+- **`settingsService` sends a `user_id` query parameter** that the server ignores — it derives the
+  user from the JWT. Harmless, but misleading (the file's header comment claims it's required).
+- **Stale comment** in `userService.emergencyAlert`: "No auth required (intentionally open)". The
+  endpoint *does* require a JWT.
+- **`streamConfig` prose vs value** — the comment block describes depth 4 as "current", but
+  `MAX_INFLIGHT` is 5.
+- **`VITE_WS_URL` is defined in both `.env` files but never read** — the WS URL is derived from
+  `VITE_API_URL`.
+- **Heavy inline styles.** History, PendingFeedback, SentFeedback and GeneralFeedback style large
+  chunks inline rather than via `global.css` classes, and repeat the same chip/tile styles. Worth
+  consolidating.
+- **`Client/README.md` is still the default Vite template text.**
+- **No tests** and no error boundary — an exception in a page unmounts the tree with a blank
+  screen.
+- **`public/` is empty** but `index.html` references `/vite.svg` as the favicon (404).

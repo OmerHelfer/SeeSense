@@ -110,10 +110,19 @@ const PATTERNS = {
 export const isVibrationSupported = () =>
   typeof navigator !== 'undefined' && 'vibrate' in navigator;
 
+// Rate limit for ALERT patterns only. Voice is throttled by COOLDOWN_MS below,
+// but vibration had no backstop of its own — it fired on every `alert_is_new`,
+// so any server-side dedup false positive buzzed the phone continuously. UI ticks
+// (start/stop/aligned) are direct responses to a user action and stay immediate.
+const HAPTIC_COOLDOWN_MS = 2000;
+const ALERT_PATTERNS     = new Set(['danger', 'detection']);
+let   lastHapticAt       = 0;
+
 /**
  * Trigger a named vibration pattern.
  * Gated by alert_type + vibration_intensity. The Web Vibration API can't change
  * amplitude, only duration — so intensity scales the vibrating-pulse durations.
+ * Alert patterns are additionally rate-limited (HAPTIC_COOLDOWN_MS).
  * Silently ignored where unsupported (e.g. iOS).
  * @param {'start'|'stop'|'aligned'|'detection'|'danger'} name
  */
@@ -121,6 +130,13 @@ export const haptic = (name) => {
   if (!_hapticEnabled() || !navigator.vibrate) return;
   const base = PATTERNS[name];
   if (!base) return;
+
+  if (ALERT_PATTERNS.has(name)) {
+    const now = Date.now();
+    if (now - lastHapticAt < HAPTIC_COOLDOWN_MS) return;
+    lastHapticAt = now;
+  }
+
   const scale = _fb.vibration_intensity; // 0..1
   // Even indices = vibrate durations (scaled); odd indices = pauses (kept).
   const pattern = base.map((ms, i) =>

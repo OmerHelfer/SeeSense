@@ -82,6 +82,19 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
 
     danger = highest_alert == "high"
 
+    # Most dangerous first. The client announces objects[0] and drives the HUD
+    # direction arrow from it, so it must be the leading threat rather than
+    # whatever order YOLO happened to emit — otherwise the frame reads "danger"
+    # because of one object while the user is told about a different one.
+    processed_objects.sort(
+        key=lambda o: (
+            _alert_priority(o["alert_level"]),
+            _distance_priority(o["distance"]),
+            o["confidence"],
+        ),
+        reverse=True,
+    )
+
     logger.info(
         f"Danger assessment: danger={danger}, alert={highest_alert}, "
         f"closest={closest_distance}, objects={len(processed_objects)}"

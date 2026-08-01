@@ -1,4 +1,5 @@
 import uuid
+import time
 import threading
 import logging
 from datetime import datetime, timedelta
@@ -23,8 +24,18 @@ _user_cache = {}
 _ws_previous_danger_state = {}
 
 # Track last-announced alert level per (user_id, track_id) — for alert dedup.
-# user_id → {track_id: last_alert_level}
+# user_id → {track_id: {"level": str, "seen": monotonic_seconds}}
 _track_alert_state = {}
+
+# Alert levels ranked, so dedup can distinguish an ESCALATION (worth interrupting
+# the user for) from a de-escalation (not news).
+_ALERT_RANK = {"none": 0, "low": 1, "high": 2}
+
+# How long a track's last-known level is remembered after it stops appearing.
+# Objects drop out of the frame's object list whenever their confidence dips under
+# the user's sensitivity threshold, while the track itself is still very much
+# alive — expiring them instantly made them read as "new" again a frame later.
+_ALERT_STATE_TTL = 5.0  # seconds
 
 
 def get_cached_state(user_id: str) -> dict:
@@ -142,29 +153,42 @@ def check_danger_cleared(user_id: str, is_danger: bool) -> bool:
 
 def has_new_alert(user_id: str, objects: list[dict]) -> bool:
     """
-    Alert dedup — returns True only if some object's alert_level actually
-    CHANGED since we last saw it (keyed by its track_id), e.g. a parked car
-    that's constantly "low" every frame won't keep re-triggering TTS/haptic,
-    but a genuine none→low or low→high transition will.
+    Alert dedup — returns True only if some object's danger level has ESCALATED
+    since we last saw it (keyed by its track_id), e.g. a parked car sitting at
+    "low" every frame won't keep re-triggering TTS/haptic, but a genuine
+    none→low or low→high transition will.
 
-    Tracks not present in this frame are forgotten (object left view / track died),
-    so if the same real-world object reappears later it's treated as new again —
-    that's the correct behavior (worth re-alerting on).
+    Escalation only, deliberately: an earlier version fired on any change, which
+    also matched high→low. Combined with an object oscillating across the
+    approach threshold, that alerted in BOTH directions and produced a continuous
+    stream of voice/haptic for a single stationary object. A de-escalation still
+    updates the HUD; it just doesn't interrupt the user.
+
+    Detections with no owning track (track_id -1) are skipped entirely. They have
+    no stable identity, so they all collided on one key, overwrote each other's
+    state, and re-fired on every frame.
     """
+    now = time.monotonic()
     state = _track_alert_state.setdefault(user_id, {})
-    seen_ids = set()
     is_new = False
 
     for obj in objects:
         track_id = obj.get("motion", {}).get("track_id", -1)
+        if track_id < 0:
+            continue
+
         level = obj.get("alert_level", "none")
-        seen_ids.add(track_id)
+        prev = state.get(track_id)
+        prev_level = prev["level"] if prev else "none"
 
-        if level in ("low", "high") and state.get(track_id) != level:
+        if _ALERT_RANK.get(level, 0) > _ALERT_RANK.get(prev_level, 0):
             is_new = True
-        state[track_id] = level
 
-    for stale_id in (set(state.keys()) - seen_ids):
+        state[track_id] = {"level": level, "seen": now}
+
+    # Expire on a timer rather than on a single missed frame, so a momentary dip
+    # below the confidence threshold doesn't make a still-present object "new".
+    for stale_id in [t for t, s in state.items() if now - s["seen"] > _ALERT_STATE_TTL]:
         del state[stale_id]
 
     return is_new

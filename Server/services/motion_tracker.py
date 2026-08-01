@@ -7,9 +7,21 @@ optimal assignment, and two-stage association (high + low confidence).
 
 Each track maintains a history of positions for motion analysis:
 approaching, moving away, lateral direction, speed estimation.
+
+Motion analysis is deliberately conservative, because a false "approaching" turns
+straight into a red danger alert with voice + haptics. Every knob here errs
+towards silence:
+  - timings are in SECONDS, not frames (frame counts were tuned at ~4 FPS and
+    silently became 10x tighter when TARGET_FPS went to 40);
+  - both ends of the motion window are median-filtered, so one noisy box can't
+    decide the verdict;
+  - `approaching` is latched with hysteresis + a confirmation streak, so it can't
+    chatter on/off around a single threshold;
+  - an unconfirmed or under-sampled track reports no motion at all.
 """
 
 import logging
+import time
 import numpy as np
 from collections import deque
 from scipy.optimize import linear_sum_assignment
@@ -17,19 +29,49 @@ from scipy.optimize import linear_sum_assignment
 logger = logging.getLogger(__name__)
 
 # ==================== Configuration ====================
-MAX_AGE = 10               # Frames to keep a lost track before removing
-MIN_HITS = 2               # Minimum detections before track is confirmed
-IOU_THRESHOLD = 0.3        # Minimum IoU for matching
-LOW_CONF_THRESHOLD = 0.3   # Below this = low confidence detection
-HIGH_CONF_THRESHOLD = 0.5  # Above this = high confidence detection
-HISTORY_SIZE = 10           # Frames of history per track
-APPROACH_RATIO = 1.10       # BBox grew 10%+ across the motion window = approaching
-RAPID_APPROACH_RATIO = 1.25 # BBox grew 25%+ = fast approach
-LATERAL_THRESHOLD = 15      # Pixels of lateral movement to register direction
-MOTION_WINDOW = 4           # Frames to look back for motion (anti-jitter smoothing)
+# All motion timings are durations, so they stay correct at any frame rate.
+MAX_AGE_SECONDS   = 1.2    # keep a lost track (and its ID) alive this long
+MOTION_WINDOW_SEC = 0.6    # look-back span for the approach test
+MIN_HITS          = 3      # detections before a track may report motion at all
+SMOOTH_N          = 3      # samples median-filtered at each end of the window
+HISTORY_SIZE      = 48     # must cover MOTION_WINDOW_SEC at 40 FPS
+
+IOU_THRESHOLD       = 0.3  # minimum IoU for matching
+HIGH_CONF_THRESHOLD = 0.5  # at/above this = high confidence detection
+
+# Hysteresis: latch ON above ENTER, release only below EXIT. A single threshold
+# makes `approaching` chatter, and every chatter reaches the user as an alert.
+# 1.22 area growth is ~10% linear growth — outside YOLO's per-frame jitter floor.
+APPROACH_ENTER_RATIO    = 1.22
+APPROACH_EXIT_RATIO     = 1.08
+RAPID_APPROACH_RATIO    = 1.45
+APPROACH_CONFIRM_FRAMES = 3   # sustained growth required before latching
+
+LATERAL_THRESHOLD = 15     # pixels of lateral movement to register direction
+BBOX_SMOOTHING    = 0.4    # EMA factor for the reported box (1.0 = raw, no smoothing)
+
+# Returned for any detection with no owning track. track_id -1 must never be used
+# as a dedup key — see services/session_service.has_new_alert.
+_NO_MOTION = {
+    "track_id": -1,
+    "direction": "unknown",
+    "approaching": False,
+    "speed": "unknown",
+    "area_change": 1.0,
+}
 
 # Per-user tracker instances
 _user_trackers = {}
+
+
+def _median(values):
+    """Median of a short list (cheaper than a numpy round-trip for 3 elements)."""
+    s = sorted(values)
+    n = len(s)
+    if n == 0:
+        return 0.0
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
 class Track:
@@ -44,34 +86,47 @@ class Track:
 
         self.class_name = detection["class_name"]
         self.confidence = detection["confidence"]
-        self.bbox = detection["bbox"]
+        self.bbox = list(detection["bbox"])
 
         # Track lifecycle
-        self.age = 0           # Frames since creation
-        self.hits = 1          # Times detected
+        self.age = 0                # Frames since creation
+        self.hits = 1               # Times detected
         self.time_since_update = 0  # Frames since last matched
+        self.last_seen = time.monotonic()
+
+        # Latched approach state (hysteresis — see get_motion)
+        self.approaching = False
+        self._approach_streak = 0
 
         # Position history for motion analysis
         self.history = deque(maxlen=HISTORY_SIZE)
+        self._push_history()
+
+    def _push_history(self):
+        """Record the current (smoothed) box with a wall-clock stamp, so the motion
+        window can be a real duration instead of a frame count."""
         self.history.append({
-            "bbox": self.bbox,
+            "t": time.monotonic(),
+            "bbox": list(self.bbox),
             "area": _bbox_area(self.bbox),
-            "center": _bbox_center(self.bbox)
+            "center": _bbox_center(self.bbox),
         })
 
     def update(self, detection: dict):
         """Update track with new matched detection."""
-        self.bbox = detection["bbox"]
+        # EMA-smooth the box. Raw YOLO boxes jitter a few px every frame, which is
+        # what makes both `approaching` AND the Close/Medium distance class flap.
+        # Smoothing here fixes both at once (and steadies the client overlay).
+        a = BBOX_SMOOTHING
+        self.bbox = [a * r + (1 - a) * p for r, p in zip(detection["bbox"], self.bbox)]
         self.confidence = detection["confidence"]
-        self.class_name = detection["class_name"]
+        # class_name is deliberately NOT overwritten — association is class-gated,
+        # so a track keeps one identity for its whole life. Letting it flip made a
+        # person's area history compare against a car's box (ratio ~3x → "fast").
         self.hits += 1
         self.time_since_update = 0
-
-        self.history.append({
-            "bbox": self.bbox,
-            "area": _bbox_area(self.bbox),
-            "center": _bbox_center(self.bbox)
-        })
+        self.last_seen = time.monotonic()
+        self._push_history()
 
     def mark_missed(self):
         """Called when track is not matched in current frame."""
@@ -82,53 +137,63 @@ class Track:
         return self.hits >= MIN_HITS
 
     def is_dead(self) -> bool:
-        """Track has been lost for too long."""
-        return self.time_since_update > MAX_AGE
+        """Track has been lost for too long (wall-clock, so it doesn't shrink to a
+        quarter of a second when the frame rate rises)."""
+        return (time.monotonic() - self.last_seen) > MAX_AGE_SECONDS
 
     def get_motion(self) -> dict:
         """
         Analyze motion from position history.
 
-        Uses a WINDOWED comparison (current vs several frames back) rather than
-        just the previous frame. YOLO bounding boxes jitter a few pixels every
-        frame even on a perfectly static object; comparing frame-to-frame makes
-        `approaching` flicker on/off and spam alerts. Comparing across a short
-        window smooths that jitter out: a truly static object stays "static",
-        and only a sustained size increase (real approach) reads as "approaching".
+        Uses a fixed-DURATION look-back rather than a fixed number of frames, and
+        median-filters both ends of the window. YOLO bounding boxes jitter a few
+        pixels every frame even on a perfectly static object; comparing two single
+        frames a short distance apart measures that jitter, not motion, and a
+        false `approaching` is a red danger alert. The verdict is then latched
+        with hysteresis so it cannot flicker across the threshold.
         """
-        if len(self.history) < 2:
-            return {
-                "track_id": self.track_id,
-                "direction": "unknown",
-                "approaching": False,
-                "speed": "unknown",
-                "area_change": 1.0
-            }
+        # Silence until the track has proven itself. MIN_HITS existed but was never
+        # enforced, so one-frame flickers emitted motion immediately.
+        if not self.is_confirmed() or len(self.history) < 2:
+            return {**_NO_MOTION, "track_id": self.track_id}
 
-        curr = self.history[-1]
-        # Look back up to WINDOW frames (or as far as history allows early on).
-        lookback = min(len(self.history) - 1, MOTION_WINDOW)
-        past = self.history[-1 - lookback]
+        now = self.history[-1]["t"]
+        cutoff = now - MOTION_WINDOW_SEC
+        past   = [h for h in self.history if h["t"] <= cutoff]
+        recent = [h for h in self.history if h["t"] > cutoff]
 
-        # Area change across the window (approaching/receding)
-        if past["area"] <= 0:
-            area_ratio = 1.0
-        else:
-            area_ratio = curr["area"] / past["area"]
+        if not past or len(recent) < 2:
+            # Window not filled yet — report "static", never guess "approaching".
+            return {**_NO_MOTION, "track_id": self.track_id, "speed": "static"}
 
-        approaching = area_ratio >= APPROACH_RATIO
+        # Median over the samples nearest each end of the window.
+        past_area = _median([h["area"] for h in past[-SMOOTH_N:]])
+        curr_area = _median([h["area"] for h in recent[-SMOOTH_N:]])
+        area_ratio = (curr_area / past_area) if past_area > 0 else 1.0
 
-        if area_ratio >= RAPID_APPROACH_RATIO:
+        # Hysteresis + confirmation streak: growth must be sustained to latch on,
+        # and must fall well back before it releases.
+        if area_ratio >= APPROACH_ENTER_RATIO:
+            self._approach_streak += 1
+        elif area_ratio < APPROACH_EXIT_RATIO:
+            self._approach_streak = 0
+            self.approaching = False
+        if self._approach_streak >= APPROACH_CONFIRM_FRAMES:
+            self.approaching = True
+
+        if self.approaching and area_ratio >= RAPID_APPROACH_RATIO:
             speed = "fast"
-        elif area_ratio >= APPROACH_RATIO:
+        elif self.approaching:
             speed = "moderate"
-        elif area_ratio <= (1 / APPROACH_RATIO):
+        elif area_ratio <= (1 / APPROACH_ENTER_RATIO):
             speed = "moving_away"
         else:
             speed = "static"
 
-        # Lateral movement across the same window
-        dx = curr["center"][0] - past["center"][0]
+        # Lateral movement across the same window, also median-filtered.
+        past_cx   = _median([h["center"][0] for h in past[-SMOOTH_N:]])
+        recent_cx = _median([h["center"][0] for h in recent[-SMOOTH_N:]])
+        dx = recent_cx - past_cx
         if dx > LATERAL_THRESHOLD:
             direction = "right"
         elif dx < -LATERAL_THRESHOLD:
@@ -139,9 +204,9 @@ class Track:
         return {
             "track_id": self.track_id,
             "direction": direction,
-            "approaching": approaching,
+            "approaching": self.approaching,
             "speed": speed,
-            "area_change": round(area_ratio, 3)
+            "area_change": round(area_ratio, 3),
         }
 
 
@@ -153,6 +218,12 @@ class ByteTracker:
     1. Match high-confidence detections to existing tracks using IoU
     2. Match remaining low-confidence detections to unmatched tracks
     This prevents losing tracks when objects are temporarily occluded.
+
+    Track ownership is recorded DURING association, so every matched detection
+    carries its real track_id. (A previous second-pass IoU search used a stricter
+    threshold than association itself, so detections in between silently fell
+    through to track_id -1 — and every one of those then collided on a single
+    dedup key downstream, re-firing alerts on every frame.)
     """
 
     def __init__(self):
@@ -161,7 +232,8 @@ class ByteTracker:
     def update(self, detections: list[dict]) -> list[dict]:
         """
         Process new frame detections.
-        Returns enriched detections with track_id and motion data.
+        Returns enriched detections with track_id, motion data, and the track's
+        smoothed bbox.
         """
         # Age all tracks
         for track in self.tracks:
@@ -174,55 +246,58 @@ class ByteTracker:
             self._cleanup()
             return []
 
-        # Split detections into high and low confidence
-        high_dets = [d for d in detections if d["confidence"] >= HIGH_CONF_THRESHOLD]
-        low_dets = [d for d in detections if d["confidence"] < HIGH_CONF_THRESHOLD]
+        # Carry the original index so tracks can be attributed back to detections
+        # without a second, threshold-mismatched IoU search.
+        indexed = list(enumerate(detections))
+        high = [(i, d) for i, d in indexed if d["confidence"] >= HIGH_CONF_THRESHOLD]
+        low  = [(i, d) for i, d in indexed if d["confidence"] <  HIGH_CONF_THRESHOLD]
+        owner: dict[int, Track] = {}
 
-        # Stage 1: Match high-confidence detections to tracks
-        matched_track_indices, matched_det_indices, unmatched_tracks, unmatched_dets = \
-            self._associate(self.tracks, high_dets)
+        # Stage 1: high-confidence detections → existing tracks
+        m_t, m_d, un_t, un_d = self._associate(self.tracks, [d for _, d in high])
+        for t_idx, d_idx in zip(m_t, m_d):
+            self.tracks[t_idx].update(high[d_idx][1])
+            owner[high[d_idx][0]] = self.tracks[t_idx]
 
-        # Update matched tracks
-        for t_idx, d_idx in zip(matched_track_indices, matched_det_indices):
-            self.tracks[t_idx].update(high_dets[d_idx])
-
-        # Stage 2: Match low-confidence detections to remaining unmatched tracks
-        remaining_tracks = [self.tracks[i] for i in unmatched_tracks]
-        if remaining_tracks and low_dets:
-            matched_t2, matched_d2, still_unmatched_tracks, _ = \
-                self._associate(remaining_tracks, low_dets)
-
-            for t_idx, d_idx in zip(matched_t2, matched_d2):
-                remaining_tracks[t_idx].update(low_dets[d_idx])
+        # Stage 2: low-confidence detections → still-unmatched tracks
+        remaining = [self.tracks[i] for i in un_t]
+        if remaining and low:
+            m_t2, m_d2, still_un, _ = self._associate(remaining, [d for _, d in low])
+            for t_idx, d_idx in zip(m_t2, m_d2):
+                remaining[t_idx].update(low[d_idx][1])
+                owner[low[d_idx][0]] = remaining[t_idx]
 
             # Mark truly unmatched tracks
-            for t_idx in still_unmatched_tracks:
-                remaining_tracks[t_idx].mark_missed()
+            for t_idx in still_un:
+                remaining[t_idx].mark_missed()
         else:
-            for t_idx in unmatched_tracks:
+            for t_idx in un_t:
                 self.tracks[t_idx].mark_missed()
 
         # Create new tracks for unmatched high-confidence detections
-        for d_idx in unmatched_dets:
-            new_track = Track(high_dets[d_idx])
-            self.tracks.append(new_track)
+        for d_idx in un_d:
+            orig_i, det = high[d_idx]
+            track = Track(det)
+            self.tracks.append(track)
+            owner[orig_i] = track
 
         # Remove dead tracks
         self._cleanup()
 
         # Build enriched output
         enriched = []
-        for det in detections:
-            # Find the track that owns this detection
-            track = self._find_track_for_detection(det)
-            motion = track.get_motion() if track else {
-                "track_id": -1,
-                "direction": "unknown",
-                "approaching": False,
-                "speed": "unknown",
-                "area_change": 1.0
-            }
-            enriched.append({**det, "motion": motion})
+        for i, det in indexed:
+            track = owner.get(i)
+            if track:
+                # Emit the SMOOTHED box so distance classification (Close/Medium/Far)
+                # and the client overlay both stop shimmering with YOLO's jitter.
+                enriched.append({
+                    **det,
+                    "bbox": list(track.bbox),
+                    "motion": track.get_motion(),
+                })
+            else:
+                enriched.append({**det, "motion": dict(_NO_MOTION)})
 
         return enriched
 
@@ -238,6 +313,12 @@ class ByteTracker:
         iou_matrix = np.zeros((len(tracks), len(detections)))
         for t_idx, track in enumerate(tracks):
             for d_idx, det in enumerate(detections):
+                # Never match across classes. Without this a `person` track can
+                # absorb an overlapping `car` detection, and the area history then
+                # compares a person's box against a car's → ratio ~3x → "fast
+                # approach" → a red alert with nothing actually moving.
+                if track.class_name != det["class_name"]:
+                    continue
                 iou_matrix[t_idx, d_idx] = _compute_iou(track.bbox, det["bbox"])
 
         # Hungarian algorithm (minimize cost = maximize IoU)
@@ -258,19 +339,6 @@ class ByteTracker:
                 unmatched_dets.discard(d_idx)
 
         return matched_tracks, matched_dets, list(unmatched_tracks), list(unmatched_dets)
-
-    def _find_track_for_detection(self, detection: dict) -> Track | None:
-        """Find the track that best matches this detection by IoU."""
-        best_track = None
-        best_iou = 0
-        for track in self.tracks:
-            if track.class_name != detection["class_name"]:
-                continue
-            iou = _compute_iou(track.bbox, detection["bbox"])
-            if iou > best_iou:
-                best_iou = iou
-                best_track = track
-        return best_track if best_iou > 0.5 else None
 
     def _cleanup(self):
         """Remove dead tracks."""
