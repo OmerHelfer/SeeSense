@@ -39,24 +39,51 @@ HISTORY_SIZE      = 48     # must cover MOTION_WINDOW_SEC at 40 FPS
 IOU_THRESHOLD       = 0.3  # minimum IoU for matching
 HIGH_CONF_THRESHOLD = 0.5  # at/above this = high confidence detection
 
-# Hysteresis: latch ON above ENTER, release only below EXIT. A single threshold
-# makes `approaching` chatter, and every chatter reaches the user as an alert.
-# 1.22 area growth is ~10% linear growth — outside YOLO's per-frame jitter floor.
-APPROACH_ENTER_RATIO    = 1.22
-APPROACH_EXIT_RATIO     = 1.08
-RAPID_APPROACH_RATIO    = 1.45
-APPROACH_CONFIRM_FRAMES = 3   # sustained growth required before latching
-
-# Immediate release once movement actually stops.
+# ── Approach detection: trend, not jump ──────────────────────────────────────
 #
-# The look-back window is a fixed DURATION, so for MOTION_WINDOW_SEC after an
-# object halts the window still contains the growth that already happened and
-# keeps reporting "approaching" — measured at over 20 frames of red on a scene
-# that had gone completely still. For a blind user a red alert over a static
-# scene is a false alarm, so a short trailing window is checked separately: if
-# the newest samples show no growth over the ones just before them, the latch is
-# released now rather than waiting for the long window to drain.
-STILL_RELEASE_RATIO = 1.02   # <2% growth across the trailing window = stopped
+# The previous test asked "did the box grow >=22% between two moments 0.6s apart".
+# That is a magnitude test, and magnitude is distance-dependent: the SAME walking
+# speed grows the box 13% at 10m but 56% at 3m. So it was blind to anything
+# approaching from a distance and only woke up once the object was nearly on top
+# of the user — measured 5.2s of continuous approach by a dog before it fired.
+#
+# Instead, fit a least-squares line through apparent SIZE (sqrt of area, which is
+# proportional to 1/distance) over a time window and ask two questions:
+#
+#   growth — how much the fitted size grows across the window, relative to its
+#            mean. Rules out imperceptible drift.
+#   snr    — that growth divided by the residual scatter around the fit. This is
+#            what separates signal from noise: detection jitter is large but
+#            UNCORRELATED, so it inflates the residual without tilting the line,
+#            while a slow steady approach tilts the line consistently even when
+#            each individual frame moves less than the jitter.
+#
+# A slow approach therefore reads as low growth but HIGH snr, which the old
+# magnitude-only test could never see.
+APPROACH_WINDOW_SEC  = 0.8    # span the trend is fitted over
+APPROACH_MIN_SAMPLES = 5      # too few points and the fit is meaningless
+
+ENTER_GROWTH = 0.045   # >=4.5% growth in apparent size across the window
+ENTER_SNR    = 2.2     # growth must be >=2.2x the residual scatter
+EXIT_GROWTH  = 0.015   # hysteresis: release well below the entry threshold
+EXIT_SNR     = 1.0
+
+CONFIRM_SEC = 0.30     # trend must hold this long before the alert latches ON
+RELEASE_SEC = 0.25     # and must fail this long before it releases
+
+# What counts as a RAPID approach — graded by time-to-contact, not by raw growth.
+#
+# Relative growth of apparent size per second equals closing_speed / distance,
+# which is exactly 1 / time-to-contact. So this threshold reads directly as "will
+# reach the user in under N seconds", independent of how big or far the object is:
+# a car 24m away closing at 8 m/s and a dog 1m away closing at 0.33 m/s are both
+# 3 seconds out, and both deserve a red alert.
+#
+# 3 seconds is the design point: enough for a blind user to stop or turn, and it
+# fires a fast vehicle while it is still far away rather than waiting for the
+# bbox to grow large enough to look "close".
+RAPID_TIME_TO_CONTACT_SEC = 3.0
+RAPID_GROWTH_PER_SEC = 1.0 / RAPID_TIME_TO_CONTACT_SEC
 
 LATERAL_THRESHOLD = 15     # pixels of lateral movement to register direction
 BBOX_SMOOTHING    = 0.4    # EMA factor for the reported box (1.0 = raw, no smoothing)
@@ -85,6 +112,54 @@ def _median(values):
     return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
+def _size_trend(window):
+    """
+    Least-squares trend of apparent SIZE over a window of history samples.
+
+    Returns (growth, snr, rate):
+      growth — fitted change across the window, relative to the mean size.
+               Positive = getting closer.
+      snr    — that change divided by the residual scatter around the fit. Jitter
+               is large but uncorrelated, so it raises the residual without
+               tilting the line; a genuine approach tilts the line consistently.
+               This is what lets a slow approach be detected even when each
+               single frame moves less than the noise.
+      rate   — fitted growth per second, for grading approach speed.
+
+    Works on sqrt(area) rather than area because apparent size is proportional to
+    1/distance, which makes the trend close to linear for constant closing speed —
+    area would curve, and a curved signal fits a line badly (low snr) exactly when
+    the object is nearest and the alert matters most.
+    """
+    n = len(window)
+    ts = [h["t"] for h in window]
+    ys = [h["area"] ** 0.5 for h in window]
+
+    mean_t = sum(ts) / n
+    mean_y = sum(ys) / n
+    if mean_y <= 0:
+        return 0.0, 0.0, 0.0
+
+    sxx = sum((t - mean_t) ** 2 for t in ts)
+    if sxx <= 0:                      # every sample carries the same timestamp
+        return 0.0, 0.0, 0.0
+    sxy = sum((t - mean_t) * (y - mean_y) for t, y in zip(ts, ys))
+    slope = sxy / sxx                 # pixels of apparent size per second
+
+    residuals = [y - (mean_y + slope * (t - mean_t)) for t, y in zip(ts, ys)]
+    resid_rms = (sum(r * r for r in residuals) / n) ** 0.5
+
+    span = ts[-1] - ts[0]
+    change = slope * span             # fitted size change across the window
+
+    growth = change / mean_y
+    rate = slope / mean_y             # relative growth per second
+    # Guard the ratio: a perfectly clean fit has ~0 residual, which would otherwise
+    # divide by zero and report infinite confidence.
+    snr = abs(change) / resid_rms if resid_rms > 1e-9 else (99.0 if change else 0.0)
+    return growth, snr, rate
+
+
 class Track:
     """
     Single tracked object with persistent ID and motion history.
@@ -105,9 +180,13 @@ class Track:
         self.time_since_update = 0  # Frames since last matched
         self.last_seen = time.monotonic()
 
-        # Latched approach state (hysteresis — see get_motion)
+        # Latched approach state (see get_motion). Confirmation and release are
+        # both measured in SECONDS, not frames: deployed FPS swings from ~40 on
+        # wifi to under 10 on a congested cellular link, and a frame count would
+        # mean a four-times longer confirmation on the street than at home.
         self.approaching = False
-        self._approach_streak = 0
+        self._grow_since = None      # when the growth trend first became credible
+        self._flat_since = None      # when it stopped being credible
 
         # Position history for motion analysis
         self.history = deque(maxlen=HISTORY_SIZE)
@@ -169,53 +248,53 @@ class Track:
             return {**_NO_MOTION, "track_id": self.track_id}
 
         now = self.history[-1]["t"]
-        cutoff = now - MOTION_WINDOW_SEC
-        past   = [h for h in self.history if h["t"] <= cutoff]
-        recent = [h for h in self.history if h["t"] > cutoff]
+        window = [h for h in self.history if h["t"] >= now - APPROACH_WINDOW_SEC]
 
-        if not past or len(recent) < 2:
-            # Window not filled yet — report "static", never guess "approaching".
+        if len(window) < APPROACH_MIN_SAMPLES:
+            # Not enough of the window observed yet — report "static". Never guess
+            # "approaching" from a couple of samples.
             return {**_NO_MOTION, "track_id": self.track_id, "speed": "static"}
 
-        # Median over the samples nearest each end of the window.
-        past_area = _median([h["area"] for h in past[-SMOOTH_N:]])
-        curr_area = _median([h["area"] for h in recent[-SMOOTH_N:]])
-        area_ratio = (curr_area / past_area) if past_area > 0 else 1.0
+        growth, snr, rate = _size_trend(window)
 
-        # Hysteresis + confirmation streak: growth must be sustained to latch on,
-        # and must fall well back before it releases.
-        if area_ratio >= APPROACH_ENTER_RATIO:
-            self._approach_streak += 1
-        elif area_ratio < APPROACH_EXIT_RATIO:
-            self._approach_streak = 0
-            self.approaching = False
-        if self._approach_streak >= APPROACH_CONFIRM_FRAMES:
-            self.approaching = True
+        # Latch with hysteresis, and require the verdict to HOLD for a time before
+        # it changes in either direction. Confirming an alert stops a jitter spike
+        # from reaching the user; confirming a release stops the red screen from
+        # flickering off and on while something is still closing in.
+        credible = growth >= ENTER_GROWTH and snr >= ENTER_SNR
+        failing  = growth < EXIT_GROWTH or snr < EXIT_SNR
 
-        # Stopped-moving override — see STILL_RELEASE_RATIO. Compares the median of
-        # the newest samples against the median of the ones immediately before them,
-        # a span of ~2*SMOOTH_N frames, so it reacts in a fraction of the long
-        # window while still being median-filtered against per-frame jitter.
-        samples = list(self.history)
-        if len(samples) >= 2 * SMOOTH_N:
-            newest = _median([h["area"] for h in samples[-SMOOTH_N:]])
-            before = _median([h["area"] for h in samples[-2 * SMOOTH_N:-SMOOTH_N]])
-            if before > 0 and (newest / before) < STILL_RELEASE_RATIO:
-                self._approach_streak = 0
+        if credible:
+            self._flat_since = None
+            if self._grow_since is None:
+                self._grow_since = now
+            if now - self._grow_since >= CONFIRM_SEC:
+                self.approaching = True
+        elif failing:
+            self._grow_since = None
+            if self._flat_since is None:
+                self._flat_since = now
+            if now - self._flat_since >= RELEASE_SEC:
                 self.approaching = False
+        # Between the two thresholds: hold whatever state is latched.
 
-        if self.approaching and area_ratio >= RAPID_APPROACH_RATIO:
+        if self.approaching and rate >= RAPID_GROWTH_PER_SEC:
             speed = "fast"
         elif self.approaching:
             speed = "moderate"
-        elif area_ratio <= (1 / APPROACH_ENTER_RATIO):
+        elif growth <= -EXIT_GROWTH:
             speed = "moving_away"
         else:
             speed = "static"
 
-        # Lateral movement across the same window, also median-filtered.
-        past_cx   = _median([h["center"][0] for h in past[-SMOOTH_N:]])
-        recent_cx = _median([h["center"][0] for h in recent[-SMOOTH_N:]])
+        # Kept for API compatibility: express the trend as the equivalent area
+        # ratio across the window, since apparent AREA goes as size squared.
+        area_ratio = (1.0 + growth) ** 2
+
+        # Lateral movement across the same window, median-filtered at both ends so
+        # one noisy box can't decide the direction.
+        past_cx   = _median([h["center"][0] for h in window[:SMOOTH_N]])
+        recent_cx = _median([h["center"][0] for h in window[-SMOOTH_N:]])
         dx = recent_cx - past_cx
         if dx > LATERAL_THRESHOLD:
             direction = "right"

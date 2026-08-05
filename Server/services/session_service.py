@@ -141,14 +141,36 @@ def get_active_session(user_id: str) -> dict | None:
 
 # ==================== Danger State Tracking ====================
 
-def check_danger_cleared(user_id: str, is_danger: bool) -> bool:
+def check_danger_cleared(user_id: str, alert_level) -> bool:
     """
-    Returns True if danger was active last frame and is now cleared.
-    Updates the danger state tracker.
+    Returns True only on a real red -> fully clear transition.
+
+    Takes the alert LEVEL, not a danger boolean. The boolean version treated
+    anything that was not "high" as clear, so dropping from red to YELLOW
+    announced "נתיב פנוי" while the user was still under a caution — the one
+    moment the announcement must not be made. The path is clear when nothing is
+    alerting at all, so the transition has to be high -> none, and a red that
+    decays through yellow stays silent until yellow itself resolves.
+
+    Accepts a bool as well, for any caller not yet migrated.
     """
-    was_danger = _ws_previous_danger_state.get(user_id, False)
-    _ws_previous_danger_state[user_id] = is_danger
-    return was_danger and not is_danger
+    if isinstance(alert_level, bool):
+        level = "high" if alert_level else "none"
+    else:
+        level = alert_level or "none"
+
+    # Latched, not a previous-frame comparison. A red usually decays through
+    # yellow on its way out, and comparing only against the previous level meant
+    # that path announced nothing at all: red->yellow was suppressed (correctly),
+    # but by the time yellow->none arrived the "was red" fact had been overwritten.
+    # The flag stays raised through yellow and is only cleared by reaching "none".
+    if level == "high":
+        _ws_previous_danger_state[user_id] = True
+        return False
+    if level == "none" and _ws_previous_danger_state.get(user_id, False):
+        _ws_previous_danger_state[user_id] = False
+        return True
+    return False
 
 
 def has_new_alert(user_id: str, objects: list[dict]) -> bool:

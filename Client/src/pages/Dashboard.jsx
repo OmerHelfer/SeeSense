@@ -18,6 +18,11 @@ const ALERT_LABELS = {
   low:  '! שים לב',
 };
 
+// How often to repeat the spoken warning while something is STILL approaching.
+// Long enough not to talk over itself (an utterance takes ~1s), short enough that
+// a situation getting worse keeps sounding urgent instead of falling silent.
+const DANGER_REPEAT_MS = 2000;
+
 // ── Sub-components ───────────────────────────────────────
 
 /** One corner bracket of the HUD frame */
@@ -123,6 +128,8 @@ const Dashboard = () => {
   // 'hidden' | 'visible' | 'sent'
   const [feedbackState, setFeedbackState] = useState('hidden');
   const feedbackTimerRef = useRef(null);        // auto-hide timer
+  // Cooldown for the repeated "still closing in" warning (see handleResult).
+  const lastDangerRepeatRef = useRef(0);
 
   // ── SOS state ──
   // 'idle' | 'sending' | 'sent'  (single tap → sending → sent → idle)
@@ -233,6 +240,27 @@ const Dashboard = () => {
       setDetectedClass(null);
       return;
     }
+
+    // Keep warning while something is STILL closing in. alert_is_new only fires
+    // on an escalation, so a car that stays red as it bears down on the user
+    // would be announced once and then go quiet — the opposite of what a
+    // worsening situation should sound like. While the danger persists AND the
+    // object is still approaching, repeat on a cooldown so the warning tracks
+    // reality without becoming a stutter.
+    const stillClosingIn =
+      result.danger && (objects[0]?.motion?.approaching ?? false);
+    const now = performance.now();
+    if (stillClosingIn && now - lastDangerRepeatRef.current >= DANGER_REPEAT_MS) {
+      lastDangerRepeatRef.current = now;
+      const tRep = performance.now();
+      haptic('danger');
+      speakMessage('סכנה קרובה');
+      showFeedbackBriefly();
+      recordClientStage('feedback', performance.now() - tRep);
+      return;
+    }
+    // Reset the cooldown once the danger ends, so the next one speaks immediately.
+    if (!result.danger) lastDangerRepeatRef.current = 0;
 
     // alert_is_new (server-side, per track_id) gates TTS/haptic so the same
     // still-present object doesn't re-trigger them every single frame — the

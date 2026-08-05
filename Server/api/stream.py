@@ -250,9 +250,11 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 stage_times["danger_logic"] = (time.time() - t3) * 1000
                 tracker.record_stage("danger_logic", stage_times["danger_logic"])
 
-                # Danger cleared check
+                # Danger cleared check. Pass the LEVEL, not the boolean: "path
+                # clear" must only be announced on red -> nothing, never on red ->
+                # yellow, which is still a caution.
                 is_danger = result["danger"]
-                danger_cleared = check_danger_cleared(user_id, is_danger)
+                danger_cleared = check_danger_cleared(user_id, result["alert_level"])
 
                 # Alert dedup — only True on a genuine none→low / low→high transition
                 # per tracked object, so TTS/haptic don't fire every single frame for
@@ -306,7 +308,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 if not counted:
                     perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
                 # Even on bad frames, check if danger state changed (e.g. user moved away)
-                danger_cleared = check_danger_cleared(user_id, False)
+                danger_cleared = check_danger_cleared(user_id, "none")
                 await websocket.send_json({
                     "type": "error",
                     "frame": frame_count,
