@@ -73,7 +73,7 @@ echo "==> Domain:      $DOMAIN"
 # ---------------------------------------------------------------------------
 echo "==> Installing system packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq certbot
+sudo apt-get install -y -qq certbot python3-pip
 
 if ! command -v node >/dev/null 2>&1; then
   echo "==> Installing Node.js 20"
