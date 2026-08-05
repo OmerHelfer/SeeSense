@@ -849,7 +849,7 @@ def _emergency_alerts():
     return get_db()["emergency_alerts"]
 
 
-def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
+def trigger_emergency(user_id: str, gps_lat: float | None, gps_lon: float | None) -> dict:
     from services.email_service import send_emergency_alert_email
 
     profile = _users().find_one({"user_id": user_id})
@@ -860,7 +860,10 @@ def trigger_emergency(user_id: str, gps_lat: float, gps_lon: float) -> dict:
     if not contacts:
         raise ValueError("No verified emergency contacts configured")
 
-    maps_link = f"https://maps.google.com/?q={gps_lat},{gps_lon}"
+    # 0,0 is a real place (Null Island, in the Atlantic). Treat "no fix" as no
+    # link at all rather than a plausible-looking link to the wrong continent.
+    has_fix = gps_lat is not None and gps_lon is not None
+    maps_link = f"https://maps.google.com/?q={gps_lat},{gps_lon}" if has_fix else None
 
     alert = {
         "alert_id": str(uuid.uuid4()),

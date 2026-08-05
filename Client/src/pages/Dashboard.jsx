@@ -214,7 +214,10 @@ const Dashboard = () => {
     setAlertLevel(level);
 
     // Track direction and class of leading object for HUD display
-    const dir = objects[0]?.motion?.direction ?? null;
+    // Where the object IS (position), not which way it is drifting
+    // (motion.direction) — the arrow points the user somewhere, so it has to mean
+    // location. See the same fix in feedbackService.announceDetections.
+    const dir = objects[0]?.position ?? null;
     const cls = objects[0]?.class_name ?? null;
     setDetectionDir(level !== 'none' ? dir : null);
     setDetectedClass(level !== 'none' && cls ? (HEBREW_NAMES[cls] ?? cls) : null);
@@ -356,10 +359,25 @@ const Dashboard = () => {
       setTimeout(() => setSosState('idle'), 3000);
     };
 
+    // Never fabricate coordinates. Sending 0,0 on failure produced a Google Maps
+    // link to Null Island (off West Africa) that looks like a real location, so a
+    // contact would confidently head to the wrong place. Send nothing instead and
+    // let the email say the location is unavailable.
+    //
+    // Two attempts: GPS-accurate first, then a fast cached/network fix. High
+    // accuracy can take well over 5s indoors or from a cold start, which is what
+    // was silently failing here.
+    if (!navigator.geolocation) { send(null, null); return; }
+
     navigator.geolocation.getCurrentPosition(
       (pos) => send(pos.coords.latitude, pos.coords.longitude),
-      ()    => send(0, 0),
-      { timeout: 5000, enableHighAccuracy: true }
+      () => navigator.geolocation.getCurrentPosition(
+        (pos) => send(pos.coords.latitude, pos.coords.longitude),
+        ()    => send(null, null),
+        // Accept a fix up to 5 min old — a slightly stale position beats none.
+        { timeout: 8000, enableHighAccuracy: false, maximumAge: 300000 },
+      ),
+      { timeout: 12000, enableHighAccuracy: true, maximumAge: 0 },
     );
   };
 

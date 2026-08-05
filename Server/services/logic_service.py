@@ -165,9 +165,6 @@ def _build_alert_message(class_name: str, distance: str, position: str, motion: 
     return ""
 
 
-VEHICLE_CLASSES = {"car", "motorcycle", "bicycle", "scooter"}
-
-
 def _classify_alert(class_name: str, distance: str, high_risk_classes: set, motion: dict = None) -> str:
     """
     Motion-first alerting: a RED "high" danger is reserved for objects that are
@@ -182,30 +179,29 @@ def _classify_alert(class_name: str, distance: str, high_risk_classes: set, moti
     approaching = motion.get("approaching", False) if motion else False
     speed = motion.get("speed", "unknown") if motion else "unknown"
 
-    # ── Not approaching (static or moving away) → never RED. ──
-    # This is the key to "danger clears when motion stops, re-fires on change".
-    if not approaching:
-        # A high-risk, non-vehicle obstacle (person/dog/pole/stairs...) very close
-        # still deserves a soft caution — but not a red danger. Vehicles and
-        # anything farther go fully silent.
-        if is_high_risk and class_name not in VEHICLE_CLASSES and distance == "Close":
-            return "low"
+    # ── Class the user switched OFF → never an alert, at any distance. ──
+    # The Settings screen promises "לא מסומנים — יזוהו אך לא יסומנו כסכנה", but this
+    # used to fall through to a distance-only rule below that returned "high" for
+    # any close approaching object — so an unchecked class (a bench) could turn the
+    # screen red. Detection still happens (the box is drawn); only alerting stops.
+    if not is_high_risk:
         return "none"
 
-    # ── Approaching → escalate by class / distance / speed. ──
-    if is_high_risk:
-        if speed == "fast":
-            return "high"                       # fast approach at any distance
-        if distance in ("Close", "Medium"):
-            return "high"                       # approaching and already near
-        return "low"                            # approaching from Far → early heads-up
+    # ── Not approaching (static or moving away) → no alert at all. ──
+    # Nothing is developing: the user and the object are at rest relative to each
+    # other, so there is nothing to warn about no matter how close it is. Sitting
+    # near your own dog, or facing a parked car, must stay silent. A genuine
+    # approach still fires, including when the USER walks toward a static object —
+    # closing distance grows the bbox, which reads as approaching.
+    if not approaching:
+        return "none"
 
-    # Non-high-risk but approaching
-    if distance == "Close":
-        return "high"
-    if distance == "Medium":
-        return "low"
-    return "none"
+    # ── Approaching → escalate by distance / speed. ──
+    if speed == "fast":
+        return "high"                       # fast approach at any distance
+    if distance in ("Close", "Medium"):
+        return "high"                       # approaching and already near
+    return "low"                            # approaching from Far → early heads-up
 
 
 def _alert_priority(level: str) -> int:

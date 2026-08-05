@@ -221,19 +221,37 @@ def send_contact_expired_notification(to_email: str, user_name: str, contact_nam
     """
     send_email(to_email, subject, html)
 
-def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str, maps_link: str):
-    """Send emergency alert email to verified contact."""
+def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str,
+                               maps_link: str | None):
+    """
+    Send emergency alert email to a verified contact.
+
+    maps_link is None when the device could not get a location fix. Say so plainly
+    rather than linking anywhere: the alert itself is still urgent and must go out,
+    but a contact must never be sent to a location the app does not actually know.
+    """
     subject = "URGENT — SeeSense Emergency Alert"
+
+    if maps_link:
+        location_block = f"""
+        <p>Their current location:</p>
+        <a href="{maps_link}" style="display: inline-block; background: #e74c3c; color: white;
+           padding: 15px 30px; text-decoration: none; border-radius: 8px; font-size: 18px;">
+            View Location on Google Maps
+        </a>"""
+    else:
+        location_block = """
+        <p style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 8px;">
+            <strong>Location unavailable.</strong> Their device could not determine a GPS
+            position for this alert. Please contact them directly.
+        </p>"""
+
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 3px solid #e74c3c; padding: 20px;">
         <h2 style="color: #e74c3c;">EMERGENCY ALERT</h2>
         <p>Hi {contact_name},</p>
         <p><strong>{user_name}</strong> has triggered an emergency alert on SeeSense.</p>
-        <p>Their current location:</p>
-        <a href="{maps_link}" style="display: inline-block; background: #e74c3c; color: white;
-           padding: 15px 30px; text-decoration: none; border-radius: 8px; font-size: 18px;">
-            View Location on Google Maps
-        </a>
+        {location_block}
         <br><br>
         <p>Please try to contact them or send help immediately.</p>
         <br>

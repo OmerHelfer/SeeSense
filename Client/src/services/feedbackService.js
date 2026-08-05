@@ -294,7 +294,12 @@ export const announceDetections = (objects, isDanger = false) => {
   lastAnnounceAt = now;
 
   const name     = HEBREW_NAMES[className] || className;
-  const dirLabel = DIRECTION_LABELS[topObj?.motion?.direction] ?? '';
+  // `position` = WHERE the object is in the frame (left / center / right).
+  // `motion.direction` = which way it is MOVING, which is a different question:
+  // a car directly ahead drifting slightly rightwards has direction "right" while
+  // sitting straight in front of you. Announcing that as "מצד ימין" sent the user
+  // looking the wrong way, so the spoken location must come from `position`.
+  const dirLabel = DIRECTION_LABELS[topObj?.position] ?? '';
   const body     = dirLabel ? `${name} ${dirLabel}` : name;
   const text     = isDanger ? `סכנה! ${body}` : body;
 
