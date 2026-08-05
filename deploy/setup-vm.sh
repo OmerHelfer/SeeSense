@@ -73,7 +73,10 @@ echo "==> Domain:      $DOMAIN"
 # ---------------------------------------------------------------------------
 echo "==> Installing system packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq certbot python3-pip
+# libgl1 + libglib2.0-0: opencv-python needs these at import time (same
+# packages Server/Dockerfile already installs for Railway) — without them,
+# `import cv2` fails with "libGL.so.1: cannot open shared object file".
+sudo apt-get install -y -qq certbot python3-pip libgl1 libglib2.0-0
 
 if ! command -v node >/dev/null 2>&1; then
   echo "==> Installing Node.js 20"
@@ -166,7 +169,21 @@ sudo systemctl enable seesense
 sudo systemctl restart seesense
 
 sleep 3
-sudo systemctl --no-pager --lines=20 status seesense || true
+
+# Verify the service actually came up before declaring victory — `restart`
+# above returns success the instant the process is launched, not once it's
+# actually staying up, so a crash-on-import (e.g. a missing system library)
+# would otherwise still print "Setup complete" below.
+if ! systemctl is-active --quiet seesense; then
+  echo ""
+  echo "!!! seesense.service failed to start. Recent logs: !!!"
+  sudo journalctl -u seesense -n 40 --no-pager
+  echo ""
+  echo "Fix the error above, then run:  sudo systemctl restart seesense"
+  exit 1
+fi
+
+sudo systemctl --no-pager --lines=20 status seesense
 
 cat <<DONE
 
