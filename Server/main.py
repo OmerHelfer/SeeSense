@@ -68,8 +68,14 @@ async def lifespan(app: FastAPI):
     backfill_recording_start()
     app.state.model = load_model(MODEL_PATH, mode=MODEL_MODE)
     app.state.start_time = time.time()
+    # Batched persistence for the frame loop — see services/db_writer.
+    from services import db_writer
+    db_writer.start()
     logger.info("Server is ready")
     yield
+    # Flush buffered history before the connection closes, so a clean shutdown
+    # doesn't discard the last second of records.
+    db_writer.shutdown()
     disconnect()
     logger.info("SeeSense server shutting down...")
 

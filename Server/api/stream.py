@@ -9,6 +9,7 @@ from core.auth import verify_token
 from core.config import MODEL_MODE, TARGET_FPS, TARGET_SIZE, MIN_INPUT_SIZE, MAX_INPUT_SIZE
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
+from services import db_writer
 from services.motion_tracker import get_tracker as get_motion_tracker, clear_tracker
 from services.session_service import (
     get_or_create_session,
@@ -19,7 +20,6 @@ from services.session_service import (
     clear_cache,
     check_danger_cleared,
     has_new_alert,
-    save_frame_count_background,
 )
 from ml_engine.model_loader import run_inference
 from api.settings import get_user_settings
@@ -267,10 +267,12 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 # ── Build the detection record with a pre-generated id (no DB I/O
                 #    on the hot path) so we can return record_id immediately. The
                 #    actual insert is deferred to a background thread below. ──
-                t4 = time.time()
-                from services.user_service import build_detection_entry, insert_detection_entry
+                from services.user_service import build_detection_entry
                 record_id, detection_entry = build_detection_entry(user_id, result, session_id=session_id)
-                stage_times["db_write"] = (time.time() - t4) * 1000
+                # Report what persisting a record ACTUALLY costs, measured by the
+                # batch writer. The old value timed building this dict — it never
+                # touched the database, so it read 0.0ms however slow writes were.
+                stage_times["db_write"] = db_writer.last_amortized_ms()
                 tracker.record_stage("db_write", stage_times["db_write"])
 
                 # ── Persist this frame's metrics to per-minute history ──
@@ -292,17 +294,13 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                     "objects": result["objects"]
                 })
 
-                # ── Persist the detection record off the hot path (after response).
-                #    Daemon thread mirrors save_frame_count_background — no asyncio
-                #    task to be GC'd, and a failed write can't crash the stream. ──
-                threading.Thread(
-                    target=insert_detection_entry,
-                    args=(detection_entry,),
-                    daemon=True,
-                ).start()
-
-                # ── Frame count update in background ──
-                save_frame_count_background(session_id, frame_count)
+                # ── Hand both writes to the batch writer (after the response). ──
+                # Previously each of these spawned its OWN thread every frame: 80
+                # threads and 80 cross-country round trips per second at 40 FPS,
+                # which starved the event loop and froze the client's overlay.
+                # Buffered here and written once a second instead.
+                db_writer.queue_detection(detection_entry)
+                db_writer.note_frame_count(session_id, frame_count)
 
             except ValueError as e:
                 if not counted:

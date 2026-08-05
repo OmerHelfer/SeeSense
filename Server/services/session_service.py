@@ -219,13 +219,18 @@ def has_new_alert(user_id: str, objects: list[dict]) -> bool:
 # ==================== Background DB Writes ====================
 
 def save_frame_count_background(session_id: str, frame_count: int):
-    """Kick off a background thread to update frame count (non-blocking)."""
-    thread = threading.Thread(
-        target=_save_frame_count,
-        args=(session_id, frame_count),
-        daemon=True
-    )
-    thread.start()
+    """
+    DEPRECATED — routes to the batch writer.
+
+    This used to spawn a fresh thread per call, and the frame loop called it once
+    per frame: at 40 FPS that was 40 threads and 40 writes a second, all targeting
+    the SAME session document, so MongoDB serialised them. Kept as a thin shim so
+    any other caller keeps working, but the streaming path now goes straight to
+    services.db_writer, which keeps only the latest value and writes it once a
+    second.
+    """
+    from services import db_writer
+    db_writer.note_frame_count(session_id, frame_count)
 
 
 def _save_frame_count(session_id: str, frame_count: int):
