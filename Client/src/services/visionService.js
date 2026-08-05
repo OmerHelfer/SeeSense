@@ -18,10 +18,16 @@ import { getClientStageReport } from './clientMetrics';
 
 // Derive the WebSocket base URL from the Vite env var.
 // http:// → ws://   |   https:// → wss://
-const WS_BASE = (import.meta.env.VITE_API_URL ?? '')
-  .replace(/\/$/, '')
-  .replace(/^https:\/\//, 'wss://')
-  .replace(/^http:\/\//, 'ws://');
+// Unset (single-service deploy, where the server also serves this build) falls
+// back to the page's own origin, so nothing about the host is baked into the
+// bundle and the same build works over any IP or hostname it's reached by.
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+const WS_BASE = API_URL
+  ? API_URL
+      .replace(/\/$/, '')
+      .replace(/^https:\/\//, 'wss://')
+      .replace(/^http:\/\//, 'ws://')
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
 
 const RECONNECT_DELAY_MS     = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;

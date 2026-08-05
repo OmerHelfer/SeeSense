@@ -14,14 +14,16 @@ os.environ.setdefault("YOLO_AUTOINSTALL", "false")
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from pathlib import Path
 import uvicorn
 import logging.handlers
 import time
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from api.inference import router as inference_router
 from api.settings import router as settings_router
 from api.stream import router as stream_router
@@ -100,8 +102,19 @@ app.include_router(users_router)
 app.include_router(admin_router)
 
 
+# ==================== Static frontend ====================
+# When Client/dist exists (a production build), this process serves the React app
+# too, so the UI, the REST API and the WebSocket all share one origin, one port
+# and one TLS certificate — no CORS, no mixed content, nothing to deploy twice.
+# Absent (plain local dev), the server stays API-only and Vite serves the UI.
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "Client" / "dist"
+SERVE_FRONTEND = (FRONTEND_DIST / "index.html").is_file()
+
+
 @app.get("/")
 async def root():
+    if SERVE_FRONTEND:
+        return FileResponse(FRONTEND_DIST / "index.html")
     return {"message": "SeeSense server is running"}
 
 
@@ -225,6 +238,41 @@ def reset_system_status(
         "email": user.get("email"),
         "message": f"Performance data reset for {user.get('email')}",
     }
+
+# ==================== SPA routing (registered last on purpose) ====================
+# Everything below must come AFTER every API route: FastAPI matches in
+# registration order, so a catch-all declared earlier would swallow /users/login,
+# /health and friends.
+if SERVE_FRONTEND:
+    # Hashed bundles get their own mount so Starlette handles ETag/range/caching
+    # for them rather than re-reading the file on every request.
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        """
+        Serve the SPA shell for any path the API didn't claim.
+
+        React Router owns /login, /admin/status and the rest; those paths exist
+        only in the browser, so a refresh or a shared link on one of them lands
+        here and would otherwise 404. Real files (favicon, manifest) are still
+        served directly when they exist.
+        """
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        # Path-traversal guard: full_path comes from the URL, so "../.." must not
+        # be able to reach outside the build directory.
+        if (
+            full_path
+            and candidate.is_file()
+            and candidate.is_relative_to(FRONTEND_DIST)
+        ):
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+    logger.info(f"Serving frontend build from {FRONTEND_DIST}")
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
