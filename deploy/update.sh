@@ -45,7 +45,7 @@ else
     echo "==> requirements.txt changed — installing"
     # torch stays on the CUDA build already installed: it is unpinned in
     # requirements.txt, so pip treats the existing CUDA wheel as satisfying it.
-    pip install --quiet -r Server/requirements.txt
+    python3 -m pip install --quiet -r Server/requirements.txt
   fi
 fi
 

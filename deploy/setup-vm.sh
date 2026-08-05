@@ -88,14 +88,14 @@ echo "    node $(node --version), npm $(npm --version)"
 #    replace it with the CPU-only wheel from PyPI.
 # ---------------------------------------------------------------------------
 echo "==> Installing PyTorch (CUDA build)"
-pip install --quiet torch==2.5.0 torchvision==0.20.0 \
+python3 -m pip install --quiet torch==2.5.0 torchvision==0.20.0 \
   --index-url https://download.pytorch.org/whl/cu121
 
 echo "==> Installing remaining Python dependencies"
-pip install --quiet -r Server/requirements.txt
+python3 -m pip install --quiet -r Server/requirements.txt
 
 echo "==> Verifying CUDA is available to PyTorch"
-python -c "import torch; assert torch.cuda.is_available(), 'CUDA NOT available — torch is the CPU build'; print(f'    OK: torch {torch.__version__} on {torch.cuda.get_device_name(0)}')"
+python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA NOT available — torch is the CPU build'; print(f'    OK: torch {torch.__version__} on {torch.cuda.get_device_name(0)}')"
 
 # ---------------------------------------------------------------------------
 # 5. Frontend build. --mode gcp bakes in no API host, so the bundle calls
@@ -146,7 +146,7 @@ Type=simple
 User=$USER
 Group=ssl-cert
 WorkingDirectory=$REPO_DIR/Server
-ExecStart=$(command -v python) -m uvicorn main:app \\
+ExecStart=$(command -v python3) -m uvicorn main:app \\
   --host 0.0.0.0 --port 443 \\
   --ssl-keyfile /etc/letsencrypt/live/$DOMAIN/privkey.pem \\
   --ssl-certfile /etc/letsencrypt/live/$DOMAIN/fullchain.pem
