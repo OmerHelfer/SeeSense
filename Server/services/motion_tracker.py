@@ -47,6 +47,17 @@ APPROACH_EXIT_RATIO     = 1.08
 RAPID_APPROACH_RATIO    = 1.45
 APPROACH_CONFIRM_FRAMES = 3   # sustained growth required before latching
 
+# Immediate release once movement actually stops.
+#
+# The look-back window is a fixed DURATION, so for MOTION_WINDOW_SEC after an
+# object halts the window still contains the growth that already happened and
+# keeps reporting "approaching" — measured at over 20 frames of red on a scene
+# that had gone completely still. For a blind user a red alert over a static
+# scene is a false alarm, so a short trailing window is checked separately: if
+# the newest samples show no growth over the ones just before them, the latch is
+# released now rather than waiting for the long window to drain.
+STILL_RELEASE_RATIO = 1.02   # <2% growth across the trailing window = stopped
+
 LATERAL_THRESHOLD = 15     # pixels of lateral movement to register direction
 BBOX_SMOOTHING    = 0.4    # EMA factor for the reported box (1.0 = raw, no smoothing)
 
@@ -180,6 +191,18 @@ class Track:
             self.approaching = False
         if self._approach_streak >= APPROACH_CONFIRM_FRAMES:
             self.approaching = True
+
+        # Stopped-moving override — see STILL_RELEASE_RATIO. Compares the median of
+        # the newest samples against the median of the ones immediately before them,
+        # a span of ~2*SMOOTH_N frames, so it reacts in a fraction of the long
+        # window while still being median-filtered against per-frame jitter.
+        samples = list(self.history)
+        if len(samples) >= 2 * SMOOTH_N:
+            newest = _median([h["area"] for h in samples[-SMOOTH_N:]])
+            before = _median([h["area"] for h in samples[-2 * SMOOTH_N:-SMOOTH_N]])
+            if before > 0 and (newest / before) < STILL_RELEASE_RATIO:
+                self._approach_streak = 0
+                self.approaching = False
 
         if self.approaching and area_ratio >= RAPID_APPROACH_RATIO:
             speed = "fast"
