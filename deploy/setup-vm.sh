@@ -88,11 +88,14 @@ echo "    node $(node --version), npm $(npm --version)"
 #    replace it with the CPU-only wheel from PyPI.
 # ---------------------------------------------------------------------------
 echo "==> Installing PyTorch (CUDA build)"
-python3 -m pip install --quiet torch==2.5.0 torchvision==0.20.0 \
+# --break-system-packages: Ubuntu 24.04 blocks system-wide pip by default
+# (PEP 668). Safe here — this VM exists only to run this app, nothing else
+# depends on the system Python.
+python3 -m pip install --quiet --break-system-packages torch==2.5.0 torchvision==0.20.0 \
   --index-url https://download.pytorch.org/whl/cu121
 
 echo "==> Installing remaining Python dependencies"
-python3 -m pip install --quiet -r Server/requirements.txt
+python3 -m pip install --quiet --break-system-packages -r Server/requirements.txt
 
 echo "==> Verifying CUDA is available to PyTorch"
 python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA NOT available — torch is the CPU build'; print(f'    OK: torch {torch.__version__} on {torch.cuda.get_device_name(0)}')"
