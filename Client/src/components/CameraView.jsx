@@ -337,8 +337,15 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, captureFps = 4, i
             const color = BOX_COLORS[b.level] ?? BOX_COLORS.none;
             const font  = 13 / zoom;
             const pad   = 4 / zoom;
-            const above = b.y > font * 1.4;                 // keep label on-screen
+            // Centred on the box's TOP edge rather than tucked into its left
+            // corner. Anchoring to the corner put the text over whatever the box
+            // was framing, and with several boxes the labels drifted apart from
+            // the things they name; centred, each label sits directly above its
+            // own object. Falls inside the box when there is no room above, so a
+            // detection at the very top of the frame keeps its label visible.
+            const above = b.y > font * 1.4;
             const ty    = above ? b.y - pad : b.y + font + pad;
+            const tx    = b.x + b.w / 2;
             return (
               <g key={b.key}>
                 <rect
@@ -348,7 +355,8 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, captureFps = 4, i
                   stroke={color} strokeWidth={2 / zoom}
                 />
                 <text
-                  x={b.x + pad} y={ty}
+                  x={tx} y={ty}
+                  textAnchor="middle"
                   fontSize={font}
                   fontWeight="700"
                   fill={color}
