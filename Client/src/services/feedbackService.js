@@ -251,11 +251,17 @@ export const previewVoice = (text = 'שלום') => {
 
 /**
  * Speak the sound on/off state when the user toggles mute.
- * Bypasses the audio gate + cooldown so "שמע כבוי" is still heard on mute.
+ * Bypasses the audio gate + cooldown so it is still heard when muting.
+ *
+ * Says "קול" and not "שמע". Hebrew text carries no vowels, so the engine has to
+ * guess how to read a word: unvowelled שמע can be שְׁמַע / שֶׁמַע / שָׁמַע, and it was
+ * picking the wrong one — coming out as "שם" with a sin instead of a shin. "קול"
+ * has only one possible reading, so no engine can mispronounce it. This matters
+ * more than it looks: for a blind user the spoken word IS the interface.
  */
 export const announceMute = (mutedNow) => {
   if (!window.speechSynthesis) return;
-  const u = new SpeechSynthesisUtterance(mutedNow ? 'שמע כבוי' : 'שמע דלוק');
+  const u = new SpeechSynthesisUtterance(mutedNow ? 'הקול כבוי' : 'הקול פועל');
   u.lang   = 'he-IL';
   u.volume = 1;
   u.rate   = 1.1;

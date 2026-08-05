@@ -49,7 +49,7 @@ const SoundToggle = () => {
     setMutedState(nowMuted);
 
     haptic('aligned');           // tactile tick (no-op where unsupported, e.g. iOS)
-    announceMute(nowMuted);      // spoken "שמע דלוק" / "שמע כבוי"
+    announceMute(nowMuted);      // spoken "הקול פועל" / "הקול כבוי"
 
     // Persist the resulting volume (and any alert_type change from unmuting).
     if (userId) {
