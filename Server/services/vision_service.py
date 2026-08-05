@@ -58,10 +58,17 @@ def validate_image_quality(img: np.ndarray):
     Run image quality checks on the resized image.
     Raises ValueError with descriptive message for the client.
     Resolution check is NOT here — it runs on the original before resize.
+
+    Same four checks, same thresholds, same numbers as before — just computed
+    with fewer passes over the image. See the two notes below.
     """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    mean_intensity = float(np.mean(gray))
-    std_intensity = float(np.std(gray))
+    # One pass for both statistics instead of np.mean + np.std, which each walk
+    # the whole 640x640 buffer separately. cv2.meanStdDev is SIMD and returns the
+    # population std, which is exactly what np.std() gives at its default ddof=0.
+    _mean, _std = cv2.meanStdDev(gray)
+    mean_intensity = float(_mean[0][0])
+    std_intensity = float(_std[0][0])
     h, w = img.shape[:2]
 
     # Check 1: Camera covered (uniform solid color — black, white, or any color)
@@ -83,7 +90,16 @@ def validate_image_quality(img: np.ndarray):
         )
 
     # Check 4: Blurry (out of focus, motion blur, shaking)
-    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    #
+    # CV_16S, not CV_64F. The default 3x3 Laplacian kernel on 8-bit input can
+    # only produce integers in [-1020, 1020], so int16 holds every value exactly
+    # — but writes 2 bytes per pixel instead of 8, which is where the time went
+    # (a 640x640 float64 buffer is 3.3 MB, written and then read straight back).
+    # meanStdDev accumulates in double either way, so the variance is the same
+    # number to ~1e-16 relative. If the kernel size ever changes, re-check that
+    # the output still fits in int16.
+    _, _lap_sd = cv2.meanStdDev(cv2.Laplacian(gray, cv2.CV_16S))
+    laplacian_var = float(_lap_sd[0][0]) ** 2
     if laplacian_var < BLUR_THRESHOLD:
         raise ValueError(
             "Image is too blurry. Camera may be out of focus or moving too fast."
@@ -127,6 +143,14 @@ def letterbox_resize(img: np.ndarray, target_size: int) -> np.ndarray:
     This is the standard YOLO preprocessing — avoids distortion.
     """
     h, w = img.shape[:2]
+
+    # Fast path: the client captures at exactly the size it negotiated, so in the
+    # normal case the frame ALREADY is target_size x target_size. Falling through
+    # ran a scale-1.0 resize, allocated a 1.2 MB grey canvas and copied the whole
+    # image into it — three full passes that cannot change a single pixel.
+    if h == target_size and w == target_size:
+        return img
+
     scale = min(target_size / h, target_size / w)
 
     new_w = int(w * scale)

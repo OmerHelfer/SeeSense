@@ -172,6 +172,14 @@ def get_system_status(
         data["rtt_history"] = live.get("rtt_history", [])
         data["client_stage_latency"] = live.get("client_stage_latency", {})
         data["input_size"] = live.get("input_size")
+        # Compressed frame size and the small-payload ping RTT are measured live and
+        # never bucketed. Together with the RTT and the server total they are what
+        # the outbound/return split on the page is computed from.
+        data["frame_bytes"] = live.get("frame_bytes", {})
+        data["client_rtt"] = {
+            **data.get("client_rtt", {}),
+            "base_ms": live.get("client_rtt", {}).get("base_ms", 0.0),
+        }
         # Same for the FPS card: capacity / server-actual / client-actual are
         # instantaneous rates the live tracker measures and the per-minute buckets
         # never stored. `overall` stays the all-time average computed from them.

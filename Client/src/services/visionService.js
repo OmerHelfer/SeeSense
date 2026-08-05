@@ -15,6 +15,7 @@
 
 import { INPUT_SIZE, MAX_INFLIGHT } from '../config/streamConfig';
 import { getClientStageReport } from './clientMetrics';
+import { getLastPingRtt } from './healthService';
 
 // Derive the WebSocket base URL from the Vite env var.
 // http:// → ws://   |   https:// → wss://
@@ -297,13 +298,18 @@ export class VisionStream {
     this._rttReportTimer = setInterval(() => {
       if (!this.isOpen) return;
 
-      // Send RTT average
+      // Send RTT average, plus the health watchdog's tiny-payload ping RTT.
+      // The two together are what let the server split the frame round trip into
+      // an outbound leg (which carries the JPEG) and a return leg (a small JSON):
+      // a ping with nothing to transmit is essentially propagation only.
       if (this._rttBuffer.length > 0) {
         const avg = this._rttBuffer.reduce((a, b) => a + b, 0) / this._rttBuffer.length;
+        const base = getLastPingRtt();
         try {
           this._socket.send(JSON.stringify({
             type: 'rtt_report',
-            rtt_ms: Math.round(avg * 10) / 10
+            rtt_ms: Math.round(avg * 10) / 10,
+            ...(base != null ? { base_rtt_ms: base } : {}),
           }));
         } catch { /* socket closed mid-send */ }
       }

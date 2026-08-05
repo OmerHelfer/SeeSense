@@ -2342,6 +2342,31 @@ button:active {
   color: rgba(34, 211, 238, 0.7);
 }
 
+/* Outbound / return split of the network estimate. Yellow, because unlike the
+   rows above it these are modelled, not measured. */
+.admin-network-legs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: rgba(234, 179, 8, 0.07);
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #eab308;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-network-legs-note {
+  margin-top: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.35);
+}
+
 /* ── Time-range selector ── */
 
 /* Scope bar — search performance data by user email (empty = all users) */

@@ -169,6 +169,14 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                         if 0 < rtt < 30000:
                             tracker.record_client_rtt(rtt)
                             perf_history.record_rtt(rtt, user_id=user_id)
+                        # Optional: the client's tiny /health ping. Carries almost no
+                        # payload, so it measures the link's propagation floor and
+                        # lets the frame RTT be split into an outbound and a return leg.
+                        base = data.get("base_rtt_ms")
+                        if base is not None:
+                            base = float(base)
+                            if 0 < base < 30000:
+                                tracker.record_client_base_rtt(base)
                     elif data.get("type") == "fps_report" and "fps" in data:
                         fps = float(data["fps"])
                         if 0 < fps < 100:
@@ -186,6 +194,9 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 continue
 
             mark_active(user_id)  # scanning keeps the user "online"
+            # Compressed size on the wire — the number the compression setting is
+            # actually moving, and the denominator for "how long per KB uploaded".
+            tracker.record_frame_bytes(len(image_bytes))
 
             start = tracker.start_timer()
             frame_count += 1
@@ -209,13 +220,15 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                     counted = True
                     continue
 
-                # Per-stage timings (also persisted to perf_history via record_frame)
+                # Per-stage timings (also persisted to perf_history via record_frame).
+                # perf_counter throughout — the wall clock can be stepped by NTP and
+                # is coarser; every value here is a difference, never a date.
                 stage_times = {}
 
                 # Decode and validate (letterbox to the connection's input size)
-                t0 = time.time()
+                t0 = time.perf_counter()
                 img = decode_image(image_bytes, frame_size)
-                stage_times["decode_quality"] = (time.time() - t0) * 1000
+                stage_times["decode_quality"] = (time.perf_counter() - t0) * 1000
                 tracker.record_stage("decode_quality", stage_times["decode_quality"])
 
                 # Prepare model input
@@ -225,20 +238,24 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 # Run inference in a worker thread so the ~inference time doesn't
                 # block the async event loop (which would stall /health pings and
                 # make the connection watchdog falsely report "unstable").
-                t1 = time.time()
+                # NOTE: this measures dispatch + queueing + the forward pass. With
+                # more than one user streaming it therefore includes the wait on
+                # _inference_lock, which is real time the frame spends waiting but
+                # is NOT the model getting slower.
+                t1 = time.perf_counter()
                 detections = await asyncio.to_thread(_run_inference_locked, model, model_input, frame_size)
-                stage_times["inference"] = (time.time() - t1) * 1000
+                stage_times["inference"] = (time.perf_counter() - t1) * 1000
                 tracker.record_stage("inference", stage_times["inference"])
 
                 # Motion tracking
-                t2 = time.time()
+                t2 = time.perf_counter()
                 motion_tracker = get_motion_tracker(user_id)
                 detections_with_motion = motion_tracker.update(detections)
-                stage_times["tracking"] = (time.time() - t2) * 1000
+                stage_times["tracking"] = (time.perf_counter() - t2) * 1000
                 tracker.record_stage("tracking", stage_times["tracking"])
 
                 # Danger assessment with user settings (from cache)
-                t3 = time.time()
+                t3 = time.perf_counter()
                 user_settings = cached.get("settings", settings)
                 result = assess_danger(
                     detections_with_motion,
@@ -247,9 +264,6 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                     image_width=img.shape[1],
                     image_height=img.shape[0]
                 )
-                stage_times["danger_logic"] = (time.time() - t3) * 1000
-                tracker.record_stage("danger_logic", stage_times["danger_logic"])
-
                 # Danger cleared check. Pass the LEVEL, not the boolean: "path
                 # clear" must only be announced on red -> nothing, never on red ->
                 # yellow, which is still a caution.
@@ -261,30 +275,41 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 # the same still-present object (e.g. a car sitting at "low" for 10s).
                 alert_is_new = has_new_alert(user_id, result["objects"])
 
-                latency = tracker.end_timer(start, success=True)
-                counted = True
+                # The two calls above belong to this stage. They used to sit
+                # AFTER it, inside the measured frame but in no stage at all, so
+                # the breakdown quietly under-summed against the total.
+                stage_times["danger_logic"] = (time.perf_counter() - t3) * 1000
+                tracker.record_stage("danger_logic", stage_times["danger_logic"])
 
-                # ── Build the detection record with a pre-generated id (no DB I/O
-                #    on the hot path) so we can return record_id immediately. The
-                #    actual insert is deferred to a background thread below. ──
-                from services.user_service import build_detection_entry
-                record_id, detection_entry = build_detection_entry(user_id, result, session_id=session_id)
-                # Report what persisting a record ACTUALLY costs, measured by the
-                # batch writer. The old value timed building this dict — it never
-                # touched the database, so it read 0.0ms however slow writes were.
+                # Amortised per-record cost measured by the batch writer. Unlike
+                # every other row this is NOT this frame's own work — the writes
+                # happen once a second on a background thread — so it is reported
+                # for visibility but deliberately left out of the frame total.
                 stage_times["db_write"] = db_writer.last_amortized_ms()
                 tracker.record_stage("db_write", stage_times["db_write"])
 
-                # ── Persist this frame's metrics to per-minute history ──
-                perf_history.record_frame(latency, True, stage_times, user_id=user_id)
+                # ── Response: build the record + serialise + hand to the socket ──
+                # Previously unmeasured and outside the frame timer entirely, which
+                # meant JSON serialisation of every detection was silently charged
+                # to "network" in the admin page's estimate.
+                t4 = time.perf_counter()
 
-                # ── Send result with record_id ──
+                # Pre-generated id (no DB I/O on the hot path) so record_id can be
+                # returned immediately; the insert is deferred to the batch writer.
+                from services.user_service import build_detection_entry
+                record_id, detection_entry = build_detection_entry(user_id, result, session_id=session_id)
+
+                # Processing time as of this instant — it has to be read before the
+                # payload is built, so it is the frame's cost up to the response and
+                # not the final total the tracker records below.
+                processing_ms = (t4 - start) * 1000
+
                 await websocket.send_json({
                     "type": "result",
                     "status": "success",
                     "frame": frame_count,
                     "record_id": record_id,
-                    "latency_ms": round(latency, 1),
+                    "latency_ms": round(processing_ms, 1),
                     "danger": is_danger,
                     "danger_cleared": danger_cleared,
                     "clearance_message": "Path Clear" if danger_cleared else None,
@@ -293,6 +318,18 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                     "distance": result["distance"],
                     "objects": result["objects"]
                 })
+
+                stage_times["response"] = (time.perf_counter() - t4) * 1000
+                tracker.record_stage("response", stage_times["response"])
+
+                # Stopped here, after the send, so the frame total covers everything
+                # the server does for that frame. A send that fails now falls to the
+                # handler below and is counted once, as a failure.
+                latency = tracker.end_timer(start, success=True)
+                counted = True
+
+                # ── Persist this frame's metrics to per-minute history ──
+                perf_history.record_frame(latency, True, stage_times, user_id=user_id)
 
                 # ── Hand both writes to the batch writer (after the response). ──
                 # Previously each of these spawned its OWN thread every frame: 80

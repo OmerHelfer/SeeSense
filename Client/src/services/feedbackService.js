@@ -249,19 +249,29 @@ export const previewVoice = (text = 'שלום') => {
   _speak(text);
 };
 
+/* ── Mute announcement, vowelled ──────────────────────
+   Hebrew is normally written without vowels, so the engine has to GUESS how to
+   read a word: unvowelled שמע can be read shema / shama / sema, and it was
+   picking a sin instead of a shin and coming out as "sam". Writing the words
+   with niqqud removes the guess — שֶׁמַע can only be read "she-MA", with the same
+   "sh" as in Sharon. This matters more than it looks: for a blind user the
+   spoken word IS the interface.
+
+   Written as \u escapes on purpose. The vowel marks are combining characters —
+   invisible as separate glyphs in most editors — so pasting or retyping this
+   line would silently strip them and quietly bring the mispronunciation back.
+   The escapes are in Unicode canonical (NFC) order. */
+const TTS_SOUND = '\u05e9\u05b6\u05c1\u05de\u05b7\u05e2';  // שֶׁמַע  — she-MA (sound)
+const TTS_OFF   = '\u05db\u05b8\u05bc\u05d1\u05d5\u05bc\u05d9';  // כָּבוּי  — ka-VUI (off)
+const TTS_ON    = '\u05d3\u05b8\u05bc\u05dc\u05d5\u05bc\u05e7';  // דָּלוּק  — da-LUK (on)
+
 /**
  * Speak the sound on/off state when the user toggles mute.
  * Bypasses the audio gate + cooldown so it is still heard when muting.
- *
- * Says "קול" and not "שמע". Hebrew text carries no vowels, so the engine has to
- * guess how to read a word: unvowelled שמע can be שְׁמַע / שֶׁמַע / שָׁמַע, and it was
- * picking the wrong one — coming out as "שם" with a sin instead of a shin. "קול"
- * has only one possible reading, so no engine can mispronounce it. This matters
- * more than it looks: for a blind user the spoken word IS the interface.
  */
 export const announceMute = (mutedNow) => {
   if (!window.speechSynthesis) return;
-  const u = new SpeechSynthesisUtterance(mutedNow ? 'הקול כבוי' : 'הקול פועל');
+  const u = new SpeechSynthesisUtterance(`${TTS_SOUND} ${mutedNow ? TTS_OFF : TTS_ON}`);
   u.lang   = 'he-IL';
   u.volume = 1;
   u.rate   = 1.1;

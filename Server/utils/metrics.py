@@ -27,6 +27,15 @@ class PerformanceTracker:
 
         # Client RTT — end-to-end latency reported by the client
         self.client_rtts = deque(maxlen=window_size)
+        # BASE RTT — the client's tiny /health ping (a few bytes each way). With no
+        # payload worth transmitting it is essentially two one-way propagations, so
+        # it is the reference that lets the frame RTT be split into an outbound leg
+        # (which carries the ~40-70 KB JPEG) and a return leg (a small JSON).
+        self.client_base_rtts = deque(maxlen=window_size)
+        # Compressed size of the frames actually arriving, in bytes. The whole point
+        # of the compression setting is to move this number, and without it the
+        # outbound-leg estimate can't be read as "cost per KB".
+        self.frame_bytes = deque(maxlen=window_size)
         # Timestamped history for live chart (last 60 data points)
         self.rtt_history = deque(maxlen=60)
 
@@ -70,6 +79,8 @@ class PerformanceTracker:
         self.failure_count = 0
         self._start_time = time.time()
         self.client_rtts.clear()
+        self.client_base_rtts.clear()
+        self.frame_bytes.clear()
         self.rtt_history.clear()
         self.frame_arrival_times.clear()
         self.client_fps_reports.clear()
@@ -79,14 +90,24 @@ class PerformanceTracker:
         logger.info("PerformanceTracker reset — all live metrics cleared")
 
     def start_timer(self) -> float:
-        """Call at the beginning of a request. Returns timestamp."""
-        now = time.time()
+        """
+        Call at the beginning of a request. Returns a timestamp.
+
+        perf_counter, not time(): the wall clock can be stepped by NTP mid-frame,
+        which would poison a latency sample (and it has coarser resolution on
+        Windows). Only differences are ever taken from these values —
+        frame_arrival_times is used purely for a rate — so a monotonic clock with
+        an arbitrary origin is the right one. throughput_events below is the one
+        exception and stays on the wall clock, because it is compared against
+        time.time() when the recent-window throughput is computed.
+        """
+        now = time.perf_counter()
         self.frame_arrival_times.append(now)
         return now
 
     def end_timer(self, start: float, success: bool = True):
         """Call at the end of a request. Records latency and status."""
-        latency_ms = (time.time() - start) * 1000
+        latency_ms = (time.perf_counter() - start) * 1000
         self.latencies.append(latency_ms)
         self.total_frames += 1
 
@@ -96,7 +117,12 @@ class PerformanceTracker:
         else:
             self.failure_count += 1
 
-        logger.info(f"Frame processed in {latency_ms:.1f}ms")
+        # DEBUG, not INFO. This runs once per frame: at 25 FPS it was 25 formatted
+        # log lines a second written to stdout from inside the frame loop, and in a
+        # container stdout is a pipe — when the collector is slow that write blocks
+        # the event loop serving the WebSocket. It also logged a number measured
+        # before the line itself, so it never showed its own cost.
+        logger.debug(f"Frame processed in {latency_ms:.1f}ms")
         return latency_ms
 
     # ── Client FPS reporting ─────────────────────────────
@@ -140,14 +166,35 @@ class PerformanceTracker:
             "rtt": round(rtt_ms, 1)
         })
 
+    def record_client_base_rtt(self, rtt_ms: float):
+        """Record the client's tiny-payload /health ping RTT (the propagation floor)."""
+        self.client_base_rtts.append(rtt_ms)
+
+    def record_frame_bytes(self, n: int):
+        """Record the compressed size of one arriving frame."""
+        self.frame_bytes.append(int(n))
+
+    def get_frame_bytes(self) -> dict:
+        """Avg/min/max compressed frame size, in KB."""
+        if not self.frame_bytes:
+            return {"avg_kb": 0.0, "min_kb": 0.0, "max_kb": 0.0}
+        return {
+            "avg_kb": round(sum(self.frame_bytes) / len(self.frame_bytes) / 1024, 1),
+            "min_kb": round(min(self.frame_bytes) / 1024, 1),
+            "max_kb": round(max(self.frame_bytes) / 1024, 1),
+        }
+
     def get_client_rtt_stats(self) -> dict:
-        """Avg/min/max of client-reported RTT."""
+        """Avg/min/max of client-reported RTT, plus the small-payload base RTT."""
+        base = (round(sum(self.client_base_rtts) / len(self.client_base_rtts), 2)
+                if self.client_base_rtts else 0.0)
         if not self.client_rtts:
-            return {"avg_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0}
+            return {"avg_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "base_ms": base}
         return {
             "avg_ms": round(sum(self.client_rtts) / len(self.client_rtts), 2),
             "min_ms": round(min(self.client_rtts), 2),
             "max_ms": round(max(self.client_rtts), 2),
+            "base_ms": base,
         }
 
     # ── Stage-level latency breakdown ────────────────────
@@ -282,6 +329,7 @@ class PerformanceTracker:
             "stage_latency": self.get_stage_breakdown(),
             "client_stage_latency": self.client_stages,
             "input_size": self.last_input_size,
+            "frame_bytes": self.get_frame_bytes(),
             "throughput": self.get_throughput(),
             "fps": {
                 "server_capacity": self.get_recent_fps(),       # תיאורטי - יכולת

@@ -92,9 +92,12 @@ const STAGE_LABELS = {
   inference:      'YOLO (מודל)',
   tracking:       'מעקב תנועה (Tracking)',
   danger_logic:   'לוגיקת סכנה',
+  response:       'בניית תשובה ושליחה',
   db_write:       'כתיבה ל-DB',
 };
-const STAGE_ORDER = ['decode_quality', 'inference', 'tracking', 'danger_logic', 'db_write'];
+// db_write last on purpose: it is the only row that is NOT part of the frame's
+// own total (the writes are batched onto a background thread once a second).
+const STAGE_ORDER = ['decode_quality', 'inference', 'tracking', 'danger_logic', 'response', 'db_write'];
 
 // ── Client-side stage labels (Hebrew) — the on-device half of the pipeline ──
 const CLIENT_STAGE_LABELS = {
@@ -381,6 +384,37 @@ const AdminStatus = () => {
     };
   }, [data]);
 
+  /* Split the network time into an outbound and a return leg.
+     There is no way to measure a ONE-WAY delay without synchronised clocks, so
+     this leans on the one asymmetry we do have: the frame going up is ~40-70 KB
+     while the result coming back is a small JSON. The health watchdog's /health
+     ping carries almost nothing in either direction, so its round trip is
+     essentially two propagations — half of it is what the reply needs just to
+     travel, and everything left over is the time the compressed frame itself
+     spends being pushed up the link. That is the number compression moves. */
+  const netLegs = useMemo(() => {
+    const rtt  = data?.client_rtt?.avg_ms ?? 0;
+    const srv  = data?.server_latency?.avg_ms ?? 0;
+    const base = data?.client_rtt?.base_ms ?? 0;
+    const kb   = data?.frame_bytes?.avg_kb ?? 0;
+    if (!(rtt > 0 && srv > 0 && base > 0)) return null;
+
+    const net  = rtt - srv;
+    const down = base / 2;
+    const up   = net - down;
+    // A negative outbound leg means the assumptions broke (typically the ping and
+    // the frames were measured under different conditions) — show nothing rather
+    // than a made-up number.
+    if (!(net > 0) || !(up > 0)) return null;
+
+    return {
+      up:   Math.round(up),
+      down: Math.round(down),
+      kb:   Math.round(kb * 10) / 10,
+      perKb: kb > 0 ? Math.round((up / kb) * 10) / 10 : null,
+    };
+  }, [data]);
+
   return (
     <motion.div
       className="inner-page admin-status-page"
@@ -532,6 +566,22 @@ const AdminStatus = () => {
                 </span>
               </div>
             )}
+            {netLegs && (
+              <>
+                <div className="admin-network-legs">
+                  <span>הלוך (העלאת הפריים) ~{netLegs.up}ms</span>
+                  <span>חוזר (התוצאה) ~{netLegs.down}ms</span>
+                  {netLegs.kb > 0 && <span>{netLegs.kb}KB לפריים</span>}
+                  {netLegs.perKb != null && <span>~{netLegs.perKb}ms לכל KB</span>}
+                </div>
+                <p className="admin-network-legs-note">
+                  * החוזר נאמד מחצי מזמן הפינג הקטן ({Math.round(data.client_rtt.base_ms)}ms),
+                  שכמעט ואין לו מה להעביר — ולכן הוא בעצם זמן ההגעה לכיוון אחד.
+                  ההלוך הוא כל השאר, כלומר הזמן שבו הפריים הדחוס עצמו עולה.
+                  הקטנת הדחיסה אמורה להזיז את ההלוך ולהשאיר את החוזר כמעט זהה.
+                </p>
+              </>
+            )}
           </div>
 
           {/* ── Stage-by-stage server latency breakdown ── */}
@@ -563,10 +613,16 @@ const AdminStatus = () => {
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 6 }}>
                   גודל קלט בפועל: <strong dir="ltr">{data.input_size}×{data.input_size}</strong>
                   {' '}(מה שהלקוח שולח בפועל)
+                  {data.frame_bytes?.avg_kb > 0 && (
+                    <> · משקל ממוצע לפריים: <strong dir="ltr">{data.frame_bytes.avg_kb}KB</strong></>
+                  )}
                 </p>
               )}
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
-                * נמדד רק על פריימים שעברו את כל השלבים בהצלחה (לא כולל פריימים שנדחו בבדיקת איכות)
+                * נמדד רק על פריימים שעברו את כל השלבים בהצלחה (לא כולל פריימים שנדחו בבדיקת איכות).
+                חמשת השלבים הראשונים מרכיבים יחד את &quot;שרת בלבד&quot;. הכתיבה ל-DB היא היוצאת
+                מן הכלל — היא רצה בצרורות ברקע פעם בשנייה, ולכן מוצג כאן המחיר הממוצע לרשומה
+                והוא לא נספר בתוך זמן הפריים.
               </p>
             </div>
           )}
