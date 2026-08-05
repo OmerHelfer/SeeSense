@@ -2056,11 +2056,39 @@ button:active {
    Health Dot (Dashboard header)
    ═══════════════════════════════════════════════════ */
 
+/* Column: the connection line on top, the admin FPS readout under it. Both lines
+   together are shorter than the 46px header buttons, so the header doesn't grow. */
 .health-dot-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 6px;
+}
+
+.health-dot-row {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 0 6px;
+}
+
+/* Live throughput — admins level 1+ only. */
+.health-fps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-fps-unit {
+  opacity: 0.55;
+  letter-spacing: 0.5px;
 }
 
 .health-label {

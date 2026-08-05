@@ -63,32 +63,50 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
   );
 };
 
+/** Whole FPS for the admin readout — a tenth of a frame is noise at this size. */
+const fmtFps = (v) => (v == null ? '–' : Math.round(v));
+
 /** Health status indicator dot + live latency (ms, admin only) + label */
-const HealthDot = ({ status, rtt, user }) => {
+const HealthDot = ({ status, rtt, user, fps }) => {
   if (status === 'idle') return null;
   const colors = { green: '#22c55e', yellow: '#eab308', orange: '#f97316', red: '#ef4444' };
   const labels = { green: 'חיבור יציב', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
   // Only admins level 1+ see the latency number; regular users see only the dot and label.
   const isAdmin = user?.admin_level >= 1;
   const rttText = rtt != null ? `${rtt} ms` : ' ';
+  const showFps = isAdmin && (fps?.server != null || fps?.client != null);
   return (
-    <div className="health-dot-wrap" title={labels[status] || rttText}>
-      <div
-        className={`health-dot ${status}`}
-        style={{ backgroundColor: colors[status] }}
-      />
-      {/* dir="ltr" so the number and unit read "87 ms" (unit attached to the right
-          of the number) instead of being reordered to "ms 87" by the RTL layout.
-          Only visible to admins level 1+. */}
-      {isAdmin && (
-        <span className="health-ms" dir="ltr" style={{ color: colors[status] }}>
-          {rttText}
-        </span>
-      )}
-      {labels[status] && (
-        <span className={`health-label ${status}`} style={{ color: colors[status] }}>
-          {labels[status]}
-        </span>
+    <div className="health-dot-wrap">
+      <div className="health-dot-row" title={labels[status] || rttText}>
+        <div
+          className={`health-dot ${status}`}
+          style={{ backgroundColor: colors[status] }}
+        />
+        {/* dir="ltr" so the number and unit read "87 ms" (unit attached to the right
+            of the number) instead of being reordered to "ms 87" by the RTL layout.
+            Only visible to admins level 1+. */}
+        {isAdmin && (
+          <span className="health-ms" dir="ltr" style={{ color: colors[status] }}>
+            {rttText}
+          </span>
+        )}
+        {labels[status] && (
+          <span className={`health-label ${status}`} style={{ color: colors[status] }}>
+            {labels[status]}
+          </span>
+        )}
+      </div>
+
+      {/* Live throughput, admin-only, directly under the connection line.
+          Laid out as flex items rather than one string with separators: the
+          visual order then comes from flex-direction, so mixing Hebrew labels
+          with Latin digits can't reorder them the way bidi does to plain text. */}
+      {showFps && (
+        <div className="health-fps" title="פריימים לשנייה — שרת מול לקוח">
+          <span className="health-fps-unit">FPS</span>
+          <span>שרת <bdi>{fmtFps(fps.server)}</bdi></span>
+          <span>לקוח <bdi>{fmtFps(fps.client)}</bdi></span>
+        </div>
       )}
     </div>
   );
@@ -110,6 +128,7 @@ const Dashboard = () => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [captureFps, setCaptureFps]       = useState(4);        // driven by server TARGET_FPS on connect
   const [inputSize, setInputSize]         = useState(640);      // driven by server input_size on connect
+  const [liveFps, setLiveFps]             = useState({ server: null, client: null }); // admin readout
 
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
@@ -153,6 +172,29 @@ const Dashboard = () => {
   useEffect(() => { isScanningRef.current = isScanning;        }, [isScanning]);
   useEffect(() => { isAlignedRef.current  = isAligned;         }, [isAligned]);
   useEffect(() => { userIdRef.current     = user?.id ?? 'default'; }, [user]);
+
+  /* ── Live FPS readout (admins level 1+) ──
+     Both numbers are already known to the stream object, so this samples them on
+     a 1s timer instead of reading them in the per-frame result handler: the HUD
+     only needs to be readable, and updating it 25 times a second would re-render
+     the page for nothing. Nothing is polled from the server — see
+     VisionStream.serverFps. The state object is reused when the rounded values
+     haven't changed, so a steady stream costs zero extra renders.
+     Cleared in toggleScan alongside the other per-session HUD state. */
+  const isAdminView = (user?.admin_level ?? 0) >= 1;
+  useEffect(() => {
+    if (!isScanning || !isAdminView) return undefined;
+    const id = setInterval(() => {
+      const s = visionStreamRef.current;
+      // Rounded here, not at render time, so the equality check below actually
+      // catches "unchanged" — the raw rates wobble by tenths every sample.
+      const server = s?.serverFps != null ? Math.round(s.serverFps) : null;
+      const client = s?.clientFps != null ? Math.round(s.clientFps) : null;
+      setLiveFps((prev) =>
+        prev.server === server && prev.client === client ? prev : { server, client });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isScanning, isAdminView]);
 
   /* ── Haptic feedback when device becomes aligned while scanning ── */
   useEffect(() => {
@@ -324,6 +366,7 @@ const Dashboard = () => {
       setDetections([]);
       setHealthStatus('idle');
       setHealthRtt(null);
+      setLiveFps({ server: null, client: null });
       setQuickReportState('idle');
       clearTimeout(quickReportTimerRef.current);
       stopHealthWatch();
@@ -435,7 +478,7 @@ const Dashboard = () => {
       <header className="dashboard-header">
         <span className="header-brand">SEE<span>SENSE</span></span>
         <div className="header-actions">
-          <HealthDot status={healthStatus} rtt={healthRtt} user={user} />
+          <HealthDot status={healthStatus} rtt={healthRtt} user={user} fps={liveFps} />
           <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
           </button>

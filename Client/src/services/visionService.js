@@ -35,6 +35,42 @@ const RTT_REPORT_INTERVAL_MS = 5000; // report avg RTT to server every 5s
 const MAX_PENDING_RTT        = 120;  // cap the RTT-pairing FIFO so a lost result can't grow it forever
 const MAX_INFLIGHT_MS        = 3000; // treat an unanswered frame as lost after this (unblock sending)
 
+// ── Live FPS readout (admin overlay on the camera page) ──
+// Only events from the last FPS_WINDOW_MS count, so the number decays instead of
+// freezing on its last value when the stream stalls or stops.
+const FPS_WINDOW_MS   = 3000;
+const MAX_RESULT_TIMES = 120; // 3s of headroom at 40 FPS
+
+// Below this the sample is too short to divide by — the readout stays blank for
+// the first fraction of a second rather than printing a wild number.
+const FPS_MIN_SPAN_MS = 400;
+
+/**
+ * Rate (per second) of the timestamps in `times` that fall inside the window.
+ *
+ * Measured as events ÷ (now − first event in window), so the right edge of the
+ * measurement is the present moment, not the last event. That matters: a stream
+ * that freezes mid-session keeps a full window of recent-looking timestamps, and
+ * dividing by the span BETWEEN them would keep reporting the old healthy rate
+ * through the whole freeze. Anchoring to `now` makes the number fall as the
+ * silence grows — which is the one moment this readout has to be trusted.
+ *
+ * Non-destructive: the caller's array is left alone, because `_frameSendTimes` is
+ * also the source for the periodic fps_report to the server and that reading must
+ * keep its own (count-bounded) semantics.
+ */
+const _rateWithin = (times) => {
+  const now    = performance.now();
+  const cutoff = now - FPS_WINDOW_MS;
+  let i = 0;
+  while (i < times.length && times[i] < cutoff) i++;
+  const n = times.length - i;
+  if (n < 1) return null;
+  const span = now - times[i];
+  if (span < FPS_MIN_SPAN_MS) return null;
+  return Math.round((n / span) * 1000 * 10) / 10;
+};
+
 export class VisionStream {
   /**
    * @param {{ onResult: Function, onError: Function, onConnected: Function }} callbacks
@@ -67,6 +103,7 @@ export class VisionStream {
 
     // ── Client FPS tracking ──
     this._frameSendTimes    = [];     // timestamps of last 30 sends
+    this._resultTimes       = [];     // timestamps of recent results (server output rate)
   }
 
   /** Open the WebSocket connection and begin the session. */
@@ -75,6 +112,7 @@ export class VisionStream {
     this._active            = true;
     this._reconnectAttempts = 0;
     this._rttBuffer         = [];
+    this._resultTimes       = [];
     this._open();
   }
 
@@ -102,6 +140,26 @@ export class VisionStream {
   /** Rolling RTT stats: { avg, min, max } in ms. */
   get rttStats() {
     return { ...this._rttStats };
+  }
+
+  /**
+   * Frames per second this client is SENDING right now (null until measurable).
+   * Capped by the capture tick and by MAX_INFLIGHT backpressure.
+   */
+  get clientFps() {
+    return _rateWithin(this._frameSendTimes);
+  }
+
+  /**
+   * Frames per second the SERVER is actually returning right now (null until
+   * measurable). Measured from result arrivals here rather than asked of the
+   * server: in steady state a bounded-depth pipeline returns exactly as many
+   * frames as it finishes, so this is the server's real throughput for THIS
+   * session — and it costs nothing, whereas polling the admin status endpoint
+   * would add load to the very thing it claims to measure.
+   */
+  get serverFps() {
+    return _rateWithin(this._resultTimes);
   }
 
   /**
@@ -207,9 +265,15 @@ export class VisionStream {
 
   /** Pair an incoming result with the oldest unanswered frame and record its RTT. */
   _recordRtt() {
+    const now = performance.now();
+    // Every answered frame — success or rejection — is one the server finished,
+    // so both count towards its output rate.
+    this._resultTimes.push(now);
+    if (this._resultTimes.length > MAX_RESULT_TIMES) this._resultTimes.shift();
+
     const sent = this._sendTimes.shift();
     if (sent === undefined) return;
-    const rtt = performance.now() - sent;
+    const rtt = now - sent;
     this._lastRtt = Math.round(rtt * 10) / 10;
     this._rttBuffer.push(this._lastRtt);
     if (this._rttBuffer.length > 50) this._rttBuffer.shift();
