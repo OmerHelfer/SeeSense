@@ -70,6 +70,19 @@ latency for the thesis, without touching the already-working submitted app.
   — $0.00 showing there does NOT mean nothing is being billed, just that the
   UI hasn't caught up.
 
+## One-command deploy from your own machine (no browser SSH needed)
+
+```bash
+bash deploy/remote-update.sh
+```
+
+Runs `deploy/update.sh` on the VM over SSH in one shot — pull, conditional
+rebuild, restart. Requires the `gcloud` CLI installed and authenticated
+locally (one-time setup, instructions are printed by the script if missing).
+Works for any teammate who clones this repo, not just this machine — override
+`INSTANCE_NAME`/`ZONE` env vars if their VM differs from the defaults
+(`seesense` / `europe-central2-c`).
+
 ## Operational commands (on the VM, via SSH — browser SSH button on the
 instance in GCP Console, or `Compute Engine → VM instances → SSH`)
 
