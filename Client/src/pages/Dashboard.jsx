@@ -67,14 +67,18 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
 const fmtFps = (v) => (v == null ? '–' : Math.round(v));
 
 /** Health status indicator dot + live latency (ms, admin only) + label */
-const HealthDot = ({ status, rtt, user, fps }) => {
+const HealthDot = ({ status, rtt, user, fps, capFps }) => {
   if (status === 'idle') return null;
   const colors = { green: '#22c55e', yellow: '#eab308', orange: '#f97316', red: '#ef4444' };
   const labels = { green: 'חיבור יציב', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
   // Only admins level 1+ see the latency number; regular users see only the dot and label.
   const isAdmin = user?.admin_level >= 1;
   const rttText = rtt != null ? `${rtt} ms` : ' ';
-  const showFps = isAdmin && (fps?.server != null || fps?.client != null);
+  // capFps is what the SERVER negotiated on connect (msg.max_fps), not what's
+  // achieved — this is the number to check when FPS is stuck on a suspiciously
+  // round value: if the cap itself is low, no client tuning (MAX_INFLIGHT,
+  // polling rate, anything) can raise the ceiling above it.
+  const showFps = isAdmin && (fps?.server != null || fps?.client != null || capFps != null);
   return (
     <div className="health-dot-wrap">
       <div className="health-dot-row" title={labels[status] || rttText}>
@@ -102,10 +106,11 @@ const HealthDot = ({ status, rtt, user, fps }) => {
           visual order then comes from flex-direction, so mixing Hebrew labels
           with Latin digits can't reorder them the way bidi does to plain text. */}
       {showFps && (
-        <div className="health-fps" title="פריימים לשנייה — שרת מול לקוח">
+        <div className="health-fps" title="פריימים לשנייה — שרת מול לקוח מול התקרה שהשרת קבע">
           <span className="health-fps-unit">FPS</span>
           <span>שרת <bdi>{fmtFps(fps.server)}</bdi></span>
           <span>לקוח <bdi>{fmtFps(fps.client)}</bdi></span>
+          {capFps != null && <span>תקרה <bdi>{fmtFps(capFps)}</bdi></span>}
         </div>
       )}
     </div>
@@ -126,7 +131,10 @@ const Dashboard = () => {
   const [detections, setDetections]       = useState([]);       // per-frame boxes for the overlay
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [captureFps, setCaptureFps]       = useState(4);        // driven by server TARGET_FPS on connect
+  // null = not yet told by the server; CameraView falls back to 4 on its own.
+  // Kept null (not a fake default) so the admin FPS readout can tell "not
+  // connected yet" apart from "server really capped us at a low number".
+  const [captureFps, setCaptureFps]       = useState(null);
   const [inputSize, setInputSize]         = useState(640);      // driven by server input_size on connect
   const [liveFps, setLiveFps]             = useState({ server: null, client: null }); // admin readout
 
@@ -384,6 +392,7 @@ const Dashboard = () => {
       setHealthStatus('idle');
       setHealthRtt(null);
       setLiveFps({ server: null, client: null });
+      setCaptureFps(null);
       setQuickReportState('idle');
       clearTimeout(quickReportTimerRef.current);
       stopHealthWatch();
@@ -503,7 +512,7 @@ const Dashboard = () => {
       <header className="dashboard-header">
         <span className="header-brand">SEE<span>SENSE</span></span>
         <div className="header-actions">
-          <HealthDot status={healthStatus} rtt={healthRtt} user={user} fps={liveFps} />
+          <HealthDot status={healthStatus} rtt={healthRtt} user={user} fps={liveFps} capFps={captureFps} />
           <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
           </button>
