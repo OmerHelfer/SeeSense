@@ -65,4 +65,4 @@ export const INPUT_SIZE = 640;
  * window is already oversampled). Read ניצולת שרת on /admin/status — while it is
  * under ~70% there is headroom; near 100% only latency is left to buy.
  */
-export const MAX_INFLIGHT = 4;
+export const MAX_INFLIGHT = 7;
