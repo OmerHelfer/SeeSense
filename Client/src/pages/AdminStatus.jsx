@@ -134,6 +134,22 @@ const CLIENT_STAGE_LABELS = {
 };
 const CLIENT_STAGE_ORDER = ['capture', 'encode', 'render', 'feedback'];
 
+/* Utilisation is deliberately NOT clamped to 100%.
+   Over 100% is not a rendering bug to be hidden — it means the model behind the
+   number stopped holding, and that is exactly when you want to see it:
+     server — capacity and actual are sampled over different windows, so a burst
+              can outrun the capacity estimate computed a moment earlier;
+     client — the capacity figure treats capture and encode as strictly serial,
+              but toBlob is partly off the main thread, so the true ceiling is
+              higher than the estimate and the ratio can legitimately exceed 100.
+   Clamping would replace a visible anomaly with a confident-looking lie, so it
+   goes red instead: the number is still real, it just can't be read as "% of a
+   known ceiling" any more. */
+const UTIL_OVER_COLOR = '#ef4444';
+const overStyle = (util) =>
+  (util != null && util > 100 ? { color: UTIL_OVER_COLOR, fontWeight: 700 } : undefined);
+const OVER_TITLE = 'מעל 100% — ההערכה של התקרה כבר לא מדויקת (ראה הערה בקוד). המספר אמיתי, אבל אי אפשר לקרוא אותו כאחוז מתקרה ידועה.';
+
 // ── Latency Row ──
 const LatencyRow = ({ label, avg, min, max, color, fmt = fmtMs }) => (
   <div className="admin-latency-row">
@@ -583,11 +599,17 @@ const AdminStatus = () => {
                      run and it was not obvious which utilisation belonged to which
                      rate. */
                   <span className="admin-stat-sub-rows">
-                    <span>
+                    <span
+                      style={overStyle(srvUtil)}
+                      title={srvUtil > 100 ? OVER_TITLE : undefined}
+                    >
                       שרת בפועל: {data.fps?.server_actual ?? 0}
                       {srvUtil != null && <> · ניצולת שרת: {srvUtil}%</>}
                     </span>
-                    <span>
+                    <span
+                      style={overStyle(cliUtil)}
+                      title={cliUtil > 100 ? OVER_TITLE : undefined}
+                    >
                       לקוח בפועל: {data.fps?.client_actual ?? 0}
                       {cliUtil != null && <> · ניצולת לקוח: {cliUtil}%</>}
                     </span>

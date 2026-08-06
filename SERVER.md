@@ -207,8 +207,8 @@ The order of operations in `main.py` matters and is deliberate:
 |---|---|---|---|
 | GET | `/` | — | Liveness string |
 | GET | `/health` | — | Lightweight ping: `{status, model_mode, uptime_seconds}`. The client's health watchdog polls this every 5 s to measure RTT. |
-| GET | `/get_system_status` | admin (L1+) | Performance metrics. `range=live` → in-memory live stats; `range` in `{start, all, 30m, 1h, 1d, 1w, 1mo, 3mo, 6mo, 1y}` → aggregated from persisted per-minute history; `range=custom&start=&end=` → epoch-second window. |
-| POST | `/reset_system_status` | super admin (L2) | Wipes **all** performance data — live windows *and* persisted history. Irreversible. |
+| GET | `/get_system_status` | admin (L1+) | Performance metrics over **all** recorded history (the time-range parameters were removed — the per-minute buckets already cover the retention period, so a lookback only ever narrowed what was shown). No `email` → totals across every user; `email=<addr>` → that user's own totals. A sync `def` on purpose: everything it does is blocking pymongo, and as `async def` one admin poll stalled the event loop serving a live streaming WebSocket. |
+| POST | `/reset_system_status` | super admin (L2) | No `email` → wipes everything: live windows *and* every user's persisted history. `email=<addr>` → only that user's persisted history (deliberately leaves the live tracker alone; it is process-wide and clearing it would destroy everyone else's). Irreversible. |
 
 ---
 
@@ -305,6 +305,11 @@ ws://host/stream/ws?token=<JWT>&input_size=512
   - `{"type":"fps_report","fps":21.4}` — actual client capture rate (validated `0 < fps < 100`).
   - `{"type":"client_stage_report","stages":{...}}` — client-side per-stage timings
     (capture/encode/render/feedback), already aggregated to avg/min/max.
+  - `{"type":"lost_report","lost":3}` — frames the client sent that never received a reply, as a
+    **delta** since its last report (validated `0 < lost < 100000`). Only the client can know this;
+    the server cannot count what never reached it. Should normally be 0 — WebSocket runs over TCP,
+    so the realistic causes are a socket that broke with frames in flight, or a server stalled past
+    the client's 3s in-flight timeout.
 
 **Server → client**
 ```json
