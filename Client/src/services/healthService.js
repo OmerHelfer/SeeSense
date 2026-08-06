@@ -43,8 +43,8 @@ let _currentStatus     = 'idle';    // 'idle' | 'green' | 'yellow' | 'orange' | 
 let _lastPingRtt       = null;
 let _announcedYellow   = false;     // only announce once until it recovers
 let _announcedOrange   = false;     // only announce once until it recovers
-let _failStreak        = 0;         // consecutive pings >= 600ms
-let _recoverStreak     = 0;         // consecutive pings < 600ms (while in red)
+let _failStreak        = 0;         // consecutive pings at/above THRESHOLD_RED
+let _recoverStreak     = 0;         // consecutive pings below THRESHOLD_RED (while in red)
 let _degradedStreak    = 0;         // consecutive pings at/above THRESHOLD_YELLOW
 let _onStatusChange    = null;      // callback: (status, rtt) => void
 let _onDisconnect      = null;      // callback: () => void  — called on RED
@@ -112,7 +112,7 @@ async function _ping() {
 
     _handleRtt(rtt);
   } catch {
-    // Timeout or network error — treat as 600ms+
+    // Timeout or network error — treat as infinitely slow
     _lastPingRtt = null;
     _handleRtt(Infinity);
   }
@@ -146,7 +146,7 @@ function _handleRtt(rtt) {
   else _degradedStreak = 0;
 
   if (rtt >= THRESHOLD_RED) {
-    // ── Above 300ms ──
+    // ── At or above THRESHOLD_RED ──
     _recoverStreak = 0;
     _failStreak++;
 
@@ -176,7 +176,7 @@ function _handleRtt(rtt) {
     }
 
   } else {
-    // ── Below 300ms ──
+    // ── Below THRESHOLD_RED ──
     _failStreak = 0;
 
     if (wasRed) {
@@ -207,7 +207,7 @@ function _handleRtt(rtt) {
     _recoverStreak = 0;
 
     if (rtt >= THRESHOLD_ORANGE) {
-      // 400-600ms — orange warning
+      // At/above THRESHOLD_ORANGE — very weak
       _setStatus('orange', rtt);
       if (_degradedStreak >= DEGRADED_CONSECUTIVE && !_announcedOrange) {
         _announcedOrange = true;
@@ -215,7 +215,7 @@ function _handleRtt(rtt) {
         speakStatus('החיבור חלש מאוד, מומלץ לעבור למקום עם קליטה טובה יותר');
       }
     } else if (rtt >= THRESHOLD_YELLOW) {
-      // 250-400ms — yellow warning
+      // At/above THRESHOLD_YELLOW — unstable
       _setStatus('yellow', rtt);
       _announcedOrange = false;
       if (_degradedStreak >= DEGRADED_CONSECUTIVE && !_announcedYellow) {
@@ -224,7 +224,7 @@ function _handleRtt(rtt) {
         speakStatus('החיבור לא יציב');
       }
     } else {
-      // < 250ms — green. Announced ONLY as a recovery: the user was told the link
+      // Below THRESHOLD_YELLOW — green. Announced ONLY as a recovery: the user was told the link
       // had degraded, so they are owed the all-clear. Without the flag check this
       // would say "החיבור יציב" on every good ping forever.
       const wasDegraded = _announcedYellow || _announcedOrange;

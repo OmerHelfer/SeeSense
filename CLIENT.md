@@ -488,11 +488,28 @@ Vibration API at all.
 - **Throttling** — a 3-second cooldown, tracked separately for arbitrary messages
   (`speakMessage`) and for object announcements (`announceDetections`, additionally keyed on the
   class name so a *different* object can interrupt).
+- `speakMessage(text, { priority })` — `priority: true` bypasses the cooldown, for one-shot edges
+  the caller already rate-limits (the danger repeat re-armed the cooldown every 2s and was
+  swallowing the "נתיב פנוי" that followed it).
+- **`speakStatus(text)` QUEUES instead of cancelling** — used for connection lifecycle and static
+  obstacles. Ordered pairs ("סריקה הופעלה, מתחבר" → "התחבר בהצלחה") were being destroyed twice
+  over: the 3s cooldown *dropped* the second (connecting takes ~300ms, inside the window) and
+  `_speak`'s `cancel()` would have cut the first off mid-word. The Web Speech API already queues —
+  the fix is not to clear it. Alerts still cancel, which is the correct priority.
 - `announceDetections(objects, isDanger)` builds e.g. `"סכנה! מכונית מצד ימין"` from the class
-  name plus a direction suffix (`מצד שמאל` / `מצד ימין` / `ממול`).
+  name plus a direction suffix (`DIRECTION_LABELS`: `מצד שמאל` / `מצד ימין` / `לפניך`).
+- `dangerPhrase(objects)` composes the repeating close-danger warning so it names *what* the danger
+  is, not just that there is one.
+- **`staticPhrase(className, position)`** → `"אדם לפניך, אין תנועה"`. Spoken when the server sends
+  `static_notice` — a watched object that is present but motionless. This is the sentence that lets
+  "נתיב פנוי" stop being a lie: a person standing still scores no alert level, and the app used to
+  read that silence as an all-clear. See `SERVER.md` → `evaluate_presence`.
 - `previewVoice()` bypasses the cooldown so choosing a voice in Settings plays a sample
   immediately. `announceMute()` bypasses **both** the cooldown and the audio gate — otherwise
-  "שמע כבוי" would be inaudible exactly when you need to hear it.
+  "שֶׁמַע כָּבוּי" would be inaudible exactly when you need to hear it. Its three words are stored as
+  `\u` escapes with **niqqud**: unvowelled שמע has several valid readings and the engine picked the
+  wrong one, and the vowel marks are invisible combining characters that a paste would silently
+  strip.
 - **Mute is derived, not a separate flag**: "muted" ⇔ the audio channel produces no sound.
   `setMuted(true)` sets volume 0 and cancels any in-flight speech; unmuting restores 0.8 and, if
   `alert_type` was `haptic`, switches it to `both` so audio is actually audible.
@@ -503,20 +520,39 @@ Vibration API at all.
 
 Polls `GET /health` every 5 s (4 s timeout) and measures RTT.
 
-| Level | Threshold | Behaviour |
+The **dot** changes at each threshold immediately. The **voice** is deliberately slower — every
+spoken line has to earn itself, because this app talks to someone who cannot glance at the screen
+to check it.
+
+| Level | Threshold | Voice |
 |---|---|---|
-| GREEN | < 100 ms | healthy, no feedback |
-| YELLOW | ≥ 100 ms | speaks "החיבור לא יציב" **once** |
-| ORANGE | ≥ 150 ms | speaks "החיבור חלש מאוד, מומלץ לעבור למקום עם קליטה טובה יותר" once |
-| RED | ≥ 200 ms × **3 consecutive** | haptic `danger` + "החיבור אבד, הסריקה הופסקה", fires `onDisconnect` |
+| GREEN | < 100 ms | silent — except as a *recovery* (below) |
+| YELLOW | ≥ 100 ms | "החיבור לא יציב" — only after `DEGRADED_CONSECUTIVE = 2` pings agree |
+| ORANGE | ≥ 150 ms | "החיבור חלש מאוד, מומלץ לעבור למקום עם קליטה טובה יותר" — same 2-ping gate |
+| RED | ≥ 200 ms × **3 consecutive** | haptic `danger` + **"החיבור אבד"**, fires `onDisconnect` |
 
-Recovery from RED needs **2 consecutive** pings below the red threshold, then haptic `aligned` +
-"החיבור חזר, הסריקה ממשיכה" and `onReconnect`. A timeout or network error is treated as
-infinitely slow. The announce-once flags reset on recovery, so a genuinely new degradation is
-still announced.
+**Recovery names what it came back TO**, since below the red threshold still spans stable, unstable
+and very weak: "החיבור חזר, החיבור יציב" / "…החיבור לא יציב" / "…החיבור חלש מאוד". A degraded link
+returning to green says "החיבור יציב" — but **only if a problem was actually announced first**,
+otherwise every good ping would say it forever.
 
-Consecutive streaks rather than single readings are what stop one unlucky ping from killing an
-otherwise fine scanning session.
+Three separate rules stop this from crying wolf, which for a blind user is a safety failure rather
+than an annoyance:
+
+- **`DEGRADED_CONSECUTIVE = 2`** — one slow ping says nothing at all. Without it, a single blip
+  announced "חלש מאוד" and then "יציב" five seconds later, on repeat, roughly every 10 seconds.
+- **`RED_CONSECUTIVE = 3` / `RECOVER_CONSECUTIVE = 2`** — streaks, not single readings, so one
+  unlucky ping cannot kill an otherwise fine session.
+- **announce-once flags**, reset on recovery, so a genuinely new degradation is still announced.
+
+> The RED message says only **"החיבור אבד"**. It previously said "החיבור אבד, הסריקה הופסקה" — but
+> the scan does **not** stop: `onDisconnect` only logs, and the WebSocket keeps sending. Telling a
+> blind user their scan stopped while it is still running is the worst direction for that error.
+
+A timeout or network error is treated as infinitely slow.
+
+⚠️ The ping interval interacts with the server's `--timeout-keep-alive`; see the warning in
+`SERVER.md` §23 before changing either.
 
 ---
 
@@ -665,11 +701,12 @@ Observations from reading the current code:
   `SOSHistory.jsx` still call `new Date(ts)` directly instead of `parseServerDate`, so their
   displayed times are skewed by the viewer's UTC offset — exactly the bug `serverDate.js` was
   written to fix.
-- **`healthService` thresholds contradict its own documentation.** The constants are 100/150/200
-  ms, but the file header says 250/400/600 and the inline comments say "Above 300ms" / "Below
-  300ms". The values were tightened (commit "fix: adjust health thresholds") and the comments
-  weren't updated. Also worth noting the current thresholds are aggressive: a mobile network
-  regularly exceeds 100 ms, so YELLOW will fire often.
+- ~~**`healthService` thresholds contradict its own documentation.**~~ **Fixed 2026-08-06** — the
+  header and every inline comment now name the constants (`THRESHOLD_RED` etc.) rather than
+  restating numbers that drift. **The underlying observation still stands, though:** 100/150/200 ms
+  is aggressive for a mobile network, so YELLOW fires often outdoors. `DEGRADED_CONSECUTIVE = 2`
+  now stops that from being *spoken* on a single blip, but the thresholds themselves were tuned on
+  WiFi and are still worth revisiting for cellular.
 - **`settingsService` sends a `user_id` query parameter** that the server ignores — it derives the
   user from the JWT. Harmless, but misleading (the file's header comment claims it's required).
 - **Stale comment** in `userService.emergencyAlert`: "No auth required (intentionally open)". The

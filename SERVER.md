@@ -318,15 +318,18 @@ ws://host/stream/ws?token=<JWT>&input_size=512
   "record_id": "68c...",          // returned immediately; the DB insert happens after
   "latency_ms": 41.2,
   "danger": true,
-  "danger_cleared": false,
-  "clearance_message": null,      // "Path Clear" on a true→false danger transition
+  "danger_cleared": false,        // true only when every engaged track has LEFT — see evaluate_presence
+  "clearance_message": null,      // "Path Clear" when danger_cleared
+  "static_notice": null,          // {class_name, position} — present but motionless; client says "אין תנועה"
   "alert_is_new": true,           // gates TTS/haptic — see alert dedup
   "alert_level": "high",          // high | low | none
   "distance": "Close",            // Close | Medium | Far
-  "objects": [ { class_name, confidence, bbox, area_ratio, distance,
-                 position, alert_level, alert_message, motion{...} } ]
+  "objects": [ { class_name, confidence, bbox, area_ratio, distance, position,
+                 alert_level, alert_message, watched, motion{...} } ]
 }
 ```
+`watched` = the class is in the user's `high_risk_classes`. Distinct from `alert_level != "none"`:
+a watched object standing still is `"none"` too. Presence tracking needs both.
 Also `{"type":"result","status":"paused","frame":N}` when detection is paused, and
 `{"type":"error","frame":N,"detail":"...","danger_cleared":...}` for rejected frames.
 
@@ -507,10 +510,31 @@ comment in the code records the measured difference: **0 ms vs 71 ms per frame**
    dropped connection or a short break doesn't fragment history into many sessions).
 3. Otherwise create a new one.
 
-### Danger-cleared detection
-`check_danger_cleared()` keeps the previous frame's danger flag per user and returns `True`
-exactly on a `True → False` transition — that's what triggers the one-shot "Path Clear"
-announcement.
+### Clearance and static obstacles — `evaluate_presence()`
+
+`evaluate_presence(user_id, objects) -> {"danger_cleared", "static_notice"}` decides what to say
+about what is in front of the user, based on whether objects are still **there** — not on whether
+they are currently alerting.
+
+**Why not the alert level (this replaced `check_danger_cleared`, which is no longer on the path):**
+a watched object that stops moving scores `alert_level == "none"`, which is byte-identical to an
+empty frame. Deriving "path clear" from that announced **"נתיב פנוי" at a person standing still in
+front of a standing user** — the most dangerous sentence this app can produce.
+
+| output | rule |
+|---|---|
+| `danger_cleared` | `True` only when **every** engaged track has aged out (`_PRESENCE_TTL = 1.5s`) — the object genuinely left |
+| `static_notice` | `{class_name, position}` for a watched object, near enough to matter, motionless for `_STATIC_CONFIRM_SEC = 0.8s`. The client speaks it as "אדם לפניך, אין תנועה" |
+
+- `static_notice` fires **once per still episode**, re-armed if the object starts moving again.
+- A quality-rejected frame calls `evaluate_presence(user_id, [])` — withholding a refresh rather
+  than asserting departure, so a blurry second cannot fake an all-clear.
+- Objects at `distance == "Far"`, and classes not in the user's `high_risk_classes`, never engage
+  and never speak.
+
+Depends on `logic_service` tagging each object with **`watched`** (`class_name in high_risk_classes`).
+That flag cannot be inferred from `alert_level`, because a watched object standing still is `"none"`
+too — and "not dangerous right now" vs "not something you asked about" is exactly the distinction.
 
 ### Alert dedup
 `has_new_alert(user_id, objects)` keeps the last announced alert level **per `track_id`** and
@@ -563,8 +587,14 @@ A single global instance with sliding windows (`deque(maxlen=100)`):
 - Latest client-side stage breakdown — validated and clamped, since it is untrusted client
   input (max 16 stages, name truncated to 32 chars, values must be `0 ≤ x < 60000`)
 - Four different FPS numbers, because they answer different questions:
-  `server_capacity` (theoretical, `1/avg_latency`), `server_actual` (frames actually arriving),
-  `client_actual` (what the phone reports sending), `overall` (total frames / uptime)
+  `server_capacity` (theoretical, `1/avg_latency` — over **`success_latencies` only**),
+  `server_actual` (frames actually arriving), `client_actual` (what the phone reports sending),
+  `overall` (total frames / uptime)
+  > ⚠️ `server_capacity` must never be computed from the all-frames `latencies` window. A quality
+  > reject is abandoned ~2.8ms after decode without ever running inference, so mixing rejects in
+  > drags the average toward zero and the reciprocal explodes — this reported **~351 FPS** from a
+  > server doing ~40. Capacity means "how fast can it process a frame"; a frame it refused to
+  > process is not evidence about that.
 - `reset()` clears everything and restarts timing
 
 ### Persistent: `services/perf_history.py`
@@ -799,8 +829,19 @@ verdict, including `danger_cleared`, `clearance_message`, `alert_is_new`).
 `python:3.11-slim` → install `libgl1` + `libglib2.0-0` (OpenCV's native deps; `libgl1` replaces
 the renamed `libgl1-mesa-glx` on Debian trixie) → copy `requirements.txt` first for layer
 caching → `pip install` → copy the project → expose 8000 → run
-`sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"`. Shell form so Railway's injected
-`$PORT` is expanded at runtime.
+`sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --timeout-keep-alive 75"`. Shell form
+so an injected `$PORT` is expanded at runtime.
+
+> ⚠️ **`--timeout-keep-alive` must stay well above the client's health-ping interval.** Uvicorn's
+> default is **5s** and `healthService.PING_INTERVAL_MS` is **5000** — two timers on the same value,
+> racing. Losing the race closes the idle connection, so the next ping pays a full TCP+TLS handshake:
+> measured **82ms → 330ms, exactly 3 extra round trips**, on roughly half of all pings, and on every
+> session's first ping. It also pushed readings past the watchdog's 200ms red threshold, causing
+> false "connection lost" alarms. Set on **both** entrypoints — this Dockerfile and the systemd unit
+> in `deploy/setup-vm.sh`.
+>
+> Note `deploy/update.sh` does **not** regenerate the systemd unit, so an existing VM needs the flag
+> applied by hand (or a `setup-vm.sh` re-run) — pulling new code alone will not pick it up.
 
 ### Environment variables
 | Variable | Purpose |
