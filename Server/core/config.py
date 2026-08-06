@@ -21,16 +21,27 @@ MIN_INPUT_SIZE = 160
 MAX_INPUT_SIZE = 640
 
 # ==================== Real-time / Streaming ====================
-# Target capture frame rate (FPS). The client captures + sends frames at this rate.
-# NOTE: the effective rate is additionally capped by round-trip time (client-side
-# backpressure won't send a new frame until the previous result returns), so if the
-# server/network can't keep up the real FPS will be lower — that's visible on the
-# admin performance page. Raise for faster reaction to fast objects (cars), lower to
-# reduce load. Change this ONE number to tune the whole pipeline's frame rate; the
-# client reads it automatically when the WebSocket connects.
-# This is a CEILING — depth-1 backpressure self-throttles the real rate to ~1/RTT,
-# so a high value here just lets the client run as fast as the pipe actually allows.
-TARGET_FPS = 40
+# HARD CEILING on the client's send rate, in frames per second.
+#
+# A cap, not a target: nothing aims for this number. The real rate is set by the
+# client's bounded-depth backpressure (MAX_INFLIGHT / round-trip time) and by how
+# fast this server processes a frame. This only clips the top of that.
+#
+# It is NOT redundant with MAX_INFLIGHT, because in-flight depth bounds
+# CONCURRENCY, not RATE — on a fast link, depth 7 can mean well over 100 FPS.
+# Only this number bounds the rate itself, which is what protects:
+#   - phone battery and mobile data (capture + JPEG encode + upload is not free)
+#   - server cost (billed per CPU-second)
+#   - fairness (one client must not be able to consume the whole server)
+#
+# Sent to the client on connect and enforced THERE (visionService `canSend`).
+# Enforcing it server-side instead would be too late: by the time a frame arrives,
+# the battery, airtime and upload bandwidth have already been spent on it.
+#
+# Named TARGET_FPS until 2026-08: it was a real capture-rate driver back when the
+# client sent one frame per timer tick, but once capture moved to polling faster
+# than the send rate, nothing enforced it and any value >= 20 behaved identically.
+MAX_FPS = 70
 
 # ==================== Inference ====================
 CONFIDENCE_THRESHOLD = 0.4

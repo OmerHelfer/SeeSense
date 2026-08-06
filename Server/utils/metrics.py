@@ -23,6 +23,15 @@ class PerformanceTracker:
         self.total_frames = 0
         self.success_count = 0
         self.failure_count = 0
+        # failure_count split by cause. A blurry photo and a server bug are both
+        # "a frame that didn't work", but they demand completely different
+        # responses — one is the world being difficult, the other is us being
+        # broken — so a single counter hid the only distinction that mattered.
+        self.reject_count = 0   # arrived, failed a quality check (blur/dark/covered/small)
+        self.error_count = 0    # arrived, raised an unexpected exception
+        # Sent by the client but never answered. Measured on the PHONE (the server
+        # cannot count what never reached it) and reported periodically.
+        self.lost_count = 0
         self._start_time = time.time()
 
         # Client RTT — end-to-end latency reported by the client
@@ -77,6 +86,9 @@ class PerformanceTracker:
         self.total_frames = 0
         self.success_count = 0
         self.failure_count = 0
+        self.reject_count = 0
+        self.error_count = 0
+        self.lost_count = 0
         self._start_time = time.time()
         self.client_rtts.clear()
         self.client_base_rtts.clear()
@@ -105,8 +117,13 @@ class PerformanceTracker:
         self.frame_arrival_times.append(now)
         return now
 
-    def end_timer(self, start: float, success: bool = True):
-        """Call at the end of a request. Records latency and status."""
+    def end_timer(self, start: float, success: bool = True, outcome: str | None = None):
+        """Call at the end of a request. Records latency and status.
+
+        `outcome` refines a failure into "reject" (failed a quality check) or
+        "error" (raised). Omitted, it is derived from `success`, so existing
+        callers keep working and only lose the finer classification.
+        """
         latency_ms = (time.perf_counter() - start) * 1000
         self.latencies.append(latency_ms)
         self.total_frames += 1
@@ -116,6 +133,10 @@ class PerformanceTracker:
             self.throughput_events.append(time.time())
         else:
             self.failure_count += 1
+            if outcome == "reject":
+                self.reject_count += 1
+            elif outcome == "error":
+                self.error_count += 1
 
         # DEBUG, not INFO. This runs once per frame: at 25 FPS it was 25 formatted
         # log lines a second written to stdout from inside the frame loop, and in a
@@ -169,6 +190,17 @@ class PerformanceTracker:
     def record_client_base_rtt(self, rtt_ms: float):
         """Record the client's tiny-payload /health ping RTT (the propagation floor)."""
         self.client_base_rtts.append(rtt_ms)
+
+    def record_lost(self, n: int):
+        """Frames the client sent that never came back, as a delta since its last
+        report. Untrusted client input, so clamp it: a bad or hostile client must
+        not be able to poison the counter with a single huge number."""
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            return
+        if 0 < n < 100000:
+            self.lost_count += n
 
     def record_frame_bytes(self, n: int):
         """Record the compressed size of one arriving frame."""
@@ -319,6 +351,9 @@ class PerformanceTracker:
             "total_frames": self.total_frames,
             "success_count": self.success_count,
             "failure_count": self.failure_count,
+            "reject_count": self.reject_count,
+            "error_count": self.error_count,
+            "lost_count": self.lost_count,
             "server_latency": {
                 "avg_ms": self.get_avg_latency(),
                 "min_ms": self.get_min_latency(),

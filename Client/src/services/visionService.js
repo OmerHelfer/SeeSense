@@ -105,6 +105,34 @@ export class VisionStream {
     // ── Client FPS tracking ──
     this._frameSendTimes    = [];     // timestamps of last 30 sends
     this._resultTimes       = [];     // timestamps of recent results (server output rate)
+
+    // ── Hard send-rate cap (server's MAX_FPS, learned on connect) ──
+    // 0 = uncapped until the server tells us otherwise. MAX_INFLIGHT bounds how
+    // many frames may be outstanding, which is concurrency; this bounds the rate.
+    this._maxFps            = 0;
+    this._lastSendAt        = -Infinity;
+
+    // ── Lost frames ──
+    // A frame that was sent and never answered. Over TCP this should be ~0: data
+    // is not silently dropped, so the only real causes are a socket that broke
+    // with frames still in flight, or a server that stalled past MAX_INFLIGHT_MS.
+    // That rarity is the point — any non-zero value here is genuine news.
+    // Cumulative for the session; what goes to the server is the delta.
+    this._lostCount         = 0;
+    this._lostReported      = 0;
+  }
+
+  /**
+   * Set the hard send-rate ceiling (frames/sec) the server asked for.
+   * 0 or negative disables the cap.
+   */
+  setMaxFps(fps) {
+    this._maxFps = Number.isFinite(fps) && fps > 0 ? fps : 0;
+  }
+
+  /** Frames sent that never received a reply, for this session. */
+  get lostCount() {
+    return this._lostCount;
   }
 
   /** Open the WebSocket connection and begin the session. */
@@ -171,10 +199,27 @@ export class VisionStream {
    */
   get canSend() {
     const now = performance.now();
+    // Anything still unanswered after MAX_INFLIGHT_MS is never coming back — this
+    // prune is the exact moment a frame becomes provably lost, so it is also
+    // where the loss is counted.
     while (this._sendTimes.length && now - this._sendTimes[0] > MAX_INFLIGHT_MS) {
       this._sendTimes.shift();
+      this._lostCount += 1;
     }
-    return this._sendTimes.length < Math.max(1, MAX_INFLIGHT);
+    if (this._sendTimes.length >= Math.max(1, MAX_INFLIGHT)) return false;
+
+    // Hard rate cap (server's MAX_FPS). Separate from the depth check above
+    // because depth bounds concurrency, not rate: on a fast link, 7 in flight is
+    // well over 100 FPS, and nothing else would stop it.
+    //
+    // The 0.9 tolerance is deliberate. setInterval fires with a few ms of jitter,
+    // and a strict compare against a fixed grid rejects the tick that lands a
+    // hair early — then waits a whole extra period, halving the real rate.
+    if (this._maxFps > 0) {
+      const interval = 1000 / this._maxFps;
+      if (now - this._lastSendAt < interval * 0.9) return false;
+    }
+    return true;
   }
 
   /**
@@ -185,6 +230,7 @@ export class VisionStream {
   sendFrame(blob) {
     if (this.isOpen) {
       const now = performance.now();
+      this._lastSendAt = now;          // grid the MAX_FPS rate cap measures from
       // Enqueue send time for RTT pairing; cap the FIFO so a missing result
       // (no response for a frame) can't make it grow without bound.
       this._sendTimes.push(now);
@@ -237,6 +283,14 @@ export class VisionStream {
     socket.onclose = (event) => {
       this._socket = null;
       clearInterval(this._rttReportTimer);
+
+      // Frames still in flight when the socket dies will never be answered.
+      // Counted only on an UNEXPECTED close: on a clean stop the user chose to
+      // end the session, and charging ~MAX_INFLIGHT losses every time they press
+      // stop would keep this counter permanently non-zero and destroy its whole
+      // value, which is that zero is the normal reading.
+      if (event.code !== 1000) this._lostCount += this._sendTimes.length;
+      this._sendTimes = [];
 
       // 4001 = missing token, 4003 = invalid/expired token (see api/stream.py).
       // Reconnecting would just replay the same dead token forever, so end the
@@ -327,6 +381,17 @@ export class VisionStream {
             }));
           } catch { /* socket closed */ }
         }
+      }
+
+      // Frames sent that never came back. A DELTA since the last report, not a
+      // running total: the server simply adds it, so it needs no per-connection
+      // state and a reconnect can't double-count or go backwards.
+      if (this._lostCount > this._lostReported) {
+        const lost = this._lostCount - this._lostReported;
+        try {
+          this._socket.send(JSON.stringify({ type: 'lost_report', lost }));
+          this._lostReported = this._lostCount;
+        } catch { /* socket closed — retry on the next tick */ }
       }
 
       // Send client-side stage breakdown (capture/encode/render/feedback) so the

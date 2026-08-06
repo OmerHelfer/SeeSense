@@ -6,7 +6,7 @@ import asyncio
 import threading
 
 from core.auth import verify_token
-from core.config import MODEL_MODE, TARGET_FPS, TARGET_SIZE, MIN_INPUT_SIZE, MAX_INPUT_SIZE
+from core.config import MODEL_MODE, MAX_FPS, TARGET_SIZE, MIN_INPUT_SIZE, MAX_INPUT_SIZE
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
 from services import db_writer
@@ -138,7 +138,12 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
     await websocket.send_json({
         "type": "connected",
         "session_id": session_id,
-        "target_fps": TARGET_FPS,
+        "max_fps": MAX_FPS,
+        # Same value under the old name, for one deploy cycle. Browsers cache the
+        # client bundle, so a phone still running yesterday's build would read no
+        # target_fps, fall back to its default of 4, and quietly stream at a
+        # crawl. Remove once no stale bundles can be in the wild.
+        "target_fps": MAX_FPS,
         "input_size": frame_size,
         "message": "Stream session active"
     })
@@ -181,6 +186,16 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                         fps = float(data["fps"])
                         if 0 < fps < 100:
                             tracker.record_client_fps(fps)
+                    elif data.get("type") == "lost_report" and "lost" in data:
+                        # Frames the client sent that never came back. Only the
+                        # phone can know this — the server cannot count what never
+                        # reached it. Sent as a delta, so just add it.
+                        # Validated once here so both sinks get the same clamped
+                        # value — this is untrusted client input.
+                        lost = int(data["lost"])
+                        if 0 < lost < 100000:
+                            tracker.record_lost(lost)
+                            perf_history.record_lost(lost, user_id=user_id)
                     elif data.get("type") == "client_stage_report" and isinstance(data.get("stages"), dict):
                         # Client-side per-stage timings (capture/encode/render/feedback).
                         tracker.record_client_stages(data["stages"])
@@ -340,8 +355,14 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 db_writer.note_frame_count(session_id, frame_count)
 
             except ValueError as e:
+                # Quality reject: the frame arrived and was readable enough to
+                # judge, and we decided against it (blur, exposure, covered lens,
+                # too small). The world being difficult, not the server failing.
                 if not counted:
-                    perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
+                    perf_history.record_frame(
+                        tracker.end_timer(start, success=False, outcome="reject"),
+                        False, user_id=user_id, outcome="reject",
+                    )
                 # Even on bad frames, check if danger state changed (e.g. user moved away)
                 danger_cleared = check_danger_cleared(user_id, "none")
                 await websocket.send_json({
@@ -353,8 +374,13 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 })
 
             except Exception as e:
+                # Unexpected: a bug, or the send failing. Counted apart from
+                # quality rejects because this one is ours to fix.
                 if not counted:
-                    perf_history.record_frame(tracker.end_timer(start, success=False), False, user_id=user_id)
+                    perf_history.record_frame(
+                        tracker.end_timer(start, success=False, outcome="error"),
+                        False, user_id=user_id, outcome="error",
+                    )
                 logger.error(f"WS frame error: {e}", exc_info=True)
                 await websocket.send_json({
                     "type": "error",

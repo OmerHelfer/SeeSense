@@ -188,8 +188,19 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, captureFps = 4, i
     // time that caps throughput well below the pipeline-depth ceiling. Polling ~3×
     // faster shrinks that wait, so effective FPS climbs toward depth/RTT at no
     // latency cost. (Clamped so a bad config value can't break capture.)
-    const target  = Math.max(1, Math.min(30, captureFps || 4));
-    const pollFps = Math.min(60, target * 3);
+    //
+    // The poll must run FASTER than the cap, not at it. The send gate compares
+    // against a fixed interval, so polling at the same rate makes every decision
+    // land right on the boundary and timer jitter halves the real rate. 3x gives
+    // each send window several chances to fire. Ticks that can't send cost one
+    // function call, so over-polling is close to free.
+    //
+    // Previously clamped to 30 here, which silently made every configured value
+    // of 20 or more behave identically — the cap could not be raised OR lowered
+    // in that whole range. The rate is now enforced in visionService.canSend, so
+    // this only needs to poll fast enough to feed it.
+    const target  = Math.max(1, captureFps || 4);
+    const pollFps = Math.min(120, target * 3);
     const id = setInterval(captureFrame, 1000 / pollFps);
     return () => clearInterval(id);
   }, [isActive, captureFrame, captureFps]);

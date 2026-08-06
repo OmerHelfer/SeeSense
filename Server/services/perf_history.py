@@ -160,6 +160,15 @@ def _new_bucket(minute_ts: int, user_id: str | None = None) -> dict:
         "frames": 0,
         "success": 0,
         "fail": 0,
+        # fail split by cause. `fail` stays the total so existing buckets and any
+        # older reader keep their meaning; these two only refine it. Buckets
+        # written before this split have neither, which is why the reader derives
+        # an "unclassified" remainder rather than assuming reject+error == fail.
+        "reject": 0,   # arrived, failed a quality check
+        "error": 0,    # arrived, raised
+        # Sent by the client, never answered. Not a frame this server ever saw —
+        # it is reported BY the phone — so it is deliberately not in `frames`.
+        "lost": 0,
         "stages": {},
         # Wall-clock of the first and last frame in this minute. Their difference is
         # the time genuinely spent streaming, which is what FPS should be measured
@@ -195,13 +204,15 @@ def _bucket_for_locked(user_id: str | None) -> dict:
 
 
 def record_frame(latency_ms: float, success: bool, stages: dict | None = None,
-                 user_id: str | None = None):
+                 user_id: str | None = None, outcome: str | None = None):
     """
     Record one processed frame (latency + success + optional per-stage times).
 
     user_id attributes the sample to a user so the admin page can show one user's
     history. Omitting it still counts toward the global totals — attribution is
     additive, never a filter on the aggregate.
+
+    outcome refines a failure into "reject" (quality check) or "error" (raised).
     """
     now = time.time()
     with _lock:
@@ -215,6 +226,8 @@ def record_frame(latency_ms: float, success: bool, stages: dict | None = None,
             bucket["success"] += 1
         else:
             bucket["fail"] += 1
+            if outcome in ("reject", "error"):
+                bucket[outcome] = bucket.get(outcome, 0) + 1
         _acc(bucket["lat"], latency_ms)
         if stages:
             for name, ms in stages.items():
@@ -228,6 +241,21 @@ def record_rtt(rtt_ms: float, user_id: str | None = None):
         _acc(_bucket_for_locked(user_id)["rtt"], rtt_ms)
 
 
+def record_lost(n: int, user_id: str | None = None):
+    """Record frames the client reports it sent but never got an answer for.
+
+    Deliberately does NOT touch first/last_frame_ts: those define the streaming
+    span that FPS is divided by, and a lost frame is not evidence this server did
+    any work in this minute.
+    """
+    if n <= 0:
+        return
+    with _lock:
+        _rollover_locked()
+        bucket = _bucket_for_locked(user_id)
+        bucket["lost"] = bucket.get("lost", 0) + n
+
+
 # ==================== Flushing ====================
 
 def _flush_async(bucket: dict):
@@ -235,8 +263,10 @@ def _flush_async(bucket: dict):
 
 
 def _flush(bucket: dict):
-    # Skip empty buckets (no frames and no rtt samples)
-    if bucket["frames"] == 0 and bucket["rtt"]["n"] == 0:
+    # Skip empty buckets (nothing observed at all). Lost frames count as content:
+    # a minute in which every frame vanished has frames == 0 and no RTT samples,
+    # and that is precisely the minute worth keeping.
+    if bucket["frames"] == 0 and bucket["rtt"]["n"] == 0 and bucket.get("lost", 0) == 0:
         return
     # Anchor the recording clock to this bucket's minute the first time anything
     # is persisted. Done here rather than in record_frame so the hot path stays
@@ -388,6 +418,7 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
     rtt = _new_metric()
     stages: dict[str, dict] = {}
     total = success = fail = 0
+    reject = error = lost = 0
     min_minute = max_minute = None
     active_seconds = 0.0
     active_frames = active_success = 0
@@ -398,6 +429,10 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
         total += b.get("frames", 0)
         success += b.get("success", 0)
         fail += b.get("fail", 0)
+        # .get with a default because buckets predating the split have neither.
+        reject += b.get("reject", 0)
+        error += b.get("error", 0)
+        lost += b.get("lost", 0)
         for name, s in (b.get("stages") or {}).items():
             _agg_metric(stages.setdefault(name, _new_metric()), s)
         m = b.get("minute_ts")
@@ -460,6 +495,13 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
         "total_frames": total,
         "success_count": success,
         "failure_count": fail,
+        "reject_count": reject,
+        "error_count": error,
+        # Whatever failed before the reject/error split existed. Reported rather
+        # than silently folded into one of the two, so the page never claims a
+        # cause it doesn't actually know.
+        "unclassified_count": max(0, fail - reject - error),
+        "lost_count": lost,
         "server_latency": _finalize(lat),
         "client_rtt": {
             "avg_ms": _finalize(rtt)["avg_ms"],

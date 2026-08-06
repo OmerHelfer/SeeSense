@@ -53,4 +53,5 @@ export const INPUT_SIZE = 640;
  * distance — acceptable for urban use. Bounded queue (no fire-and-forget backlog); 
  * also capped by server TARGET_FPS.
  */
+
 export const MAX_INFLIGHT = 7;

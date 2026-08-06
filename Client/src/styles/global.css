@@ -2344,6 +2344,67 @@ button:active {
 
 /* Outbound / return split of the network estimate. Yellow, because unlike the
    rows above it these are modelled, not measured. */
+/* Stat-card sub-line broken into rows (FPS card: rate + utilisation per side) */
+.admin-stat-sub-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Frame outcomes ── */
+.admin-outcome-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+}
+
+.admin-outcome-label {
+  flex: 0 0 150px;
+  width: 150px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.admin-outcome-track {
+  flex: 1 1 auto;
+  min-width: 40px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.admin-outcome-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  /* A category at a fraction of a percent would round to a zero-width sliver and
+     read as "none". Keep a hairline so a rare failure is still visible. */
+  min-width: 2px;
+  transition: width 0.3s ease;
+}
+
+.admin-outcome-value {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.admin-outcome-pct {
+  min-width: 46px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .admin-network-legs {
   /* One line per leg. Side by side the two numbers read as a single sentence and
      the eye had to hunt for where "הלוך" ended and "חזור" began. */

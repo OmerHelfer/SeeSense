@@ -341,8 +341,14 @@ const Dashboard = () => {
       const stream = new VisionStream({
         onResult:    handleResult,
         onConnected: (msg) => {
-          console.info('[SeeSense] WS connected, session:', msg.session_id, '| target_fps:', msg.target_fps, '| input_size:', msg.input_size);
-          if (msg.target_fps) setCaptureFps(msg.target_fps);
+          // max_fps is the current name; target_fps is the same value under the
+          // old one, kept so a cached bundle still gets a sane rate.
+          const maxFps = msg.max_fps ?? msg.target_fps;
+          console.info('[SeeSense] WS connected, session:', msg.session_id, '| max_fps:', maxFps, '| input_size:', msg.input_size);
+          if (maxFps) {
+            setCaptureFps(maxFps);   // how fast to poll for a send opportunity
+            stream.setMaxFps(maxFps); // the hard rate cap the poll is gated by
+          }
           if (msg.input_size) setInputSize(msg.input_size);
         },
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),

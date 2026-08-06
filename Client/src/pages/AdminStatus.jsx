@@ -86,6 +86,32 @@ const StatCard = ({ icon: Icon, label, value, sub, color }) => (
   </div>
 );
 
+// ── Frame-outcome row ──
+// Every frame the client sent ended in exactly one of these states, so the counts
+// are a partition and the percentages sum to 100. The bar is there because the
+// interesting reading is almost always "is anything non-green above noise", which
+// is far quicker to see than to read off four numbers.
+const OutcomeRow = ({ label, value = 0, total, color }) => {
+  const pct = total > 0 ? (value / total) * 100 : 0;
+  return (
+    <div className="admin-outcome-row">
+      <span className="admin-outcome-label" style={{ color }}>{label}</span>
+      <span className="admin-outcome-track">
+        <span className="admin-outcome-fill" style={{ width: `${Math.min(100, pct)}%`, background: color }} />
+      </span>
+      <span className="admin-outcome-value" dir="ltr">
+        {value.toLocaleString()}
+        {/* A rare failure is the whole point of the counter, so don't round it to
+            "0%" and hide it — give small non-zero values enough decimals to stay
+            visible. */}
+        <span className="admin-outcome-pct">
+          {value === 0 ? '0%' : `${pct < 1 ? pct.toFixed(2) : pct.toFixed(1)}%`}
+        </span>
+      </span>
+    </div>
+  );
+};
+
 // ── Stage labels (Hebrew) ──
 const STAGE_LABELS = {
   decode_quality: 'פענוח + בדיקת איכות',
@@ -384,6 +410,45 @@ const AdminStatus = () => {
     };
   }, [data]);
 
+  /* Utilisation — what fraction of each side's own ceiling is being used. This is
+     the number that answers "can I raise MAX_INFLIGHT": depth adds throughput only
+     while the bottleneck still has headroom, and past ~85% the remaining FPS cost
+     disproportionately more latency, which for this app is the safety number. */
+  const srvUtil = useMemo(() => {
+    const cap = data?.fps?.server_capacity ?? 0;
+    const act = data?.fps?.server_actual ?? 0;
+    if (!(cap > 0 && act > 0)) return null;
+    return Math.round((act / cap) * 100);
+  }, [data]);
+
+  /* The phone's equivalent: capture + encode is its per-frame cost, so 1000/that
+     is how many frames it could produce per second. Deliberately a FLOOR, not an
+     exact figure — toBlob is asynchronous and partly off the main thread, so real
+     capacity can be higher than treating the two stages as strictly serial implies.
+     It answers one question well: if this ever approaches 100%, the camera pipeline
+     is the limit and no amount of extra pipeline depth will help. */
+  const cliUtil = useMemo(() => {
+    const act  = data?.fps?.client_actual ?? 0;
+    const cost = clientOnly?.avg ?? 0;
+    if (!(act > 0 && cost > 0)) return null;
+    return Math.round((act / (1000 / cost)) * 100);
+  }, [data, clientOnly]);
+
+  /* Frame outcomes. Denominator is everything the client SENT — server-side totals
+     plus the frames that never arrived — so the four states partition the whole and
+     the percentages are directly comparable. */
+  const outcomes = useMemo(() => {
+    if (!data) return null;
+    const success      = data.success_count ?? 0;
+    const reject       = data.reject_count ?? 0;
+    const error        = data.error_count ?? 0;
+    const unclassified = data.unclassified_count ?? 0;
+    const lost         = data.lost_count ?? 0;
+    const sent = success + reject + error + unclassified + lost;
+    if (sent === 0) return null;
+    return { success, reject, error, unclassified, lost, sent };
+  }, [data]);
+
   /* Split the network time into an outbound and a return leg.
      There is no way to measure a ONE-WAY delay without synchronised clocks, so
      this leans on the one asymmetry we do have: the frame going up is ~40-70 KB
@@ -512,7 +577,22 @@ const AdminStatus = () => {
               value={data.user ? userFps : (data.fps?.server_capacity ?? 0)}
               sub={data.user
                 ? `בזמן שידור בפועל · לאורך כל התקופה: ${data.fps?.overall ?? 0}`
-                : `בפועל: ${data.fps?.server_actual ?? 0} | לקוח: ${data.fps?.client_actual ?? 0}`}
+                : (
+                  /* One line per side, each with its own utilisation beside it.
+                     Side by side on one line, the four numbers read as a single
+                     run and it was not obvious which utilisation belonged to which
+                     rate. */
+                  <span className="admin-stat-sub-rows">
+                    <span>
+                      בפועל: {data.fps?.server_actual ?? 0}
+                      {srvUtil != null && <> · ניצולת שרת: {srvUtil}%</>}
+                    </span>
+                    <span>
+                      לקוח: {data.fps?.client_actual ?? 0}
+                      {cliUtil != null && <> · ניצולת לקוח: {cliUtil}%</>}
+                    </span>
+                  </span>
+                )}
               color="#a78bfa"
             />
             <StatCard
@@ -535,6 +615,33 @@ const AdminStatus = () => {
               color="#f59e0b"
             />
           </div>
+
+          {/* ── What happened to every frame ── */}
+          {outcomes && (
+            <div className="admin-section">
+              <h2 className="admin-section-title">
+                <CheckCircle size={16} />
+                גורל הפריימים
+              </h2>
+              <OutcomeRow label="✓ הצלחה"                value={outcomes.success} total={outcomes.sent} color="#22c55e" />
+              <OutcomeRow label="⊘ נדחה בבדיקת איכות"   value={outcomes.reject}  total={outcomes.sent} color="#f59e0b" />
+              <OutcomeRow label="⚠ שגיאת שרת"           value={outcomes.error}   total={outcomes.sent} color="#ef4444" />
+              <OutcomeRow label="✗ נאבד בדרך"           value={outcomes.lost}    total={outcomes.sent} color="#a1a1aa" />
+              {outcomes.unclassified > 0 && (
+                <OutcomeRow label="? כשל לא מסווג" value={outcomes.unclassified} total={outcomes.sent} color="#6b7280" />
+              )}
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 8, lineHeight: 1.6 }}>
+                * מתוך {outcomes.sent.toLocaleString()} פריימים שהלקוח שלח. כל פריים מסתיים באחת מהאפשרויות
+                האלה בדיוק, ולכן האחוזים מסתכמים ל-100.
+                {' '}<strong>נדחה בבדיקת איכות</strong> = הגיע לשרת ונפסל (טשטוש, חושך, עדשה מכוסה) — העולם קשה, לא תקלה.
+                {' '}<strong>שגיאת שרת</strong> = הגיע והתרסק; זה באחריותנו לתקן.
+                {' '}<strong>נאבד בדרך</strong> = נשלח ולא חזרה עליו תשובה. נמדד בטלפון (השרת לא יכול לספור מה שלא הגיע אליו),
+                ואמור להיות אפס כמעט תמיד — WebSocket רץ מעל TCP שלא מאבד מידע בשקט, אז כל מספר שאינו אפס מעיד
+                על חיבור שנקטע עם פריימים באוויר או על שרת שנתקע.
+                {outcomes.unclassified > 0 && ' כשל לא מסווג = נרשם לפני שהפיצול הזה נוסף, ולכן הסיבה לא ידועה.'}
+              </p>
+            </div>
+          )}
 
           {/* ── Response-time comparison ── */}
           <div className="admin-section">
@@ -589,7 +696,7 @@ const AdminStatus = () => {
                     </>
                   )}
                   {netLegs.kb > 0 && <span>{netLegs.kb}KB לפריים</span>}
-                  {netLegs.perKb != null && <span>~{netLegs.perKb}ms לכל KB</span>}
+                  {netLegs.perKb != null && <span>{netLegs.perKb}ms~ לכל KB</span>}
                 </div>
                 {!netLegs.unavailable && (
                   <p className="admin-network-legs-note">
