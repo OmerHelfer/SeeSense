@@ -232,10 +232,16 @@ const _speak = (text) => {
  * Gated by the audio channel and throttled by COOLDOWN_MS.
  * @param {string} text
  */
-export const speakMessage = (text) => {
+export const speakMessage = (text, { priority = false } = {}) => {
   if (!_audioEnabled() || !window.speechSynthesis || !text) return;
   const now = Date.now();
-  if (now - lastSpeakAt < COOLDOWN_MS) return;
+  // `priority` is for messages the CALLER already rate-limits and whose meaning
+  // is a state change the user must not miss. Without it the 3s cooldown ate
+  // exactly the two that matter most: the danger warning repeats every 2s, so it
+  // re-armed the cooldown before it expired, and the "נתיב פנוי" that followed
+  // within 3s of the last warning was dropped silently — the user heard the
+  // danger start and never heard it end, which is the report that led here.
+  if (!priority && now - lastSpeakAt < COOLDOWN_MS) return;
   lastSpeakAt = now;
   _speak(text);
 };
@@ -285,7 +291,27 @@ export const announceMute = (mutedNow) => {
 const DIRECTION_LABELS = {
   left:  'מצד שמאל',
   right: 'מצד ימין',
-  center: 'ממול',
+  center: 'לפניך',
+};
+
+/**
+ * Compose the close-danger warning so it names WHAT the danger is.
+ * A bare "סכנה קרובה" tells the user something is wrong but not what or where —
+ * the one moment that information is worth the most. Position (not
+ * motion.direction) for the same reason announceDetections uses it below.
+ *
+ *   "סכנה קרובה, מכונית לפניך"  — class and position both known
+ *   "סכנה קרובה, מכונית"         — class known, position unknown
+ *   "סכנה קרובה"                 — nothing identified at all
+ */
+export const dangerPhrase = (objects) => {
+  const top       = Array.isArray(objects) ? objects[0] : null;
+  const className = top?.class_name || top?.label;
+  if (!className) return 'סכנה קרובה';
+
+  const name     = HEBREW_NAMES[className] || className;
+  const dirLabel = DIRECTION_LABELS[top?.position] ?? '';
+  return `סכנה קרובה, ${dirLabel ? `${name} ${dirLabel}` : name}`;
 };
 
 /**

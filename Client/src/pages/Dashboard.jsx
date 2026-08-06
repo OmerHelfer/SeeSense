@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import CameraView      from '../components/CameraView';
 import useOrientation  from '../hooks/useOrientation';
 import { VisionStream, setActiveStream }          from '../services/visionService';
-import { haptic, announceDetections, speakMessage, HEBREW_NAMES } from '../services/feedbackService';
+import { haptic, announceDetections, speakMessage, dangerPhrase, HEBREW_NAMES } from '../services/feedbackService';
 import { emergencyAlert, quickFeedback } from '../services/userService';
 import { startHealthWatch, stopHealthWatch } from '../services/healthService';
 import { recordClientStage } from '../services/clientMetrics';
@@ -276,7 +276,10 @@ const Dashboard = () => {
     // "Danger cleared" → one-shot Hebrew "Path Clear" announcement
     if (result.danger_cleared) {
       const tFb = performance.now();
-      speakMessage('נתיב פנוי');
+      // priority: this is a one-shot edge (red → nothing), and the warning it
+      // ends has been re-arming speakMessage's cooldown every 2s. Without the
+      // bypass it was the message most likely to be swallowed.
+      speakMessage('נתיב פנוי', { priority: true });
       recordClientStage('feedback', performance.now() - tFb);
       setDetectionDir(null);
       setDetectedClass(null);
@@ -296,7 +299,10 @@ const Dashboard = () => {
       lastDangerRepeatRef.current = now;
       const tRep = performance.now();
       haptic('danger');
-      speakMessage('סכנה קרובה');
+      // Name the threat and where it is — "סכנה קרובה, מכונית לפניך". priority
+      // because DANGER_REPEAT_MS already paces this, and its 2s beat against the
+      // 3s speech cooldown meant every other repeat was dropped.
+      speakMessage(dangerPhrase(objects), { priority: true });
       showFeedbackBriefly();
       recordClientStage('feedback', performance.now() - tRep);
       return;

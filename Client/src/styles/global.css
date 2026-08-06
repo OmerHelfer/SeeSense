@@ -2345,10 +2345,13 @@ button:active {
 /* Outbound / return split of the network estimate. Yellow, because unlike the
    rows above it these are modelled, not measured. */
 .admin-network-legs {
+  /* One line per leg. Side by side the two numbers read as a single sentence and
+     the eye had to hunt for where "הלוך" ended and "חזור" began. */
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  line-height: 1.5;
   margin-top: 6px;
   padding: 8px 12px;
   background: rgba(234, 179, 8, 0.07);

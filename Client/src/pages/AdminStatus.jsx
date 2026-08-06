@@ -397,20 +397,31 @@ const AdminStatus = () => {
     const srv  = data?.server_latency?.avg_ms ?? 0;
     const base = data?.client_rtt?.base_ms ?? 0;
     const kb   = data?.frame_bytes?.avg_kb ?? 0;
-    if (!(rtt > 0 && srv > 0 && base > 0)) return null;
+    if (!(rtt > 0 && srv > 0)) return null;
 
-    const net  = rtt - srv;
+    const net = rtt - srv;
+    const kbR = Math.round(kb * 10) / 10;
+
+    // The two legs are NOT measured over the same window, and that is why this
+    // block used to blink out of existence. rtt and srv are all-time averages
+    // read from the persisted per-minute buckets; base_ms is live — the last 100
+    // /health pings of the CURRENT server process, gone on every restart. So the
+    // split can legitimately be uncomputable, and when it is, saying why beats
+    // disappearing: a row that silently vanishes reads as a broken page.
+    if (!(base > 0)) {
+      return { kb: kbR, unavailable: 'אין עדיין דגימת פינג חיה מהשרת הנוכחי — הפיצול לשני הכיוונים יופיע ברגע שמישהו יתחיל לסרוק.' };
+    }
+
     const down = base / 2;
     const up   = net - down;
-    // A negative outbound leg means the assumptions broke (typically the ping and
-    // the frames were measured under different conditions) — show nothing rather
-    // than a made-up number.
-    if (!(net > 0) || !(up > 0)) return null;
+    if (!(net > 0) || !(up > 0)) {
+      return { kb: kbR, unavailable: 'הפינג החי גדול מזמן הרשת הממוצע, כך שההלוך יוצא שלילי — כלומר הרשת כרגע איטית מהממוצע ההיסטורי, ואי אפשר לפצל אותה בכנות.' };
+    }
 
     return {
       up:   Math.round(up),
       down: Math.round(down),
-      kb:   Math.round(kb * 10) / 10,
+      kb:   kbR,
       perKb: kb > 0 ? Math.round((up / kb) * 10) / 10 : null,
     };
   }, [data]);
@@ -569,17 +580,26 @@ const AdminStatus = () => {
             {netLegs && (
               <>
                 <div className="admin-network-legs">
-                  <span>הלוך (העלאת הפריים) ~{netLegs.up}ms</span>
-                  <span>חוזר (התוצאה) ~{netLegs.down}ms</span>
+                  {netLegs.unavailable ? (
+                    <span>{netLegs.unavailable}</span>
+                  ) : (
+                    <>
+                      <span>הלוך (העלאת הפריים) ~{netLegs.up}ms</span>
+                      <span>חזור (התוצאה) ~{netLegs.down}ms</span>
+                    </>
+                  )}
                   {netLegs.kb > 0 && <span>{netLegs.kb}KB לפריים</span>}
                   {netLegs.perKb != null && <span>~{netLegs.perKb}ms לכל KB</span>}
                 </div>
-                <p className="admin-network-legs-note">
-                  * החוזר נאמד מחצי מזמן הפינג הקטן ({Math.round(data.client_rtt.base_ms)}ms),
-                  שכמעט ואין לו מה להעביר — ולכן הוא בעצם זמן ההגעה לכיוון אחד.
-                  ההלוך הוא כל השאר, כלומר הזמן שבו הפריים הדחוס עצמו עולה.
-                  הקטנת הדחיסה אמורה להזיז את ההלוך ולהשאיר את החוזר כמעט זהה.
-                </p>
+                {!netLegs.unavailable && (
+                  <p className="admin-network-legs-note">
+                    * החזור נאמד מחצי מזמן הפינג הקטן ({Math.round(data.client_rtt.base_ms)}ms),
+                    שכמעט ואין לו מה להעביר — ולכן הוא בעצם זמן ההגעה לכיוון אחד.
+                    ההלוך הוא כל השאר, כלומר הזמן שבו הפריים הדחוס עצמו עולה.
+                    הקטנת הדחיסה אמורה להזיז את ההלוך ולהשאיר את החזור כמעט זהה.
+                    הפינג נמדד חי ואילו שאר המספרים הם ממוצע כל ההיסטוריה, ולכן הפיצול הוא הערכה בלבד.
+                  </p>
+                )}
               </>
             )}
           </div>
