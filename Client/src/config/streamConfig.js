@@ -54,4 +54,4 @@ export const INPUT_SIZE = 640;
  * also capped by server TARGET_FPS.
  */
 
-export const MAX_INFLIGHT = 7;
+export const MAX_INFLIGHT = 10;

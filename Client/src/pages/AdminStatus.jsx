@@ -691,8 +691,8 @@ const AdminStatus = () => {
                     <span>{netLegs.unavailable}</span>
                   ) : (
                     <>
-                      <span>הלוך (העלאת הפריים) {netLegs.up}ms~</span>
-                      <span>חזור (התוצאה) {netLegs.down}ms~</span>
+                      <span>הלוך (העלאת הפריים) {netLegs.up}~ms</span>
+                      <span>חזור (התוצאה) {netLegs.down}~ms</span>
                     </>
                   )}
                   {netLegs.kb > 0 && <span>{netLegs.kb}KB לפריים</span>}
