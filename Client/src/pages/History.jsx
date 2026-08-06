@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   getHistory,
   deleteHistoryRecord,
+  clearHistory,
   feedbackFromHistory,
   getFeedbackRecordIds,
 } from '../services/userService';
@@ -176,6 +177,10 @@ const History = () => {
 
   // delete
   const [deleteLoading, setDeleteLoading] = useState(false);
+  // Clear-all history
+  const [showClearAll, setShowClearAll] = useState(false);
+  const [clearing, setClearing]         = useState(false);
+  const [clearError, setClearError]     = useState('');
   const [deleteError,   setDeleteError]   = useState('');
 
   // ── Fetch history ──────────────────────────────────
@@ -281,6 +286,22 @@ const History = () => {
       setDeleteError('מחיקה נכשלה. נסה שוב.');
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  // ── Clear all history ──────────────────────────────
+  const handleClearAll = async () => {
+    setClearError('');
+    setClearing(true);
+    try {
+      await clearHistory();
+      setRecords([]);
+      setExpandedSessions(new Set());
+      setShowClearAll(false);
+    } catch {
+      setClearError('מחיקה נכשלה. נסה שוב.');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -588,8 +609,53 @@ const History = () => {
           </div>
         )}
 
+        {/* Clear-all. The DELETE /users/history endpoint and its client wrapper
+            have always existed; nothing reached them, so per-record delete was the
+            only way to remove anything. Shown only when there is something to
+            clear, so it can't be pressed into a no-op. */}
+        {!loading && !loadError && records.length > 0 && (
+          <div className="danger-zone" style={{ marginTop: 20 }}>
+            <div className="danger-zone-head">
+              <AlertTriangle size={15} />
+              <span>אזור מסוכן</span>
+            </div>
+            <p className="danger-zone-desc">
+              מחיקת כל ההיסטוריה תסיר את כל רשומות הזיהוי שלך לצמיתות. ההגדרות, אנשי הקשר
+              והמשובים שלך לא יושפעו.
+            </p>
+            <button className="au-delete-btn" onClick={() => { setClearError(''); setShowClearAll(true); }}>
+              <Trash2 size={16} /> מחק את כל ההיסטוריה
+            </button>
+          </div>
+        )}
+
         <div style={{ height: 40 }} />
       </div>
+
+      {/* Clear-all confirmation */}
+      <AnimatePresence>
+        {showClearAll && (
+          <motion.div className="admin-modal-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => !clearing && setShowClearAll(false)}>
+            <motion.div className="admin-modal-card" onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}>
+              <div className="admin-modal-icon"><AlertTriangle size={26} /></div>
+              <h3 className="admin-modal-title">למחוק את כל ההיסטוריה?</h3>
+              <p className="admin-modal-body">
+                כל רשומות הזיהוי שלך יימחקו <strong>לצמיתות</strong> ולא ניתן יהיה לשחזר אותן.
+              </p>
+              {clearError && <div className="error-banner" style={{ marginBottom: 12 }}>{clearError}</div>}
+              <button className="admin-reset-btn confirm" onClick={handleClearAll} disabled={clearing}>
+                <Trash2 size={16} /> {clearing ? 'מוחק...' : 'כן, מחק הכל'}
+              </button>
+              <button className="admin-modal-cancel" onClick={() => setShowClearAll(false)} disabled={clearing}>
+                ביטול
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Action sheet modal ── */}
       <AnimatePresence>

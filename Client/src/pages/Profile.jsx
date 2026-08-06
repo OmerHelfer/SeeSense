@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRight, Edit2, Save, X, Users, User, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowRight, Edit2, Save, X, Users, User, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getProfile, updateProfile, deleteAccount } from '../services/userService';
+import { getProfile, updateProfile, deleteAccount, changePassword } from '../services/userService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -23,6 +23,16 @@ const Profile = () => {
   const [saveError, setSaveError]     = useState('');
   const [saveOk, setSaveOk]           = useState(false);
 
+  // Change password. The old password is required by the server (it calls
+  // change_password with force=False), so a wrong current password comes back
+  // as a 400 rather than silently doing nothing.
+  const [oldPw, setOldPw]         = useState('');
+  const [newPw, setNewPw]         = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError]     = useState('');
+  const [pwOk, setPwOk]           = useState(false);
+
   // Self-delete
   const [showDelete, setShowDelete]   = useState(false);
   const [deleting, setDeleting]       = useState(false);
@@ -30,6 +40,25 @@ const Profile = () => {
 
   // Unsaved-changes guard on back
   const [showLeave, setShowLeave]     = useState(false);
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPwError(''); setPwOk(false);
+    if (newPw.length < 6)      { setPwError('הסיסמה החדשה חייבת להיות לפחות 6 תווים'); return; }
+    if (newPw !== confirmPw)   { setPwError('הסיסמאות החדשות אינן תואמות'); return; }
+    if (newPw === oldPw)       { setPwError('הסיסמה החדשה זהה לנוכחית'); return; }
+    setPwLoading(true);
+    try {
+      await changePassword({ old_password: oldPw, new_password: newPw });
+      setOldPw(''); setNewPw(''); setConfirmPw('');
+      setPwOk(true);
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setPwError(typeof detail === 'string' ? detail : 'שינוי הסיסמה נכשל. ודא שהסיסמה הנוכחית נכונה.');
+    } finally {
+      setPwLoading(false);
+    }
+  };
 
   const handleDeleteAccount = async () => {
     setDeleting(true); setDeleteErr('');
@@ -218,6 +247,65 @@ const Profile = () => {
             <span className="field-label">אימייל</span>
             <span className="field-value">{profile?.email || '—'}</span>
           </div>
+        </div>
+
+        {/* Change password — the server endpoint has always existed and the client
+            wrapper with it; there was simply no UI reaching either, so a user could
+            never change their own password. Admins can set someone else's from
+            AdminUsers, which is a different thing entirely. */}
+        <div className="glass-section">
+          <div className="section-header">
+            <div className="section-label-row">
+              <KeyRound size={15} />
+              <span className="section-label">שינוי סיסמה</span>
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {pwError && (
+              <motion.div className="error-banner"
+                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
+              >{pwError}</motion.div>
+            )}
+            {pwOk && (
+              <motion.div className="success-banner"
+                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}
+              >הסיסמה שונתה בהצלחה!</motion.div>
+            )}
+          </AnimatePresence>
+
+          <form onSubmit={handleChangePassword}>
+            <div className="profile-field">
+              <span className="field-label">סיסמה נוכחית</span>
+              <input
+                className="input-field field-input" type="password" dir="ltr"
+                autoComplete="current-password"
+                value={oldPw} onChange={(e) => setOldPw(e.target.value)}
+              />
+            </div>
+            <div className="profile-field">
+              <span className="field-label">סיסמה חדשה</span>
+              <input
+                className="input-field field-input" type="password" dir="ltr"
+                autoComplete="new-password"
+                value={newPw} onChange={(e) => setNewPw(e.target.value)}
+              />
+            </div>
+            <div className="profile-field">
+              <span className="field-label">אימות סיסמה חדשה</span>
+              <input
+                className="input-field field-input" type="password" dir="ltr"
+                autoComplete="new-password"
+                value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
+              />
+            </div>
+            <button className="accent-btn sm" type="submit" disabled={pwLoading}>
+              <Save size={15} />
+              {pwLoading ? 'משנה...' : 'שנה סיסמה'}
+            </button>
+          </form>
         </div>
 
         {/* Emergency contacts shortcut */}
