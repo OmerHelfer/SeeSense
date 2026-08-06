@@ -13,7 +13,7 @@
  * This is the ONE knob to tune frame compression. It maps to the canvas JPEG
  * quality argument:  quality = 1 - COMPRESSION_PERCENT / 100.
  */
-export const COMPRESSION_PERCENT = 75;
+export const COMPRESSION_PERCENT = 50;
 
 /** Canvas JPEG quality (0..1) derived from COMPRESSION_PERCENT. */
 export const JPEG_QUALITY = Math.max(0, Math.min(1, 1 - COMPRESSION_PERCENT / 100));
@@ -65,4 +65,4 @@ export const INPUT_SIZE = 640;
  * window is already oversampled). Read ניצולת שרת on /admin/status — while it is
  * under ~70% there is headroom; near 100% only latency is left to buy.
  */
-export const MAX_INFLIGHT = 6;
+export const MAX_INFLIGHT = 6; // The best in terms of latency and fps.
