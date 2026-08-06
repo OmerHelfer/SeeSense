@@ -90,7 +90,6 @@ async def update_settings(settings: dict = {}, current_user: dict = Depends(veri
 @router.get("/available_classes")
 async def get_available_classes(current_user: dict = Depends(verify_token)):
     """Returns all classes the user can choose from."""
-    user_id = current_user["user_id"]
     return {
         "status": "success",
         "classes": sorted(list(ALL_CLASSES))

@@ -33,9 +33,8 @@ from ml_engine.model_loader import load_model
 from core.config import MODEL_PATH, MODEL_MODE, CORS_ORIGINS
 from core.database import connect, disconnect
 from utils.metrics import tracker
-from core.auth import verify_token, verify_admin, verify_super_admin
+from core.auth import verify_admin, verify_super_admin
 
-import os
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)

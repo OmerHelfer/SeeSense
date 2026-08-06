@@ -323,20 +323,6 @@ def flush_now(force: bool = False):
 
 # ==================== Querying ====================
 
-# Preset range keys → lookback seconds (None = all / since start)
-RANGE_SECONDS = {
-    "start": None, "all": None,
-    "30m": 1800,
-    "1h": 3600,
-    "1d": 86400,
-    "1w": 604800,
-    "1mo": 2592000,      # 30 days
-    "3mo": 7776000,      # 90 days
-    "6mo": 15552000,     # 180 days
-    "1y": 31536000,      # 365 days
-}
-
-
 def _agg_metric(dst: dict, src: dict):
     dst["sum"] += src.get("sum", 0.0)
     dst["n"] += src.get("n", 0)

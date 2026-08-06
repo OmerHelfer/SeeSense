@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Trash2, Flag, AlertTriangle, Clock, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '../context/AuthContext';
 import {
   getHistory,
   deleteHistoryRecord,
@@ -153,7 +152,6 @@ function objectsLabel(record) {
 
 const History = () => {
   const navigate = useNavigate();
-  const { user }  = useAuth();
 
   const [records,     setRecords]     = useState([]);
   const [loading,     setLoading]     = useState(true);

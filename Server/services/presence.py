@@ -38,6 +38,3 @@ def get_online_user_ids() -> set:
     now = time.time()
     return {uid for uid, ts in _last_active.items() if now - ts < ONLINE_THRESHOLD_SECONDS}
 
-
-def clear(user_id: str):
-    _last_active.pop(user_id, None)

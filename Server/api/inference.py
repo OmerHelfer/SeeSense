@@ -4,17 +4,12 @@ import logging
 from core.config import ALL_CLASSES
 from core.auth import verify_token
 from core.database import get_db
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from services.session_service import update_cache
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/inference", tags=["Inference"])
-
-limiter = Limiter(key_func=get_remote_address)
-
 
 @router.get("/get_supported_objects")
 async def get_supported_objects():

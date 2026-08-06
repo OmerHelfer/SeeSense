@@ -33,10 +33,9 @@ logger = logging.getLogger(__name__)
 # ==================== Configuration ====================
 # All motion timings are durations, so they stay correct at any frame rate.
 MAX_AGE_SECONDS   = 1.2    # keep a lost track (and its ID) alive this long
-MOTION_WINDOW_SEC = 0.6    # look-back span for the approach test
 MIN_HITS          = 3      # detections before a track may report motion at all
 SMOOTH_N          = 3      # samples median-filtered at each end of the window
-HISTORY_SIZE      = 48     # must cover MOTION_WINDOW_SEC at 40 FPS
+HISTORY_SIZE      = 48     # must cover APPROACH_WINDOW_SEC at the highest frame rate
 
 IOU_THRESHOLD       = 0.3  # minimum IoU for matching
 HIGH_CONF_THRESHOLD = 0.5  # at/above this = high confidence detection

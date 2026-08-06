@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { JPEG_QUALITY } from '../config/streamConfig';
 import { recordClientStage } from '../services/clientMetrics';
 

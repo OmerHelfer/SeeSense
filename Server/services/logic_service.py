@@ -1,10 +1,6 @@
 import logging
 
 from core.config import (
-    FRAME_AREA,
-    CONFIDENCE_THRESHOLD,
-    BBOX_AREA_CLOSE_RATIO,
-    BBOX_AREA_MEDIUM_RATIO,
     HIGH_RISK_CLASSES,
     SENSITIVITY_PROFILES,
 )

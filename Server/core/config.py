@@ -38,11 +38,6 @@ MAX_INPUT_SIZE = 640
 CONFIDENCE_THRESHOLD = 0.4
 NMS_IOU_THRESHOLD = 0.45
 
-# ==================== Danger Logic ====================
-FRAME_AREA = TARGET_SIZE * TARGET_SIZE
-BBOX_AREA_CLOSE_RATIO = 0.30
-BBOX_AREA_MEDIUM_RATIO = 0.15
-
 # Sensitivity profiles — affects confidence and bbox thresholds
 SENSITIVITY_PROFILES = {
     "low": {

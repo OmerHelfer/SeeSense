@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 import logging
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import datetime
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from starlette.requests import Request

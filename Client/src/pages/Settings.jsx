@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ArrowRight, Save, RotateCcw, Target, Bell, User, Users, Clock, Activity, Flag, MessageSquare, CheckCircle, ChevronDown, AlertTriangle, Sliders, X } from 'lucide-react';

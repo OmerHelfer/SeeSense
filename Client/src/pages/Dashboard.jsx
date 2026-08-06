@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, Settings, Home, Scan, VideoOff, Flag } from 'lucide-react';
@@ -132,11 +132,11 @@ const Dashboard = () => {
   // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
 
-  /* ── Refs: let handleFrameCapture read latest state
-     without being re-created (which would reset the 250ms interval) ── */
+  /* ── Refs: let the capture callbacks read the latest state without being
+     re-created. CameraView keys its poll interval on the callback identity,
+     so a new function on every state change would restart the capture loop. ── */
   const isScanningRef  = useRef(isScanning);
   const isAlignedRef   = useRef(isAligned);
-  const userIdRef       = useRef(user?.id ?? 'default');
   const visionStreamRef    = useRef(null);       // active VisionStream instance
   const prevAlignedRef     = useRef(isAligned);
   const quickReportTimerRef = useRef(null);      // quick-report reset timer
@@ -170,7 +170,6 @@ const Dashboard = () => {
 
   useEffect(() => { isScanningRef.current = isScanning;        }, [isScanning]);
   useEffect(() => { isAlignedRef.current  = isAligned;         }, [isAligned]);
-  useEffect(() => { userIdRef.current     = user?.id ?? 'default'; }, [user]);
 
   /* ── Live FPS readout (admins level 1+) ──
      Both numbers are already known to the stream object, so this samples them on

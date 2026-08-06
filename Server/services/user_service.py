@@ -183,15 +183,6 @@ def insert_detection_entry(entry: dict) -> None:
         _detection_history().insert_one(entry)
     except Exception as e:  # never let a background write crash the stream
         logger.warning(f"Deferred detection insert failed: {e}")
-
-
-def add_detection_record(user_id: str, record: dict, session_id: str = None) -> str:
-    """Store a detection result in user history synchronously. Returns record ID."""
-    record_id, entry = build_detection_entry(user_id, record, session_id=session_id)
-    insert_detection_entry(entry)
-    return record_id
-
-
 def get_user_history(user_id: str, limit: int = 50, period: str = "all", session_id: str = None) -> list[dict]:
     """Retrieve detection history filtered by time period and/or session."""
     query = {"user_id": user_id}
