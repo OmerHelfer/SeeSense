@@ -209,7 +209,7 @@ const EmergencyContacts = () => {
                         <p className="contact-meta">{c.phone}</p>
                       </div>
                       <div className="contact-side">
-                        {c.status='verified' ? (
+                        {c.status === 'verified' ? (
                           <span className="status-badge verified">
                             <CheckCircle size={12} /> מאומת
                           </span>
