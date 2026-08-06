@@ -18,7 +18,7 @@ from services.session_service import (
     get_cached_state,
     update_cache,
     clear_cache,
-    check_danger_cleared,
+    evaluate_presence,
     has_new_alert,
 )
 from ml_engine.model_loader import run_inference
@@ -277,11 +277,14 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                     image_width=img.shape[1],
                     image_height=img.shape[0]
                 )
-                # Danger cleared check. Pass the LEVEL, not the boolean: "path
-                # clear" must only be announced on red -> nothing, never on red ->
-                # yellow, which is still a caution.
+                # Clearance is decided by PRESENCE, not by alert level. An object
+                # that stops moving drops to "none" while still standing in the
+                # user's path, and announcing "נתיב פנוי" there is the single most
+                # dangerous thing this app can say. See evaluate_presence.
                 is_danger = result["danger"]
-                danger_cleared = check_danger_cleared(user_id, result["alert_level"])
+                presence = evaluate_presence(user_id, result["objects"])
+                danger_cleared = presence["danger_cleared"]
+                static_notice = presence["static_notice"]
 
                 # Alert dedup — only True on a genuine none→low / low→high transition
                 # per tracked object, so TTS/haptic don't fire every single frame for
@@ -326,6 +329,9 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                     "danger": is_danger,
                     "danger_cleared": danger_cleared,
                     "clearance_message": "Path Clear" if danger_cleared else None,
+                    # A watched object that is present and confirmed motionless.
+                    # {class_name, position} — the client phrases it in Hebrew.
+                    "static_notice": static_notice,
                     "alert_is_new": alert_is_new,
                     "alert_level": result["alert_level"],
                     "distance": result["distance"],
@@ -361,8 +367,10 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                         tracker.end_timer(start, success=False, outcome="reject"),
                         False, user_id=user_id, outcome="reject",
                     )
-                # Even on bad frames, check if danger state changed (e.g. user moved away)
-                danger_cleared = check_danger_cleared(user_id, "none")
+                # A rejected frame is not evidence that anything left — we simply
+                # could not see. Feeding an empty list just withholds a refresh, so
+                # tracks age out on _PRESENCE_TTL if the blur really does persist.
+                danger_cleared = evaluate_presence(user_id, [])["danger_cleared"]
                 await websocket.send_json({
                     "type": "error",
                     "frame": frame_count,

@@ -36,22 +36,33 @@ export const INPUT_SIZE = 640;
 
 /**
  * Pipeline depth — how many frames may be "in flight" (sent, awaiting a result)
- * at once. Balances per-frame latency (how long before an alert reaches the user)
- * against throughput (FPS). Each in-flight frame queues behind others at the server.
+ * at once.
  *
- *     per-frame latency ≈ network_RTT + depth × server_processing_time
- *     throughput        ≈ min(1/server_time, depth / network_RTT)
+ * THIS IS THE ONLY CONTROL ON THE SEND RATE. There is no frame-rate setting
+ * anywhere, on the client or the server (a TARGET_FPS/MAX_FPS existed until
+ * 2026-08 and was removed: it was a second, interacting limiter that held the
+ * real rate below what the pipeline could do). The client sends the next frame
+ * the moment a reply frees a slot, so the rate settles at whatever the network
+ * and the server can actually sustain.
  *
- * With INPUT_SIZE=512 (now optimized to ~41ms per frame on the server) and
- * measured network ≈ 131ms:
- *   1 → ~7 FPS,  latency ~131ms   (server sits idle)
- *   2 → ~13 FPS, latency ~172ms
- *   4 → ~22 FPS, latency ~216ms   ← current: 96% efficie   ncy, good FPS + safety
+ *     throughput λ = min( 1/S , depth/R₀ )      S  = server time per frame
+ *     latency    W = depth / λ                  R₀ = round-trip with no queueing
  *
- * At depth 4 we're hitting the ceiling (~23.5 FPS). For a blind pedestrian safety
- * app, 22 FPS is plenty smooth, and 216ms total lag = 3m at 50km/h reaction
- * distance — acceptable for urban use. Bounded queue (no fire-and-forget backlog); 
- * This is the ONLY control on the send rate — there is no server-side FPS setting.
+ * Two regimes, and which one you are in decides whether raising this helps:
+ *   - depth/R₀ < 1/S  → server idles waiting for frames. More depth fills dead
+ *                       time: FPS rises, latency stays ~R₀. Free.
+ *   - depth/R₀ > 1/S  → server never idles. Extra frames only queue: FPS is
+ *                       pinned at 1/S and each added frame adds S to everyone's
+ *                       wait. Pure latency, no gain.
+ * The crossover is depth ≈ R₀/S. Past it you are buying delay.
+ *
+ * Measured 2026-08-06 (server ~16.4ms/frame ⇒ ~61 FPS ceiling, R₀ ~120ms):
+ *   6  → 50 FPS, 120ms      7  → 53 FPS, 133ms
+ *   10 → 60 FPS, 166ms      20 → 60 FPS, 332ms  ← same FPS, double the delay
+ *
+ * Latency is the safety number here, not FPS: at 50km/h a car covers 1.4m per
+ * 100ms, and above ~25 FPS extra frames buy almost nothing (the 0.8s approach
+ * window is already oversampled). Read ניצולת שרת on /admin/status — while it is
+ * under ~70% there is headroom; near 100% only latency is left to buy.
  */
-
 export const MAX_INFLIGHT = 8;

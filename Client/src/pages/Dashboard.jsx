@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import CameraView      from '../components/CameraView';
 import useOrientation  from '../hooks/useOrientation';
 import { VisionStream, setActiveStream }          from '../services/visionService';
-import { haptic, announceDetections, speakMessage, speakStatus, dangerPhrase, HEBREW_NAMES } from '../services/feedbackService';
+import { haptic, announceDetections, speakMessage, speakStatus, dangerPhrase, staticPhrase, HEBREW_NAMES } from '../services/feedbackService';
 import { emergencyAlert, quickFeedback } from '../services/userService';
 import { startHealthWatch, stopHealthWatch } from '../services/healthService';
 import { recordClientStage } from '../services/clientMetrics';
@@ -283,6 +283,16 @@ const Dashboard = () => {
       setDetectionDir(null);
       setDetectedClass(null);
       return;
+    }
+
+    // A watched object that is present and confirmed motionless. The server sends
+    // this once per still episode, so it needs no cooldown of its own — and it is
+    // QUEUED rather than prioritised, so it can never cut off a danger warning
+    // that is still being spoken.
+    if (result.static_notice) {
+      const tFb = performance.now();
+      speakStatus(staticPhrase(result.static_notice.class_name, result.static_notice.position));
+      recordClientStage('feedback', performance.now() - tFb);
     }
 
     // Keep warning while something is STILL closing in. alert_is_new only fires

@@ -340,6 +340,24 @@ export const dangerPhrase = (objects) => {
 };
 
 /**
+ * Phrase a watched object that is PRESENT but not moving: "אדם לפניך, אין תנועה".
+ *
+ * This is the sentence that has to exist so "נתיב פנוי" can stop being a lie.
+ * A person standing still in front of the user scores no alert level at all, and
+ * the app used to read that silence as an all-clear. Saying nothing would be
+ * safer than that, but still wrong — the obstacle is real and the user cannot
+ * see it. So we name it, say where it is, and say that it is not moving.
+ *
+ * @param {string} className  backend class name (person, car, dog, ...)
+ * @param {string} position   'left' | 'center' | 'right'
+ */
+export const staticPhrase = (className, position) => {
+  const name = HEBREW_NAMES[className] || className;
+  const dir  = DIRECTION_LABELS[position] ?? DIRECTION_LABELS.center;
+  return `${name} ${dir}, אין תנועה`;
+};
+
+/**
  * Speak the most prominent detected object in Hebrew, including direction.
  * Examples: "סכנה! מכונית מצד ימין", "אדם מצד שמאל", "כלב"
  *

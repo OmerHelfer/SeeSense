@@ -71,6 +71,12 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
             "position": position,
             "alert_level": alert_level,
             "alert_message": alert_message,
+            # Is this one of the classes the user asked to be warned about? Cannot
+            # be inferred from alert_level: a watched object that is standing still
+            # is "none" too, and the difference between "not dangerous right now"
+            # and "not something you care about" is exactly what presence tracking
+            # needs to tell apart.
+            "watched": class_name in high_risk_classes,
             "motion": motion
         })
 

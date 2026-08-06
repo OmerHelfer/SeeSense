@@ -55,6 +55,8 @@ def clear_cache(user_id: str):
     _user_cache.pop(user_id, None)
     _ws_previous_danger_state.pop(user_id, None)
     _track_alert_state.pop(user_id, None)
+    _ws_tracked.pop(user_id, None)
+    _ws_had_engaged.pop(user_id, None)
     try:
         get_db()["users"].update_one(
             {"user_id": user_id},
@@ -171,6 +173,96 @@ def check_danger_cleared(user_id: str, alert_level) -> bool:
         _ws_previous_danger_state[user_id] = False
         return True
     return False
+
+
+# ==================== Presence-based clearance ====================
+# How long a track may go unseen before it counts as genuinely gone. Detections
+# drop out for a frame or two whenever confidence dips under the threshold while
+# the object is still very much there, so a single missed frame must never read
+# as "it left".
+_PRESENCE_TTL = 1.5      # seconds
+
+# How long an object must hold still before we say so out loud. Long enough that
+# a brief pause mid-approach doesn't get called "static".
+_STATIC_CONFIRM_SEC = 0.8
+
+# user_id -> {track_id: {seen, class_name, position, static_since, announced, engaged}}
+_ws_tracked = {}
+# user_id -> bool: did we have anything engaged on the previous frame?
+_ws_had_engaged = {}
+
+
+def evaluate_presence(user_id: str, objects: list[dict]) -> dict:
+    """
+    Decide what to SAY about the objects in front of the user, based on whether
+    they are still THERE — not on whether they are currently alerting.
+
+    The bug this replaces: "נתיב פנוי" was announced the moment the alert level
+    fell to "none". But a watched object that stops moving also scores "none", so
+    standing still in front of a stationary person announced that the path was
+    clear while the user was on a collision course with them. For someone who
+    cannot look up and check, that is the most dangerous sentence the app can say.
+
+    Two outputs:
+      danger_cleared — true only when every object we had engaged with has
+                       actually left the frame (aged out of the tracker).
+      static_notice  — a watched object that is present, close enough to matter
+                       and confirmed motionless, announced once per still episode.
+    """
+    now = time.monotonic()
+    tracks = _ws_tracked.setdefault(user_id, {})
+    notice = None
+
+    for obj in objects or []:
+        if not obj.get("watched"):
+            continue                       # blue-boxed classes never speak
+        track_id = obj.get("motion", {}).get("track_id", -1)
+        if track_id < 0:
+            continue                       # no stable identity to attach state to
+        if obj.get("distance") == "Far":
+            continue                       # too far to be a collision risk
+
+        st = tracks.setdefault(track_id, {
+            "static_since": None, "announced": False, "engaged": False,
+        })
+        st["seen"] = now
+        st["class_name"] = obj.get("class_name")
+        st["position"] = obj.get("position")
+
+        moving = (obj.get("motion", {}).get("approaching", False)
+                  or obj.get("alert_level", "none") != "none")
+
+        if moving:
+            # The warning path owns it while it moves. Reset the still-episode so
+            # that if it settles again, that gets its own announcement.
+            st["static_since"] = None
+            st["announced"] = False
+            st["engaged"] = True
+        else:
+            if st["static_since"] is None:
+                st["static_since"] = now
+            elif (now - st["static_since"] >= _STATIC_CONFIRM_SEC) and not st["announced"]:
+                st["announced"] = True
+                st["engaged"] = True
+                if notice is None:         # one voice line per frame, closest first
+                    notice = {
+                        "class_name": st["class_name"],
+                        "position": st["position"],
+                    }
+
+    for stale in [t for t, st in tracks.items() if now - st.get("seen", 0) > _PRESENCE_TTL]:
+        del tracks[stale]
+
+    any_engaged = any(st.get("engaged") for st in tracks.values())
+    had = _ws_had_engaged.get(user_id, False)
+    danger_cleared = False
+    if any_engaged:
+        _ws_had_engaged[user_id] = True
+    elif had:
+        _ws_had_engaged[user_id] = False
+        danger_cleared = True              # everything we were watching is gone
+
+    return {"danger_cleared": danger_cleared, "static_notice": notice}
 
 
 def has_new_alert(user_id: str, objects: list[dict]) -> bool:

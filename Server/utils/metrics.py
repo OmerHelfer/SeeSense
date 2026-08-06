@@ -20,6 +20,10 @@ class PerformanceTracker:
     def __init__(self, window_size: int = 100):
         self.window_size = window_size
         self.latencies = deque(maxlen=window_size)
+        # Latency of frames that completed the WHOLE pipeline. Separate from
+        # `latencies` because server capacity must not be computed from frames
+        # that were rejected early — see get_recent_fps.
+        self.success_latencies = deque(maxlen=window_size)
         self.total_frames = 0
         self.success_count = 0
         self.failure_count = 0
@@ -83,6 +87,7 @@ class PerformanceTracker:
         perf_history.reset_history.)
         """
         self.latencies.clear()
+        self.success_latencies.clear()
         self.total_frames = 0
         self.success_count = 0
         self.failure_count = 0
@@ -130,6 +135,8 @@ class PerformanceTracker:
 
         if success:
             self.success_count += 1
+            # Capacity is derived from these only — see get_recent_fps.
+            self.success_latencies.append(latency_ms)
             self.throughput_events.append(time.time())
         else:
             self.failure_count += 1
@@ -305,10 +312,20 @@ class PerformanceTracker:
         return round(self.total_frames / uptime, 2)
 
     def get_recent_fps(self) -> float:
-        """FPS based on last N requests in the sliding window."""
-        if len(self.latencies) < 2:
+        """
+        Server CAPACITY: how many full frames per second this machine could do.
+
+        Deliberately measured over SUCCESSFUL frames only. A frame that fails a
+        quality check is abandoned a couple of ms after decode — it never runs
+        inference — so mixing those samples in dragged the average latency toward
+        zero and the reciprocal exploded: a burst of rejects reported ~351 FPS
+        (1000 / 2.85ms) from a server that actually does ~40. The number is meant
+        to answer "how fast can it process a frame", and a frame it refused to
+        process is not evidence about that.
+        """
+        if len(self.success_latencies) < 2:
             return 0.0
-        avg_latency_sec = (sum(self.latencies) / len(self.latencies)) / 1000
+        avg_latency_sec = (sum(self.success_latencies) / len(self.success_latencies)) / 1000
         if avg_latency_sec == 0:
             return 0.0
         return round(1.0 / avg_latency_sec, 2)
