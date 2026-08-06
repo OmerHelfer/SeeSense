@@ -41,7 +41,7 @@ MAX_INPUT_SIZE = 640
 # Named TARGET_FPS until 2026-08: it was a real capture-rate driver back when the
 # client sent one frame per timer tick, but once capture moved to polling faster
 # than the send rate, nothing enforced it and any value >= 20 behaved identically.
-MAX_FPS = 100
+MAX_FPS = 70
 
 # ==================== Inference ====================
 CONFIDENCE_THRESHOLD = 0.4

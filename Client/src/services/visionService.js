@@ -110,7 +110,11 @@ export class VisionStream {
     // 0 = uncapped until the server tells us otherwise. MAX_INFLIGHT bounds how
     // many frames may be outstanding, which is concurrency; this bounds the rate.
     this._maxFps            = 0;
-    this._lastSendAt        = -Infinity;
+    // Stamped when a capture is ADMITTED, not when the frame is finally sent.
+    // Those are ~10ms apart (the async JPEG encode sits between them), and
+    // measuring from the send time silently added that encode to every single
+    // period: at MAX_FPS=100 the real ceiling collapsed from 60 FPS to 40.
+    this._lastAdmitAt       = -Infinity;
 
     // ── Lost frames ──
     // A frame that was sent and never answered. Over TCP this should be ~0: data
@@ -206,18 +210,28 @@ export class VisionStream {
       this._sendTimes.shift();
       this._lostCount += 1;
     }
-    if (this._sendTimes.length >= Math.max(1, MAX_INFLIGHT)) return false;
+    return this._sendTimes.length < Math.max(1, MAX_INFLIGHT);
+  }
 
-    // Hard rate cap (server's MAX_FPS). Separate from the depth check above
-    // because depth bounds concurrency, not rate: on a fast link, 7 in flight is
-    // well over 100 FPS, and nothing else would stop it.
-    //
-    // The 0.9 tolerance is deliberate. setInterval fires with a few ms of jitter,
-    // and a strict compare against a fixed grid rejects the tick that lands a
-    // hair early — then waits a whole extra period, halving the real rate.
+  /**
+   * Admission gate for STARTING a frame: depth check plus the MAX_FPS rate cap.
+   * Atomic — it stamps the rate clock, so call it exactly once per capture and
+   * only when you will actually go on to produce the frame.
+   *
+   * Split from `canSend` because the two are asked at different moments. This one
+   * runs before the encode, to decide whether to spend it; `canSend` runs again
+   * after it, when the blob is ready, purely to re-check depth. Putting the rate
+   * cap in both would charge each frame the cap twice.
+   */
+  tryAdmit() {
+    if (!this.canSend) return false;
     if (this._maxFps > 0) {
-      const interval = 1000 / this._maxFps;
-      if (now - this._lastSendAt < interval * 0.9) return false;
+      const now = performance.now();
+      // The 0.9 tolerance is deliberate: the capture timer fires on a fixed grid
+      // with a few ms of jitter, and a strict compare rejects the tick landing a
+      // hair early — then waits a whole extra period, halving the real rate.
+      if (now - this._lastAdmitAt < (1000 / this._maxFps) * 0.9) return false;
+      this._lastAdmitAt = now;
     }
     return true;
   }
@@ -230,7 +244,6 @@ export class VisionStream {
   sendFrame(blob) {
     if (this.isOpen) {
       const now = performance.now();
-      this._lastSendAt = now;          // grid the MAX_FPS rate cap measures from
       // Enqueue send time for RTT pairing; cap the FIFO so a missing result
       // (no response for a frame) can't make it grow without bound.
       this._sendTimes.push(now);

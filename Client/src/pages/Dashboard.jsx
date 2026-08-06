@@ -419,8 +419,10 @@ const Dashboard = () => {
     const s = visionStreamRef.current;
     // Bounded-depth backpressure (MAX_INFLIGHT): allow a small number of frames
     // in flight so the pipe stays full and the server never starves — while the
-    // queue stays bounded (no runaway backlog).
-    return !!s && s.isOpen && s.canSend;
+    // queue stays bounded (no runaway backlog). tryAdmit also applies the MAX_FPS
+    // rate cap and stamps its clock HERE, before the encode — measuring the cap
+    // from the send instead would add the encode to every period.
+    return !!s && s.isOpen && s.tryAdmit();
   }, []);
 
   /* ── Frame capture → WebSocket send ──
