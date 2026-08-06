@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import CameraView      from '../components/CameraView';
 import useOrientation  from '../hooks/useOrientation';
 import { VisionStream, setActiveStream }          from '../services/visionService';
-import { haptic, announceDetections, speakMessage, dangerPhrase, HEBREW_NAMES } from '../services/feedbackService';
+import { haptic, announceDetections, speakMessage, speakStatus, dangerPhrase, HEBREW_NAMES } from '../services/feedbackService';
 import { emergencyAlert, quickFeedback } from '../services/userService';
 import { startHealthWatch, stopHealthWatch } from '../services/healthService';
 import { recordClientStage } from '../services/clientMetrics';
@@ -350,6 +350,11 @@ const Dashboard = () => {
             stream.setMaxFps(maxFps); // the hard rate cap the poll is gated by
           }
           if (msg.input_size) setInputSize(msg.input_size);
+          // Queued, so it lands AFTER "מתחבר" finishes rather than cutting it off.
+          // Ordering is guaranteed, not hoped for: the server sends this message
+          // before it enters its frame loop, and a WebSocket delivers in order —
+          // so no detection result can ever overtake it.
+          speakStatus('התחבר בהצלחה');
         },
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
       });
@@ -386,7 +391,15 @@ const Dashboard = () => {
 
     setIsScanning(next);
     haptic(next ? 'start' : 'stop');
-    speakMessage(next ? 'סריקה הופעלה' : 'סריקה הופסקה');
+    if (next) {
+      // Queued: "התחבר בהצלחה" follows this one from onConnected above, and the
+      // two only make sense spoken in that order.
+      speakStatus('סריקה הופעלה, מתחבר');
+    } else {
+      // priority → cancels whatever is queued. Stopping should cut off any
+      // pending connection chatter rather than let it talk over the stop.
+      speakMessage('סריקה הופסקה', { priority: true });
+    }
   };
 
   /* ── Capture gate ──

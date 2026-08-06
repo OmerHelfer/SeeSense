@@ -584,11 +584,11 @@ const AdminStatus = () => {
                      rate. */
                   <span className="admin-stat-sub-rows">
                     <span>
-                      בפועל: {data.fps?.server_actual ?? 0}
+                      שרת בפועל: {data.fps?.server_actual ?? 0}
                       {srvUtil != null && <> · ניצולת שרת: {srvUtil}%</>}
                     </span>
                     <span>
-                      לקוח: {data.fps?.client_actual ?? 0}
+                      לקוח בפועל: {data.fps?.client_actual ?? 0}
                       {cliUtil != null && <> · ניצולת לקוח: {cliUtil}%</>}
                     </span>
                   </span>
@@ -691,8 +691,8 @@ const AdminStatus = () => {
                     <span>{netLegs.unavailable}</span>
                   ) : (
                     <>
-                      <span>הלוך (העלאת הפריים) ~{netLegs.up}ms</span>
-                      <span>חזור (התוצאה) ~{netLegs.down}ms</span>
+                      <span>הלוך (העלאת הפריים) {netLegs.up}ms~</span>
+                      <span>חזור (התוצאה) {netLegs.down}ms~</span>
                     </>
                   )}
                   {netLegs.kb > 0 && <span>{netLegs.kb}KB לפריים</span>}

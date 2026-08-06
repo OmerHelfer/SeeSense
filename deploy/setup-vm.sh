@@ -154,6 +154,7 @@ Group=ssl-cert
 WorkingDirectory=$REPO_DIR/Server
 ExecStart=$(command -v python3) -m uvicorn main:app \\
   --host 0.0.0.0 --port 443 \\
+  --timeout-keep-alive 75 \\
   --ssl-keyfile /etc/letsencrypt/live/$DOMAIN/privkey.pem \\
   --ssl-certfile /etc/letsencrypt/live/$DOMAIN/fullchain.pem
 Restart=always

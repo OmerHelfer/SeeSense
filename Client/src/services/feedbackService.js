@@ -247,6 +247,31 @@ export const speakMessage = (text, { priority = false } = {}) => {
 };
 
 /**
+ * Speak a connection-lifecycle message WITHOUT cutting off what is already being
+ * said — it queues behind it instead.
+ *
+ * These messages come in ordered pairs that only make sense together
+ * ("מתחבר" → "התחבר בהצלחה", "החיבור אבד" → "החיבור חזר, ..."), and both existing
+ * mechanisms destroyed exactly that: the 3s cooldown in speakMessage DROPPED the
+ * second one (connecting takes ~300ms, well inside the window), and the cancel()
+ * inside _speak would have cut the first one off mid-word.
+ *
+ * The Web Speech API already queues utterances, so the fix is simply not to clear
+ * the queue. Alerts still go through _speak and still cancel — a danger warning
+ * outranking a status update is the correct priority, not a bug.
+ */
+export const speakStatus = (text) => {
+  if (!_audioEnabled() || !window.speechSynthesis || !text) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang   = 'he-IL';
+  u.volume = _fb.volume_intensity;
+  u.rate   = 1.1;
+  const voice = _pickVoice();
+  if (voice) u.voice = voice;
+  window.speechSynthesis.speak(u);   // deliberately no cancel()
+};
+
+/**
  * Speak a short sample so the user can hear the selected voice/volume.
  * Bypasses the cooldown but still respects the audio channel gate.
  */
