@@ -164,14 +164,3 @@ def letterbox_resize(img: np.ndarray, target_size: int) -> np.ndarray:
     canvas[top:top + new_h, left:left + new_w] = resized
 
     return canvas
-
-
-def is_dark_image(img: np.ndarray) -> bool:
-    """
-    Check if image is too dark (camera covered, night without light, etc.)
-    Converts to grayscale and checks mean intensity.
-    """
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    mean_intensity = np.mean(gray)
-    logger.debug(f"Image mean intensity: {mean_intensity:.1f}")
-    return mean_intensity < DARK_IMAGE_THRESHOLD

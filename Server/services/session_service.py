@@ -1,11 +1,9 @@
 import uuid
 import time
-import threading
 import logging
 from datetime import datetime, timedelta
 
 from core.database import get_db
-from services.user_service import add_detection_record
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +17,6 @@ def _sessions():
 # Updated by pause/resume endpoints and settings changes.
 # user_id → {"paused": bool, "settings": dict, "session_id": str}
 _user_cache = {}
-
-# Track previous danger state per user (for "danger cleared" detection)
-_ws_previous_danger_state = {}
 
 # Track last-announced alert level per (user_id, track_id) — for alert dedup.
 # user_id → {track_id: {"level": str, "seen": monotonic_seconds}}
@@ -53,7 +48,6 @@ def update_cache(user_id: str, **kwargs):
 def clear_cache(user_id: str):
     """Clear cache when user disconnects. Also stamps last_seen for admin views."""
     _user_cache.pop(user_id, None)
-    _ws_previous_danger_state.pop(user_id, None)
     _track_alert_state.pop(user_id, None)
     _ws_tracked.pop(user_id, None)
     _ws_had_engaged.pop(user_id, None)
@@ -139,40 +133,6 @@ def stop_session(session_id: str):
 def get_active_session(user_id: str) -> dict | None:
     """Return the active session document for a user, or None."""
     return _sessions().find_one({"user_id": user_id, "status": "active"})
-
-
-# ==================== Danger State Tracking ====================
-
-def check_danger_cleared(user_id: str, alert_level) -> bool:
-    """
-    Returns True only on a real red -> fully clear transition.
-
-    Takes the alert LEVEL, not a danger boolean. The boolean version treated
-    anything that was not "high" as clear, so dropping from red to YELLOW
-    announced "נתיב פנוי" while the user was still under a caution — the one
-    moment the announcement must not be made. The path is clear when nothing is
-    alerting at all, so the transition has to be high -> none, and a red that
-    decays through yellow stays silent until yellow itself resolves.
-
-    Accepts a bool as well, for any caller not yet migrated.
-    """
-    if isinstance(alert_level, bool):
-        level = "high" if alert_level else "none"
-    else:
-        level = alert_level or "none"
-
-    # Latched, not a previous-frame comparison. A red usually decays through
-    # yellow on its way out, and comparing only against the previous level meant
-    # that path announced nothing at all: red->yellow was suppressed (correctly),
-    # but by the time yellow->none arrived the "was red" fact had been overwritten.
-    # The flag stays raised through yellow and is only cleared by reaching "none".
-    if level == "high":
-        _ws_previous_danger_state[user_id] = True
-        return False
-    if level == "none" and _ws_previous_danger_state.get(user_id, False):
-        _ws_previous_danger_state[user_id] = False
-        return True
-    return False
 
 
 # ==================== Presence-based clearance ====================
@@ -323,14 +283,3 @@ def save_frame_count_background(session_id: str, frame_count: int):
     """
     from services import db_writer
     db_writer.note_frame_count(session_id, frame_count)
-
-
-def _save_frame_count(session_id: str, frame_count: int):
-    """Background frame count update — runs in a separate thread."""
-    try:
-        _sessions().update_one(
-            {"session_id": session_id},
-            {"$set": {"frame_count": frame_count}}
-        )
-    except Exception as e:
-        logger.error(f"Background frame count update failed: {e}")
