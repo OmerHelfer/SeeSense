@@ -13,7 +13,7 @@
  * This is the ONE knob to tune frame compression. It maps to the canvas JPEG
  * quality argument:  quality = 1 - COMPRESSION_PERCENT / 100.
  */
-export const COMPRESSION_PERCENT = 50;
+export const COMPRESSION_PERCENT = 90;
 
 /** Canvas JPEG quality (0..1) derived from COMPRESSION_PERCENT. */
 export const JPEG_QUALITY = Math.max(0, Math.min(1, 1 - COMPRESSION_PERCENT / 100));
@@ -32,7 +32,7 @@ export const JPEG_QUALITY = Math.max(0, Math.min(1, 1 - COMPRESSION_PERCENT / 10
  * and reports the value it actually used back on connect, so client + server
  * always agree on the coordinate space.
  */
-export const INPUT_SIZE = 640;
+export const INPUT_SIZE = 512;
 
 /**
  * Pipeline depth — how many frames may be "in flight" (sent, awaiting a result)
@@ -65,4 +65,4 @@ export const INPUT_SIZE = 640;
  * window is already oversampled). Read ניצולת שרת on /admin/status — while it is
  * under ~70% there is headroom; near 100% only latency is left to buy.
  */
-export const MAX_INFLIGHT = 6; // The best in terms of latency and fps.
+export const MAX_INFLIGHT = 2; // The best in terms of latency and fps.
