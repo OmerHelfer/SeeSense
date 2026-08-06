@@ -12,7 +12,9 @@ Motion analysis is deliberately conservative, because a false "approaching" turn
 straight into a red danger alert with voice + haptics. Every knob here errs
 towards silence:
   - timings are in SECONDS, not frames (frame counts were tuned at ~4 FPS and
-    silently became 10x tighter when TARGET_FPS went to 40);
+    silently became 10x tighter once the pipeline reached ~40; the frame rate is
+    set by the client's MAX_INFLIGHT and swings with the network, so nothing here
+    may ever be expressed in frames);
   - both ends of the motion window are median-filtered, so one noisy box can't
     decide the verdict;
   - `approaching` is latched with hysteresis + a confirmation streak, so it can't

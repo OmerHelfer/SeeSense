@@ -9,6 +9,10 @@ const MAX_ZOOM = 5;
 // actually uses (via the `inputSize` prop). YOLO bbox coords arrive in this space.
 const DEFAULT_FRAME_SIZE = 640;
 
+// How often to CHECK whether a frame may be sent — not the frame rate itself.
+// See the capture effect below: the rate comes from MAX_INFLIGHT alone.
+const CAPTURE_POLL_HZ = 120;
+
 // Box colour per danger level — mirrors the app's alert palette (red / amber / cyan HUD).
 const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
 
@@ -29,9 +33,6 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  *                              (async) JPEG encode; return false to skip a tick so we
  *                              don't waste CPU encoding frames the consumer will drop
  *                              (backpressure / not aligned). Defaults to always-on.
- *   captureFps     {number}    Target capture rate (frames/sec); driven by the
- *                              server's TARGET_FPS. Defaults to 4 until the server
- *                              reports its value on WebSocket connect.
  *   inputSize      {number}    Square capture/analysis size (px), driven by the
  *                              server's reported input size. bbox coords arrive
  *                              in this space. Defaults to 640 until reported.
@@ -40,7 +41,7 @@ const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
  *
  * Frame compression is fixed by JPEG_QUALITY in config/streamConfig.js.
  */
-const CameraView = ({ isActive, onFrameCapture, shouldCapture, captureFps = 4, inputSize = DEFAULT_FRAME_SIZE, detections = [] }) => {
+const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAULT_FRAME_SIZE, detections = [] }) => {
   const videoRef     = useRef(null);
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
@@ -178,32 +179,23 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, captureFps = 4, i
 
   useEffect(() => {
     if (!isActive) return;
-    // We POLL for a send opportunity faster than the target send rate. The actual
-    // send rate is gated by backpressure (shouldCapture → canSend / MAX_INFLIGHT),
-    // so ticks that can't send are near-free early-outs (no draw, no encode).
+    // This timer does NOT set the frame rate — it only asks, often, whether a
+    // frame may be sent. MAX_INFLIGHT is the only thing that decides the rate:
+    // shouldCapture returns false while the pipeline is full, and true the moment
+    // a reply frees a slot. Ticks that can't send early-out before the draw and
+    // the encode, so they cost one function call.
     //
-    // Why poll faster: the pipeline frees an in-flight slot the instant a *result*
-    // arrives, which doesn't align with a fixed timer. Polling only at the send
-    // rate means a freed slot waits up to a full interval before we fill it — dead
-    // time that caps throughput well below the pipeline-depth ceiling. Polling ~3×
-    // faster shrinks that wait, so effective FPS climbs toward depth/RTT at no
-    // latency cost. (Clamped so a bad config value can't break capture.)
+    // Hence a fixed, generous rate rather than one derived from a target. A slot
+    // frees when a *result* arrives, which never aligns with a timer; polling
+    // slowly means a freed slot sits idle until the next tick, and that dead time
+    // is pure lost throughput. At 120Hz the wait is at most ~8ms.
     //
-    // The poll must run FASTER than the cap, not at it. The send gate compares
-    // against a fixed interval, so polling at the same rate makes every decision
-    // land right on the boundary and timer jitter halves the real rate. 3x gives
-    // each send window several chances to fire. Ticks that can't send cost one
-    // function call, so over-polling is close to free.
-    //
-    // Previously clamped to 30 here, which silently made every configured value
-    // of 20 or more behave identically — the cap could not be raised OR lowered
-    // in that whole range. The rate is now enforced in visionService.canSend, so
-    // this only needs to poll fast enough to feed it.
-    const target  = Math.max(1, captureFps || 4);
-    const pollFps = Math.min(120, target * 3);
-    const id = setInterval(captureFrame, 1000 / pollFps);
+    // It is an upper bound on FPS (you cannot send more often than you look), but
+    // at 120 it sits far above what any server here can process, so in practice
+    // the pipeline depth always binds first.
+    const id = setInterval(captureFrame, 1000 / CAPTURE_POLL_HZ);
     return () => clearInterval(id);
-  }, [isActive, captureFrame, captureFps]);
+  }, [isActive, captureFrame]);
 
   // ── Detection overlay geometry ───────────────────
 

@@ -67,18 +67,14 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
 const fmtFps = (v) => (v == null ? '–' : Math.round(v));
 
 /** Health status indicator dot + live latency (ms, admin only) + label */
-const HealthDot = ({ status, rtt, user, fps, capFps }) => {
+const HealthDot = ({ status, rtt, user, fps }) => {
   if (status === 'idle') return null;
   const colors = { green: '#22c55e', yellow: '#eab308', orange: '#f97316', red: '#ef4444' };
   const labels = { green: 'חיבור יציב', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
   // Only admins level 1+ see the latency number; regular users see only the dot and label.
   const isAdmin = user?.admin_level >= 1;
   const rttText = rtt != null ? `${rtt} ms` : ' ';
-  // capFps is what the SERVER negotiated on connect (msg.max_fps), not what's
-  // achieved — this is the number to check when FPS is stuck on a suspiciously
-  // round value: if the cap itself is low, no client tuning (MAX_INFLIGHT,
-  // polling rate, anything) can raise the ceiling above it.
-  const showFps = isAdmin && (fps?.server != null || fps?.client != null || capFps != null);
+  const showFps = isAdmin && (fps?.server != null || fps?.client != null);
   return (
     <div className="health-dot-wrap">
       <div className="health-dot-row" title={labels[status] || rttText}>
@@ -106,11 +102,10 @@ const HealthDot = ({ status, rtt, user, fps, capFps }) => {
           visual order then comes from flex-direction, so mixing Hebrew labels
           with Latin digits can't reorder them the way bidi does to plain text. */}
       {showFps && (
-        <div className="health-fps" title="פריימים לשנייה — שרת מול לקוח מול התקרה שהשרת קבע">
+        <div className="health-fps" title="פריימים לשנייה — שרת מול לקוח">
           <span className="health-fps-unit">FPS</span>
           <span>שרת <bdi>{fmtFps(fps.server)}</bdi></span>
           <span>לקוח <bdi>{fmtFps(fps.client)}</bdi></span>
-          {capFps != null && <span>תקרה <bdi>{fmtFps(capFps)}</bdi></span>}
         </div>
       )}
     </div>
@@ -131,10 +126,6 @@ const Dashboard = () => {
   const [detections, setDetections]       = useState([]);       // per-frame boxes for the overlay
   const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  // null = not yet told by the server; CameraView falls back to 4 on its own.
-  // Kept null (not a fake default) so the admin FPS readout can tell "not
-  // connected yet" apart from "server really capped us at a low number".
-  const [captureFps, setCaptureFps]       = useState(null);
   const [inputSize, setInputSize]         = useState(640);      // driven by server input_size on connect
   const [liveFps, setLiveFps]             = useState({ server: null, client: null }); // admin readout
 
@@ -349,14 +340,7 @@ const Dashboard = () => {
       const stream = new VisionStream({
         onResult:    handleResult,
         onConnected: (msg) => {
-          // max_fps is the current name; target_fps is the same value under the
-          // old one, kept so a cached bundle still gets a sane rate.
-          const maxFps = msg.max_fps ?? msg.target_fps;
-          console.info('[SeeSense] WS connected, session:', msg.session_id, '| max_fps:', maxFps, '| input_size:', msg.input_size);
-          if (maxFps) {
-            setCaptureFps(maxFps);   // how fast to poll for a send opportunity
-            stream.setMaxFps(maxFps); // the hard rate cap the poll is gated by
-          }
+          console.info('[SeeSense] WS connected, session:', msg.session_id, '| input_size:', msg.input_size);
           if (msg.input_size) setInputSize(msg.input_size);
           // Queued, so it lands AFTER "מתחבר" finishes rather than cutting it off.
           // Ordering is guaranteed, not hoped for: the server sends this message
@@ -392,7 +376,6 @@ const Dashboard = () => {
       setHealthStatus('idle');
       setHealthRtt(null);
       setLiveFps({ server: null, client: null });
-      setCaptureFps(null);
       setQuickReportState('idle');
       clearTimeout(quickReportTimerRef.current);
       stopHealthWatch();
@@ -417,12 +400,10 @@ const Dashboard = () => {
   const canCaptureFrame = useCallback(() => {
     if (!isScanningRef.current || !isAlignedRef.current) return false;
     const s = visionStreamRef.current;
-    // Bounded-depth backpressure (MAX_INFLIGHT): allow a small number of frames
-    // in flight so the pipe stays full and the server never starves — while the
-    // queue stays bounded (no runaway backlog). tryAdmit also applies the MAX_FPS
-    // rate cap and stamps its clock HERE, before the encode — measuring the cap
-    // from the send instead would add the encode to every period.
-    return !!s && s.isOpen && s.tryAdmit();
+    // Bounded-depth backpressure (MAX_INFLIGHT) — the ONLY thing governing the
+    // send rate. Allow that many frames in flight so the pipe stays full and the
+    // server never starves, while the queue stays bounded (no runaway backlog).
+    return !!s && s.isOpen && s.canSend;
   }, []);
 
   /* ── Frame capture → WebSocket send ──
@@ -514,7 +495,7 @@ const Dashboard = () => {
       <header className="dashboard-header">
         <span className="header-brand">SEE<span>SENSE</span></span>
         <div className="header-actions">
-          <HealthDot status={healthStatus} rtt={healthRtt} user={user} fps={liveFps} capFps={captureFps} />
+          <HealthDot status={healthStatus} rtt={healthRtt} user={user} fps={liveFps} />
           <button className="icon-btn" onClick={() => navigate('/settings')} aria-label="הגדרות">
             <Settings size={20} />
           </button>
@@ -530,7 +511,7 @@ const Dashboard = () => {
         isScanning ? 'scanning' : '',
         alertLevel === 'high' ? 'danger-border' : '',
       ].filter(Boolean).join(' ')}>
-        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} shouldCapture={canCaptureFrame} captureFps={captureFps} inputSize={inputSize} detections={detections} />
+        <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} shouldCapture={canCaptureFrame} inputSize={inputSize} detections={detections} />
 
         {/* Non-interactive HUD elements */}
         <div className="hud-overlay">

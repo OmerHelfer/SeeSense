@@ -21,27 +21,18 @@ MIN_INPUT_SIZE = 160
 MAX_INPUT_SIZE = 640
 
 # ==================== Real-time / Streaming ====================
-# HARD CEILING on the client's send rate, in frames per second.
+# There is deliberately NO frame-rate setting here.
 #
-# A cap, not a target: nothing aims for this number. The real rate is set by the
-# client's bounded-depth backpressure (MAX_INFLIGHT / round-trip time) and by how
-# fast this server processes a frame. This only clips the top of that.
+# The send rate is governed entirely by MAX_INFLIGHT (Client/src/config/
+# streamConfig.js): the client keeps that many frames in flight and sends the
+# next one the moment a reply frees a slot, so the rate settles at whatever the
+# network and this server can actually sustain.
 #
-# It is NOT redundant with MAX_INFLIGHT, because in-flight depth bounds
-# CONCURRENCY, not RATE — on a fast link, depth 7 can mean well over 100 FPS.
-# Only this number bounds the rate itself, which is what protects:
-#   - phone battery and mobile data (capture + JPEG encode + upload is not free)
-#   - server cost (billed per CPU-second)
-#   - fairness (one client must not be able to consume the whole server)
-#
-# Sent to the client on connect and enforced THERE (visionService `canSend`).
-# Enforcing it server-side instead would be too late: by the time a frame arrives,
-# the battery, airtime and upload bandwidth have already been spent on it.
-#
-# Named TARGET_FPS until 2026-08: it was a real capture-rate driver back when the
-# client sent one frame per timer tick, but once capture moved to polling faster
-# than the send rate, nothing enforced it and any value >= 20 behaved identically.
-MAX_FPS = 70
+# There used to be a TARGET_FPS / MAX_FPS here, sent to the client on connect.
+# Removed 2026-08: for most of its life nothing enforced it (any value >= 20
+# behaved identically), and once it was given teeth it became a second,
+# interacting limiter that held the real rate below what the pipeline could do.
+# One knob for one thing.
 
 # ==================== Inference ====================
 CONFIDENCE_THRESHOLD = 0.4

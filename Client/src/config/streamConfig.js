@@ -51,7 +51,7 @@ export const INPUT_SIZE = 640;
  * At depth 4 we're hitting the ceiling (~23.5 FPS). For a blind pedestrian safety
  * app, 22 FPS is plenty smooth, and 216ms total lag = 3m at 50km/h reaction
  * distance — acceptable for urban use. Bounded queue (no fire-and-forget backlog); 
- * also capped by server TARGET_FPS.
+ * This is the ONLY control on the send rate — there is no server-side FPS setting.
  */
 
-export const MAX_INFLIGHT = 7;
+export const MAX_INFLIGHT = 8;

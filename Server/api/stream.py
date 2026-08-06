@@ -6,7 +6,7 @@ import asyncio
 import threading
 
 from core.auth import verify_token
-from core.config import MODEL_MODE, MAX_FPS, TARGET_SIZE, MIN_INPUT_SIZE, MAX_INPUT_SIZE
+from core.config import MODEL_MODE, TARGET_SIZE, MIN_INPUT_SIZE, MAX_INPUT_SIZE
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
 from services import db_writer
@@ -138,12 +138,10 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
     await websocket.send_json({
         "type": "connected",
         "session_id": session_id,
-        "max_fps": MAX_FPS,
-        # Same value under the old name, for one deploy cycle. Browsers cache the
-        # client bundle, so a phone still running yesterday's build would read no
-        # target_fps, fall back to its default of 4, and quietly stream at a
-        # crawl. Remove once no stale bundles can be in the wild.
-        "target_fps": MAX_FPS,
+        # No frame-rate field: the client's MAX_INFLIGHT is the only thing that
+        # governs the rate now. A cached older bundle simply finds no target_fps
+        # and uses its own default, which is harmless — that path only ever set
+        # a capture-poll rate it no longer has.
         "input_size": frame_size,
         "message": "Stream session active"
     })

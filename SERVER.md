@@ -121,7 +121,9 @@ Everything tunable lives here, grouped by concern.
 |---|---|---|
 | `TARGET_SIZE` | 640 | Fallback square input size when the client sends none |
 | `MIN_INPUT_SIZE` / `MAX_INPUT_SIZE` | 160 / 640 | Clamp for the client-requested `input_size` |
-| `TARGET_FPS` | 40 | Capture-rate **ceiling** sent to the client on connect. The real rate is self-throttled by client-side backpressure to roughly `depth / RTT`. |
+
+There is **no frame-rate constant**. `TARGET_FPS` / `MAX_FPS` were removed in 2026-08: the send rate
+is governed entirely by the client's `MAX_INFLIGHT`, which self-throttles to roughly `depth / RTT`.
 
 ### Inference
 | Constant | Value |
@@ -288,11 +290,11 @@ ws://host/stream/ws?token=<JWT>&input_size=512
    at connect time and there are **zero settings reads per frame**.
 5. Server sends:
    ```json
-   { "type": "connected", "session_id": "...", "target_fps": 40,
+   { "type": "connected", "session_id": "...",
      "input_size": 512, "message": "Stream session active" }
    ```
-   The client uses `target_fps` and `input_size` to configure its own capture loop — one number
-   changed on the server retunes the whole pipeline.
+   The client uses `input_size` to size its capture canvas and to interpret bbox coordinates.
+   No frame-rate is negotiated — the client's `MAX_INFLIGHT` alone governs the rate.
 
 ### Message types
 

@@ -222,7 +222,7 @@ With `INPUT_SIZE=512` (~41 ms/frame server-side) and a measured ~131 ms network 
 The reasoning recorded in the file: for a blind-pedestrian safety app 22 FPS is plenty smooth,
 and 216 ms of total lag ≈ 3 m of reaction distance at 50 km/h — acceptable for urban use. It is a
 **bounded** queue, not fire-and-forget, so a slow server can never build an unbounded backlog.
-The effective rate is additionally capped by the server's `TARGET_FPS`.
+`MAX_INFLIGHT` is the **only** control on the send rate — there is no server-side FPS setting.
 
 ---
 
@@ -281,7 +281,7 @@ socket down on logout or session expiry without holding a React ref.
 ## 9. Camera and capture (`components/CameraView.jsx`) ⭐
 
 ### Props
-`isActive`, `onFrameCapture(blob)`, `shouldCapture()`, `captureFps`, `inputSize`, `detections`.
+`isActive`, `onFrameCapture(blob)`, `shouldCapture()`, `inputSize`, `detections`.
 
 ### Lifecycle
 `getUserMedia({ video: { facingMode: 'environment', width: {ideal:1280}, height: {ideal:720} }, audio: false })`.
@@ -307,17 +307,19 @@ fallback. `touchAction: 'none'` stops the browser's own scroll/zoom from interfe
    used rather than `toDataURL` because it is async (doesn't block the main thread) and hands back
    a Blob that goes straight onto the WebSocket with no base64 → bytes copy.
 
-### Polling faster than the send rate
+### Polling for a send opportunity
 ```js
-const target  = Math.max(1, Math.min(30, captureFps || 4));
-const pollFps = Math.min(60, target * 3);
-setInterval(captureFrame, 1000 / pollFps);
+const CAPTURE_POLL_HZ = 120;
+setInterval(captureFrame, 1000 / CAPTURE_POLL_HZ);
 ```
-An in-flight slot frees the instant a *result* arrives, which never aligns with a fixed timer. If
-we only polled at the send rate, a freed slot would idle for up to a full interval — dead time
-that caps throughput well below the pipeline-depth ceiling. Polling ~3× faster shrinks that wait
-so effective FPS climbs toward `depth/RTT`, at no latency cost, and the extra ticks are near-free
+This timer does **not** set the frame rate — `MAX_INFLIGHT` does. It only asks, often, whether a
+frame may be sent. An in-flight slot frees the instant a *result* arrives, which never aligns with
+a fixed timer; polling slowly means a freed slot idles until the next tick, and that dead time is
+lost throughput. At 120 Hz the wait is at most ~8ms, and ticks that can't send are near-free
 because of the early-out above.
+
+It is technically an upper bound (you can't send more often than you look), but 120 sits far above
+what any server here can process, so pipeline depth always binds first.
 
 ### Detection overlay geometry
 The hardest bit of maths in the client: mapping a bbox in `inputSize × inputSize` space onto
@@ -365,8 +367,7 @@ Returns `{ beta, gamma, isAligned, permissionState, requestPermission }`.
 
 The main screen. State: `isScanning`, `alertLevel`, `healthStatus`, `healthRtt`, `detectionDir`,
 `detectedClass`, `detections`, `quickReportState`, `feedbackState`, `sosState`,
-`showLogoutConfirm`, plus `captureFps` / `inputSize` (both driven by the server's `connected`
-message).
+`showLogoutConfirm`, plus `inputSize` (driven by the server's `connected` message).
 
 ### Start / stop scanning (`toggleScan`)
 Starting: `await requestPermission()` (iOS gyro) → construct `VisionStream` with the result
