@@ -196,8 +196,7 @@
    };
    
    /**
-    * GET /users/feedback?status=pending — list pending (un-reviewed) feedbacks.
-    * NOTE: Requires a backend GET /users/feedback endpoint (not yet in plan).
+    * GET /users/feedback/pending — list pending (un-reviewed) feedbacks.
     */
    export const getPendingFeedback = async () => {
      const { data } = await apiClient.get('/users/feedback/pending');

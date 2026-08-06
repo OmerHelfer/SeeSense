@@ -438,24 +438,40 @@ Auto-incrementing `track_id`, class, confidence, bbox, lifecycle counters (`age`
    the ByteTrack insight: it stops a track dying just because the object was briefly occluded
    and its confidence dipped.
 4. Unmatched high-confidence detections spawn new tracks; tracks unseen for more than
-   `MAX_AGE = 10` frames are removed.
+   `MAX_AGE_SECONDS = 1.2` are removed.
 5. Every detection is returned enriched with its track's `motion` block.
 
-### Windowed motion analysis (`Track.get_motion`)
-Compares the current frame against **`MOTION_WINDOW = 4` frames back**, not the previous frame.
-YOLO boxes jitter a few pixels every frame even on a perfectly static object; frame-to-frame
-comparison made `approaching` flicker on and off and spammed alerts. A short window smooths the
-jitter out: a genuinely static object reads `static`, and only a sustained size increase reads
-`approaching`.
+### Trend-based motion analysis (`Track.get_motion` → `_size_trend`)
+
+**Every timing here is a DURATION, never a frame count.** Frame counts were tuned at ~4 FPS and
+silently became 10× tighter once the pipeline reached 40; the frame rate varies with the network,
+so a frame-count window would mean something different on every connection.
+
+Fits a **least-squares line through `sqrt(area)`** over `APPROACH_WINDOW_SEC = 0.8` (needs at least
+`APPROACH_MIN_SAMPLES = 5` samples). `sqrt(area)` because apparent size ∝ 1/distance, which makes
+the trend linear for constant closing speed — raw area curves, and a curved signal fits a line badly
+exactly when the object is nearest.
+
+The old magnitude test ("did the box grow ≥22% between two moments") was **distance-dependent**: the
+same walking speed grows the box 13% at 10m but 56% at 3m, so it was blind to anything approaching
+from a distance. A measured case: a dog approached continuously for **5.2s** before it fired.
 
 | Output | Rule |
 |---|---|
-| `approaching` | area ratio ≥ `APPROACH_RATIO` (1.10) |
-| `speed = "fast"` | area ratio ≥ `RAPID_APPROACH_RATIO` (1.25) |
-| `speed = "moderate"` | area ratio ≥ 1.10 |
-| `speed = "moving_away"` | area ratio ≤ 1/1.10 |
-| `speed = "static"` | otherwise |
+| `approaching` latches ON | `growth ≥ ENTER_GROWTH` (0.045) **and** `snr ≥ ENTER_SNR` (2.2), held for `CONFIRM_SEC` (0.30s) |
+| `approaching` latches OFF | `growth < EXIT_GROWTH` (0.015) **or** `snr < EXIT_SNR` (1.0), held for `RELEASE_SEC` (0.25s) |
+| `speed = "fast"` | growth rate ≥ `1 / RAPID_TIME_TO_CONTACT_SEC` — i.e. **time-to-contact under 3s** |
 | `direction` | horizontal centre shift > `LATERAL_THRESHOLD` (15 px) → `right`/`left`, else `center` |
+
+- **`snr` = `|change| / resid_rms`** — jitter is large but *uncorrelated*, so it inflates the
+  residual without tilting the line, while a slow steady approach tilts it consistently. This is
+  what lets a slow approach be seen even when each single frame moves less than the noise.
+- Hysteresis + confirm/release timers stop the verdict chattering across a single threshold.
+- An unconfirmed track (`MIN_HITS = 3`) or an under-sampled window reports no motion at all.
+- Reported boxes are EMA-smoothed (`BBOX_SMOOTHING = 0.4`), which steadies both the distance class
+  and the client overlay — but also makes consecutive samples **correlated**, which matters if
+  anyone tries to make the confidence gate sample-count-aware (that was attempted and rejected;
+  the measured result is in the knowledge doc §10u).
 
 ---
 

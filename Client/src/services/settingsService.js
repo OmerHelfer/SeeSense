@@ -1,8 +1,10 @@
 /* ═══════════════════════════════════════════════════
    settingsService.js
    AI detection settings API calls.
-   All settings endpoints require user_id as a
-   query parameter — passed via Axios `params`.
+   The server identifies the user from the JWT (via the
+   Authorization header apiClient attaches); user_id is
+   still sent as an Axios `params` query param but the
+   server does not require or read it.
    ═══════════════════════════════════════════════════ */
 
 import apiClient from '../api/client';
