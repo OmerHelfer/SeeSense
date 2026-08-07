@@ -45,7 +45,6 @@ async def update_settings(settings: dict = {}, current_user: dict = Depends(veri
         if key not in valid_keys:
             raise HTTPException(status_code=400, detail=f"Invalid setting: {key}")
 
-        # Validate high_risk_classes
         if key == "high_risk_classes":
             if not isinstance(value, list):
                 raise HTTPException(status_code=400, detail="high_risk_classes must be a list")
@@ -53,27 +52,22 @@ async def update_settings(settings: dict = {}, current_user: dict = Depends(veri
             if invalid:
                 raise HTTPException(status_code=400, detail=f"Invalid classes: {invalid}. Choose from: {sorted(ALL_CLASSES)}")
 
-        # Validate detection_sensitivity
         if key == "detection_sensitivity":
             if value not in ("low", "medium", "high"):
                 raise HTTPException(status_code=400, detail=f"Invalid sensitivity: {value}. Choose from: low, medium, high")
 
-        # Validate alert_type
         if key == "alert_type":
             if value not in ("audio", "haptic", "both"):
                 raise HTTPException(status_code=400, detail=f"Invalid alert_type: {value}. Choose from: audio, haptic, both")
 
-        # Validate voice_gender
         if key == "voice_gender":
             if value not in ("female", "male", "default"):
                 raise HTTPException(status_code=400, detail=f"Invalid voice_gender: {value}. Choose from: female, male, default")
 
-        # Validate intensity values
         if key in ("volume_intensity", "vibration_intensity"):
             if not isinstance(value, (int, float)) or not (0.0 <= value <= 1.0):
                 raise HTTPException(status_code=400, detail=f"{key} must be a number between 0.0 and 1.0")
 
-    # Upsert — create if not exists, update if exists
     _settings_collection().update_one(
         {"user_id": user_id},
         {"$set": {**settings, "user_id": user_id}},
@@ -81,7 +75,6 @@ async def update_settings(settings: dict = {}, current_user: dict = Depends(veri
     )
 
     updated = get_user_settings(user_id)
-    # Update cache so WebSocket uses new settings instantly
     update_cache(user_id, settings=updated)
     logger.info(f"Updated settings for user: {user_id} → {settings}")
     return {"status": "success", "user_id": user_id, "settings": updated}

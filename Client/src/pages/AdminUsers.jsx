@@ -49,19 +49,17 @@ const AdminUsers = () => {
   const [actorLevel, setActorLevel] = useState(0);
 
   const [email, setEmail]     = useState('');
-  const [target, setTarget]   = useState(null);   // the looked-up user
+  const [target, setTarget]   = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
 
-  // Actions state
   const [pwValue, setPwValue] = useState('');
-  const [actionMsg, setActionMsg] = useState('');   // success toast text
+  const [actionMsg, setActionMsg] = useState('');
   const [busy, setBusy]       = useState(false);
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({});
-  const [confirm, setConfirm] = useState(null);     // { type: 'delete'|'level', level? }
+  const [confirm, setConfirm] = useState(null);
 
-  // Online-admins modal
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [admins, setAdmins] = useState([]);
   const [adminsLoading, setAdminsLoading] = useState(false);
@@ -71,12 +69,11 @@ const AdminUsers = () => {
       const ov = await getOverview();
       setOverview(ov);
       setActorLevel(ov.actor_level ?? 0);
-    } catch { /* ignore — page still usable for lookup */ }
+    } catch {  }
   }, []);
 
   useEffect(() => { loadOverview(); }, [loadOverview]);
 
-  // Load the admin list whenever the modal opens (fresh presence each time).
   useEffect(() => {
     if (!showAdminModal) return;
     setAdminsLoading(true);
@@ -86,8 +83,6 @@ const AdminUsers = () => {
       .finally(() => setAdminsLoading(false));
   }, [showAdminModal]);
 
-  // Sort: online admins first (highest level on top), then offline admins
-  // (grayed, most-recently-seen first).
   const sortedAdmins = useMemo(() => {
     const ts = (a) => (a.last_seen ? new Date(a.last_seen).getTime() : 0);
     const online = admins
@@ -101,8 +96,6 @@ const AdminUsers = () => {
 
   const flash = (msg) => { setActionMsg(msg); setTimeout(() => setActionMsg(''), 2500); };
 
-  // Core lookup — shared by the email search box and by clicking an admin in the
-  // modal (both just resolve an email to the full admin-view of that user).
   const lookupUser = useCallback(async (emailToSearch) => {
     const q = (emailToSearch ?? '').trim();
     if (!q) return;
@@ -123,8 +116,6 @@ const AdminUsers = () => {
 
   const doSearch = (e) => { e?.preventDefault(); lookupUser(email); };
 
-  // Clicking an admin in the modal opens their full detail, exactly as an email
-  // search would: close the modal, fill the search box, and load the profile.
   const openAdminDetail = (a) => {
     setShowAdminModal(false);
     setEmail(a.email);
@@ -132,11 +123,10 @@ const AdminUsers = () => {
   };
 
   const refreshTarget = async () => {
-    try { const { user } = await getUserByEmail(target.email); setTarget(user); } catch { /* noop */ }
+    try { const { user } = await getUserByEmail(target.email); setTarget(user); } catch {  }
     loadOverview();
   };
 
-  // Permission: level-1 admins can only manage regular (level 0) users.
   const canManage = target && (actorLevel >= 2 || target.admin_level === 0);
   const isSuper   = actorLevel >= 2;
   const isSelf    = target && (target.user_id === (me?.id ?? me?.user_id));
@@ -192,7 +182,6 @@ const AdminUsers = () => {
       </header>
 
       <div className="inner-page-body">
-        {/* Stats */}
         {overview && (
           <div className="admin-stats-grid" style={{ marginBottom: 16 }}>
             <StatCard icon={Users}   label="סה״כ משתמשים" value={overview.total}   color="#22d3ee" />
@@ -212,7 +201,6 @@ const AdminUsers = () => {
           </div>
         )}
 
-        {/* Search */}
         <form className="au-search" onSubmit={doSearch}>
           <input
             type="email"
@@ -227,7 +215,6 @@ const AdminUsers = () => {
         {loading && <div className="admin-loading">מחפש...</div>}
         {error && !confirm && <div className="error-banner" style={{ marginBottom: 12 }}>{error}</div>}
 
-        {/* Success toast */}
         <AnimatePresence>
           {actionMsg && (
             <motion.div className="au-toast"
@@ -237,10 +224,8 @@ const AdminUsers = () => {
           )}
         </AnimatePresence>
 
-        {/* User detail */}
         {target && (
           <div className="au-card">
-            {/* Header: name + presence + level */}
             <div className="au-card-head">
               <div>
                 <div className="au-name">{target.name}</div>
@@ -257,7 +242,6 @@ const AdminUsers = () => {
               </div>
             </div>
 
-            {/* Data counts */}
             <div className="au-counts">
               {[
                 ['זיהויים', target.data_counts?.detections],
@@ -273,8 +257,6 @@ const AdminUsers = () => {
               ))}
             </div>
 
-            {/* Jump straight to this user's performance report. The email is passed
-                as a query param so the link is shareable and survives a refresh. */}
             <button
               className="au-perf-btn"
               onClick={() => navigate(`/admin/status?email=${encodeURIComponent(target.email)}`)}
@@ -283,7 +265,6 @@ const AdminUsers = () => {
               הצג ביצועים של משתמש זה
             </button>
 
-            {/* Info / edit */}
             <div className="au-section">
               <div className="au-section-head">
                 <span>פרטים</span>
@@ -322,7 +303,6 @@ const AdminUsers = () => {
               )}
             </div>
 
-            {/* Emergency contacts (full list — full detail, same as searching by email) */}
             <div className="au-section">
               <div className="au-section-head">
                 <span><LifeBuoy size={14} /> אנשי קשר לחירום ({target.emergency_contacts?.length ?? 0})</span>
@@ -352,7 +332,6 @@ const AdminUsers = () => {
               )}
             </div>
 
-            {/* Change password */}
             {canManage && (
               <div className="au-section">
                 <div className="au-section-head"><span><KeyRound size={14} /> שינוי סיסמה</span></div>
@@ -363,7 +342,6 @@ const AdminUsers = () => {
               </div>
             )}
 
-            {/* Admin level (super admin only) */}
             {isSuper && (
               <div className="au-section">
                 <div className="au-section-head"><span><ShieldCheck size={14} /> הרשאות אדמין</span></div>
@@ -383,7 +361,6 @@ const AdminUsers = () => {
               </div>
             )}
 
-            {/* Delete (super admin only, not self) */}
             {isSuper && !isSelf && (
               <button className="au-delete-btn" onClick={() => setConfirm({ type: 'delete' })}>
                 <Trash2 size={16} /> מחק משתמש לצמיתות
@@ -399,7 +376,6 @@ const AdminUsers = () => {
         )}
       </div>
 
-      {/* Confirmation modal (centered) */}
       <AnimatePresence>
         {confirm && (
           <motion.div className="admin-modal-backdrop"
@@ -437,7 +413,6 @@ const AdminUsers = () => {
         )}
       </AnimatePresence>
 
-      {/* Online-admins modal (centered) */}
       <AnimatePresence>
         {showAdminModal && (
           <motion.div className="admin-modal-backdrop"

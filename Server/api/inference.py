@@ -31,7 +31,7 @@ async def pause_detection(current_user: dict = Depends(verify_token)):
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=400, detail="No active session")
-    update_cache(user_id, paused=True)  # Update cache so WebSocket sees it instantly
+    update_cache(user_id, paused=True)
     return {"status": "success", "detection": "paused"}
 
 
@@ -46,5 +46,5 @@ async def resume_detection(current_user: dict = Depends(verify_token)):
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=400, detail="No active session")
-    update_cache(user_id, paused=False)  # Update cache so WebSocket sees it instantly
+    update_cache(user_id, paused=False)
     return {"status": "success", "detection": "active"}

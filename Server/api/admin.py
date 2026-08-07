@@ -45,7 +45,6 @@ def _send_email_background(func, *args):
     threading.Thread(target=func, args=args, daemon=True).start()
 
 
-# ==================== Schemas ====================
 
 class SetPasswordRequest(BaseModel):
     email: EmailStr
@@ -79,7 +78,6 @@ class AssignFeedbackRequest(BaseModel):
     assignee_id: str
 
 
-# ==================== Helpers ====================
 
 def _load_target(email: str) -> dict:
     target = get_user_admin_view(email)
@@ -97,7 +95,6 @@ def _require_can_manage(actor: dict, target: dict):
         )
 
 
-# ==================== Endpoints ====================
 
 @router.get("/overview")
 async def overview(current_user: dict = Depends(verify_admin)):
@@ -172,7 +169,6 @@ async def delete_user_endpoint(req: DeleteUserRequest, current_user: dict = Depe
     return {"status": "success", "message": f"User {req.email} deleted"}
 
 
-# ==================== Feedback management ====================
 
 @router.get("/feedback")
 async def feedback_list(
@@ -214,7 +210,6 @@ async def feedback_resolve(feedback_id: str, req: ResolveFeedbackRequest,
         raise HTTPException(status_code=400, detail=str(e))
     if not result:
         raise HTTPException(status_code=404, detail="Feedback not found")
-    # Let the user know their feedback was handled (in-app badge + email).
     if result.get("user_email"):
         _send_email_background(send_feedback_response_email, result["user_email"], result.get("user_name") or "")
     return {"status": "success", "feedback": result}

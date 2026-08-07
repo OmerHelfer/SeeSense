@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# ============================================================================
-# One-time setup for a GCP Compute Engine VM (Deep Learning image, T4 GPU).
-#
-# Brings up the whole app as a single HTTPS service:
-#   - CUDA build of PyTorch (the plain PyPI wheel is CPU-only — that mistake
-#     silently costs ~10x on every frame, so it is installed explicitly first)
-#   - React build served by FastAPI itself, so UI + API + WebSocket share one
-#     origin, one port and one certificate
-#   - A real Let's Encrypt certificate via nip.io, so any device trusts it with
-#     no per-device setup
-#   - systemd, so the server survives closing the SSH tab and restarts on boot
-#
-# Usage (on the VM):
-#   cd ~/SeeSense && bash deploy/setup-vm.sh
-# ============================================================================
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,11 +6,6 @@ cd "$REPO_DIR"
 
 echo "==> Repo: $REPO_DIR"
 
-# ---------------------------------------------------------------------------
-# 0. Secrets. Server/.env is gitignored, so a fresh clone never has one — and
-#    without it the app silently falls back to a localhost Mongo that is not
-#    running here. Fail now, with instructions, rather than at the first login.
-# ---------------------------------------------------------------------------
 if [ ! -f Server/.env ]; then
   cat <<'MISSING'
 
@@ -49,33 +29,17 @@ MISSING
   exit 1
 fi
 
-# ---------------------------------------------------------------------------
-# 1. Confirm the GPU is actually visible before installing anything for it.
-# ---------------------------------------------------------------------------
 echo "==> Checking GPU"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
-# ---------------------------------------------------------------------------
-# 2. Derive the public hostname from the VM's external IP.
-#    nip.io resolves <dashed-ip>.nip.io straight back to that IP, which gives us
-#    a real hostname for free — certificate authorities will not issue for a
-#    bare IP address, so this is what makes trusted HTTPS possible without
-#    buying a domain.
-# ---------------------------------------------------------------------------
 EXTERNAL_IP="$(curl -s -H 'Metadata-Flavor: Google' \
   http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip)"
 DOMAIN="${EXTERNAL_IP//./-}.nip.io"
 echo "==> External IP: $EXTERNAL_IP"
 echo "==> Domain:      $DOMAIN"
 
-# ---------------------------------------------------------------------------
-# 3. System packages: Node (for the frontend build) and certbot (for TLS).
-# ---------------------------------------------------------------------------
 echo "==> Installing system packages"
 sudo apt-get update -qq
-# libgl1 + libglib2.0-0: opencv-python needs these at import time (same
-# packages Server/Dockerfile already installs for Railway) — without them,
-# `import cv2` fails with "libGL.so.1: cannot open shared object file".
 sudo apt-get install -y -qq certbot python3-pip libgl1 libglib2.0-0
 
 if ! command -v node >/dev/null 2>&1; then
@@ -85,15 +49,7 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 echo "    node $(node --version), npm $(npm --version)"
 
-# ---------------------------------------------------------------------------
-# 4. Python deps. Order matters: the CUDA build of torch goes in FIRST, so the
-#    unpinned `torch` in requirements.txt is already satisfied and pip does not
-#    replace it with the CPU-only wheel from PyPI.
-# ---------------------------------------------------------------------------
 echo "==> Installing PyTorch (CUDA build)"
-# --break-system-packages: Ubuntu 24.04 blocks system-wide pip by default
-# (PEP 668). Safe here — this VM exists only to run this app, nothing else
-# depends on the system Python.
 python3 -m pip install --quiet --break-system-packages torch==2.5.0 torchvision==0.20.0 \
   --index-url https://download.pytorch.org/whl/cu121
 
@@ -103,10 +59,6 @@ python3 -m pip install --quiet --break-system-packages -r Server/requirements.tx
 echo "==> Verifying CUDA is available to PyTorch"
 python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA NOT available — torch is the CPU build'; print(f'    OK: torch {torch.__version__} on {torch.cuda.get_device_name(0)}')"
 
-# ---------------------------------------------------------------------------
-# 5. Frontend build. --mode gcp bakes in no API host, so the bundle calls
-#    whatever origin serves it (see Client/.env.gcp).
-# ---------------------------------------------------------------------------
 echo "==> Building frontend"
 cd Client
 npm ci --silent 2>/dev/null || npm install --silent
@@ -114,10 +66,6 @@ npm run build -- --mode gcp
 cd "$REPO_DIR"
 echo "    built: $(du -sh Client/dist | cut -f1)"
 
-# ---------------------------------------------------------------------------
-# 6. TLS certificate. certbot --standalone binds port 80 briefly to prove we
-#    control the hostname, so port 80 must be open in the GCP firewall.
-# ---------------------------------------------------------------------------
 if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
   echo "==> Requesting Let's Encrypt certificate for $DOMAIN"
   sudo certbot certonly --standalone --non-interactive --agree-tos \
@@ -126,7 +74,6 @@ else
   echo "==> Certificate for $DOMAIN already present, skipping"
 fi
 
-# The service runs as a non-root user but must read the private key.
 sudo chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || {
   sudo groupadd -f ssl-cert
   sudo chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive
@@ -134,12 +81,6 @@ sudo chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/nul
 sudo chmod -R g+rX /etc/letsencrypt/live /etc/letsencrypt/archive
 sudo usermod -aG ssl-cert "$USER"
 
-# ---------------------------------------------------------------------------
-# 7. systemd unit — keeps the server alive after the SSH tab closes, restarts
-#    it on crash, and brings it back automatically when the VM is started again.
-#    CAP_NET_BIND_SERVICE lets a non-root process bind 443, so the URL needs no
-#    port number.
-# ---------------------------------------------------------------------------
 echo "==> Installing systemd service"
 sudo tee /etc/systemd/system/seesense.service >/dev/null <<UNIT
 [Unit]
@@ -171,10 +112,6 @@ sudo systemctl restart seesense
 
 sleep 3
 
-# Verify the service actually came up before declaring victory — `restart`
-# above returns success the instant the process is launched, not once it's
-# actually staying up, so a crash-on-import (e.g. a missing system library)
-# would otherwise still print "Setup complete" below.
 if ! systemctl is-active --quiet seesense; then
   echo ""
   echo "!!! seesense.service failed to start. Recent logs: !!!"

@@ -36,7 +36,6 @@ function formatDate(ts) {
 
 function hebrewName(cls) { return HEBREW_NAMES[cls] || cls || '?'; }
 
-/** Detection snapshot card — shows what was detected in the frame. */
 const DetectionCard = ({ snapshot }) => {
   if (!snapshot) return null;
   const objs = snapshot.objects ?? [];
@@ -50,11 +49,9 @@ const DetectionCard = ({ snapshot }) => {
         מה זוהה בפריים:
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {/* Objects */}
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
           {names}
         </span>
-        {/* Alert + distance */}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {snapshot.danger && (
             <span style={{
@@ -79,7 +76,6 @@ const DetectionCard = ({ snapshot }) => {
   );
 };
 
-// ── Form view — edit type, add notes, submit ──────────
 const FeedbackForm = ({ item, onBack, onSubmitted }) => {
   const [fbType,  setFbType]  = useState(item.feedback_type || 'wrong_detection');
   const [notes,   setNotes]   = useState('');
@@ -120,10 +116,8 @@ const FeedbackForm = ({ item, onBack, onSubmitted }) => {
         <span style={{ fontSize: 14, color: 'var(--text-2)' }}>חזרה לרשימה</span>
       </button>
 
-      {/* Detection snapshot */}
       <DetectionCard snapshot={item.detection_snapshot} />
 
-      {/* Feedback type selector */}
       <div className="glass-section" style={{ marginBottom: 16 }}>
         <p style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>
           סוג משוב:
@@ -147,7 +141,6 @@ const FeedbackForm = ({ item, onBack, onSubmitted }) => {
         </div>
       </div>
 
-      {/* Notes textarea */}
       <div className="glass-section">
         <p className="section-label" style={{ marginBottom: 10 }}>הוסף הערה (אופציונלי)</p>
         <textarea
@@ -189,7 +182,6 @@ const FeedbackForm = ({ item, onBack, onSubmitted }) => {
   );
 };
 
-// ── Main page ─────────────────────────────────────────
 const PendingFeedback = () => {
   const navigate = useNavigate();
   const [items,     setItems]     = useState([]);

@@ -6,11 +6,10 @@ from core.config import TARGET_SIZE, DARK_IMAGE_THRESHOLD, MIN_IMAGE_BYTES
 
 logger = logging.getLogger(__name__)
 
-# ==================== Edge Case Thresholds ====================
-BLUR_THRESHOLD = 50.0          # Laplacian variance below this = blurry
-OVEREXPOSED_THRESHOLD = 240    # Mean intensity above this = overexposed
-UNIFORM_STD_THRESHOLD = 10     # Std deviation below this = camera covered (solid color)
-MIN_RESOLUTION = 120            # Reject only genuinely tiny/garbage frames (px, longest side)
+BLUR_THRESHOLD = 50.0
+OVEREXPOSED_THRESHOLD = 240
+UNIFORM_STD_THRESHOLD = 10
+MIN_RESOLUTION = 120
 
 
 def decode_image(image_bytes: bytes, target_size: int = TARGET_SIZE) -> np.ndarray:
@@ -26,28 +25,23 @@ def decode_image(image_bytes: bytes, target_size: int = TARGET_SIZE) -> np.ndarr
     target_size is the per-connection input size (client-driven); defaults to
     TARGET_SIZE. Smaller = faster inference but less detail.
     """
-    # Edge case: empty or too small file
     if len(image_bytes) < MIN_IMAGE_BYTES:
         raise ValueError(f"Image too small ({len(image_bytes)} bytes). File may be empty or corrupted.")
 
-    # 1. Decode
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if img is None:
         raise ValueError("Failed to decode image. The file might be corrupted or not a valid image format.")
 
-    # 2. Resolution check on original (before resize)
     h, w = img.shape[:2]
     if max(w, h) < MIN_RESOLUTION:
         raise ValueError(
             f"Image resolution too low ({w}x{h}). Longest side must be at least {MIN_RESOLUTION}px."
         )
 
-    # 3. Letterbox resize to the target square size
     img_resized = letterbox_resize(img, target_size)
 
-    # 4. Quality checks on resized image (much faster than on 2048x1536)
     validate_image_quality(img_resized)
 
     return img_resized
@@ -63,41 +57,26 @@ def validate_image_quality(img: np.ndarray):
     with fewer passes over the image. See the two notes below.
     """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    # One pass for both statistics instead of np.mean + np.std, which each walk
-    # the whole 640x640 buffer separately. cv2.meanStdDev is SIMD and returns the
-    # population std, which is exactly what np.std() gives at its default ddof=0.
     _mean, _std = cv2.meanStdDev(gray)
     mean_intensity = float(_mean[0][0])
     std_intensity = float(_std[0][0])
     h, w = img.shape[:2]
 
-    # Check 1: Camera covered (uniform solid color — black, white, or any color)
     if std_intensity < UNIFORM_STD_THRESHOLD:
         raise ValueError(
             "Camera appears to be covered or blocked. Image is a uniform color."
         )
 
-    # Check 2: Too dark (night without light, pocket, etc.)
     if mean_intensity < DARK_IMAGE_THRESHOLD:
         raise ValueError(
             "Image is too dark. Lighting is insufficient or camera is obstructed."
         )
 
-    # Check 3: Overexposed (direct sunlight into lens, white wall too close)
     if mean_intensity > OVEREXPOSED_THRESHOLD:
         raise ValueError(
             "Image is overexposed. Too much light or camera is facing a bright surface."
         )
 
-    # Check 4: Blurry (out of focus, motion blur, shaking)
-    #
-    # CV_16S, not CV_64F. The default 3x3 Laplacian kernel on 8-bit input can
-    # only produce integers in [-1020, 1020], so int16 holds every value exactly
-    # — but writes 2 bytes per pixel instead of 8, which is where the time went
-    # (a 640x640 float64 buffer is 3.3 MB, written and then read straight back).
-    # meanStdDev accumulates in double either way, so the variance is the same
-    # number to ~1e-16 relative. If the kernel size ever changes, re-check that
-    # the output still fits in int16.
     _, _lap_sd = cv2.meanStdDev(cv2.Laplacian(gray, cv2.CV_16S))
     laplacian_var = float(_lap_sd[0][0]) ** 2
     if laplacian_var < BLUR_THRESHOLD:
@@ -119,19 +98,14 @@ def process_image(image_bytes: bytes) -> np.ndarray:
 
     Returns tensor of shape (1, 3, 640, 640)
     """
-    # decode_image now returns a 640x640 letterboxed, quality-checked image
     img_resized = decode_image(image_bytes)
 
-    # 1. BGR → RGB
     img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
 
-    # 2. HWC → CHW (channels first for PyTorch)
     img_transposed = img_rgb.transpose((2, 0, 1))
 
-    # 3. Normalize to [0, 1]
     img_normalized = img_transposed.astype(np.float32) / 255.0
 
-    # 4. Add batch dimension → (1, 3, 640, 640)
     img_tensor = np.expand_dims(img_normalized, axis=0)
 
     return img_tensor
@@ -144,10 +118,6 @@ def letterbox_resize(img: np.ndarray, target_size: int) -> np.ndarray:
     """
     h, w = img.shape[:2]
 
-    # Fast path: the client captures at exactly the size it negotiated, so in the
-    # normal case the frame ALREADY is target_size x target_size. Falling through
-    # ran a scale-1.0 resize, allocated a 1.2 MB grey canvas and copied the whole
-    # image into it — three full passes that cannot change a single pixel.
     if h == target_size and w == target_size:
         return img
 

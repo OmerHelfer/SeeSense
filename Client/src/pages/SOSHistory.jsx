@@ -69,7 +69,6 @@ const SOSHistory = () => {
 
       <div className="inner-page-body">
 
-        {/* Info banner */}
         <div className="glass-section info-section">
           <div className="section-label-row">
             <AlertTriangle size={15} />
@@ -80,7 +79,6 @@ const SOSHistory = () => {
           </p>
         </div>
 
-        {/* Loading */}
         {loading && (
           <div className="settings-loading">
             <div className="settings-loading-dot" />
@@ -88,10 +86,8 @@ const SOSHistory = () => {
           </div>
         )}
 
-        {/* Error */}
         {!loading && error && <div className="error-banner">{error}</div>}
 
-        {/* Empty state */}
         {!loading && !error && alerts.length === 0 && (
           <div className="empty-state">
             <AlertTriangle size={38} strokeWidth={1.5} />
@@ -100,7 +96,6 @@ const SOSHistory = () => {
           </div>
         )}
 
-        {/* Alert list */}
         {!loading && !error && alerts.length > 0 && (
           <div className="contact-list">
             <AnimatePresence>
@@ -121,7 +116,6 @@ const SOSHistory = () => {
                     transition={{ duration: 0.22 }}
                     onClick={() => setExpanded(isOpen ? null : key)}
                   >
-                    {/* ── Card header ── */}
                     <div className="sos-card-header">
                       <div className="sos-card-icon">
                         <AlertTriangle size={18} />
@@ -148,7 +142,6 @@ const SOSHistory = () => {
                       />
                     </div>
 
-                    {/* ── Expandable details ── */}
                     <AnimatePresence>
                       {isOpen && (
                         <motion.div
@@ -158,7 +151,6 @@ const SOSHistory = () => {
                           exit={{ opacity: 0, height: 0 }}
                           transition={{ duration: 0.2 }}
                         >
-                          {/* ── Location section ── */}
                           <div className="sos-detail-section">
                             <div className="sos-detail-section-title">מיקום</div>
                             <div className="sos-detail-row">
@@ -184,7 +176,6 @@ const SOSHistory = () => {
                             </div>
                           </div>
 
-                          {/* ── Contacts section ── */}
                           {contactCount > 0 && (
                             <div className="sos-detail-section">
                               <div className="sos-detail-section-title">אנשי קשר שקיבלו התראה</div>

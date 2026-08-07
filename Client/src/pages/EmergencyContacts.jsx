@@ -16,36 +16,29 @@ const pageVariants = {
   exit:    { opacity: 0, x: 40, transition: { duration: 0.22, ease: 'easeIn' } },
 };
 
-// ── Steps: 'list' | 'add' | 'verify' ──────────────────
-// 'add'    — show add-contact form
-// 'verify' — code entry for a just-added (or pending) contact
 
 const EmergencyContacts = () => {
   const navigate = useNavigate();
 
   const [contacts, setContacts]   = useState([]);
   const [loadErr, setLoadErr]     = useState('');
-  const [mode, setMode]           = useState('list'); // 'list' | 'add' | 'verify'
+  const [mode, setMode]           = useState('list');
 
-  // ── Add form ──
   const [newName, setNewName]   = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError]     = useState('');
 
-  // ── Verify form ──
-  const [verifyEmail, setVerifyEmail] = useState(''); // the contact being verified
+  const [verifyEmail, setVerifyEmail] = useState('');
   const [code, setCode]               = useState('');
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [verifyError, setVerifyError]     = useState('');
   const [resendLoading, setResendLoading] = useState(false);
   const [resendOk, setResendOk]           = useState(false);
 
-  // ── Remove ──
   const [removingEmail, setRemovingEmail] = useState(null);
 
-  // ── Load contacts ──
   const loadContacts = async () => {
     setLoadErr('');
     try {
@@ -58,14 +51,12 @@ const EmergencyContacts = () => {
 
   useEffect(() => { loadContacts(); }, []);
 
-  // ── Add contact ──
   const handleAdd = async (e) => {
     e.preventDefault();
     setAddError('');
     setAddLoading(true);
     try {
       await addContact({ name: newName, email: newEmail, phone: newPhone });
-      // Transition to verification step
       setVerifyEmail(newEmail);
       setCode('');
       setVerifyError('');
@@ -80,7 +71,6 @@ const EmergencyContacts = () => {
     }
   };
 
-  // ── Verify contact ──
   const handleVerify = async (e) => {
     e.preventDefault();
     setVerifyError('');
@@ -98,7 +88,6 @@ const EmergencyContacts = () => {
     }
   };
 
-  // ── Resend code ──
   const handleResend = async () => {
     setResendOk(false);
     setResendLoading(true);
@@ -112,7 +101,6 @@ const EmergencyContacts = () => {
     }
   };
 
-  // ── Start verify for an existing pending contact ──
   const startVerify = (email) => {
     setVerifyEmail(email);
     setCode('');
@@ -121,14 +109,12 @@ const EmergencyContacts = () => {
     setMode('verify');
   };
 
-  // ── Remove contact ──
   const handleRemove = async (email) => {
     setRemovingEmail(email);
     try {
       await removeContact({ email });
       setContacts((prev) => prev.filter((c) => c.email !== email));
     } catch {
-      // silently reload
       await loadContacts();
     } finally {
       setRemovingEmail(null);
@@ -143,7 +129,6 @@ const EmergencyContacts = () => {
       animate="visible"
       exit="exit"
     >
-      {/* ── Header ── */}
       <header className="inner-page-header">
         <button
           className="back-btn"
@@ -160,7 +145,6 @@ const EmergencyContacts = () => {
 
       <div className="inner-page-body">
 
-        {/* ══════════════════ LIST MODE ══════════════════ */}
         <AnimatePresence mode="wait">
           {mode === 'list' && (
             <motion.div
@@ -170,7 +154,6 @@ const EmergencyContacts = () => {
             >
               {loadErr && <div className="error-banner">{loadErr}</div>}
 
-              {/* Info banner */}
               <div className="glass-section info-section">
                 <div className="section-label-row">
                   <Shield size={15} />
@@ -182,7 +165,6 @@ const EmergencyContacts = () => {
                 </p>
               </div>
 
-              {/* Contact list */}
               {contacts.length === 0 && !loadErr && (
                 <div className="empty-state">
                   <Shield size={38} strokeWidth={1.5} />
@@ -235,7 +217,6 @@ const EmergencyContacts = () => {
                 </AnimatePresence>
               </div>
 
-              {/* Add button */}
               {contacts.length < 5 && (
                 <button
                   className="add-contact-btn"
@@ -248,7 +229,6 @@ const EmergencyContacts = () => {
             </motion.div>
           )}
 
-          {/* ══════════════════ ADD MODE ══════════════════ */}
           {mode === 'add' && (
             <motion.div
               key="add"
@@ -329,7 +309,6 @@ const EmergencyContacts = () => {
             </motion.div>
           )}
 
-          {/* ══════════════════ VERIFY MODE ══════════════════ */}
           {mode === 'verify' && (
             <motion.div
               key="verify"

@@ -12,25 +12,13 @@ def _sessions():
     return get_db()["sessions"]
 
 
-# ==================== In-Memory Cache ====================
-# Caches session state and user settings per user to avoid DB calls every frame.
-# Updated by pause/resume endpoints and settings changes.
-# user_id → {"paused": bool, "settings": dict, "session_id": str}
 _user_cache = {}
 
-# Track last-announced alert level per (user_id, track_id) — for alert dedup.
-# user_id → {track_id: {"level": str, "seen": monotonic_seconds}}
 _track_alert_state = {}
 
-# Alert levels ranked, so dedup can distinguish an ESCALATION (worth interrupting
-# the user for) from a de-escalation (not news).
 _ALERT_RANK = {"none": 0, "low": 1, "high": 2}
 
-# How long a track's last-known level is remembered after it stops appearing.
-# Objects drop out of the frame's object list whenever their confidence dips under
-# the user's sensitivity threshold, while the track itself is still very much
-# alive — expiring them instantly made them read as "new" again a frame later.
-_ALERT_STATE_TTL = 5.0  # seconds
+_ALERT_STATE_TTL = 5.0
 
 
 def get_cached_state(user_id: str) -> dict:
@@ -60,9 +48,6 @@ def clear_cache(user_id: str):
         logger.error(f"Failed to stamp last_seen for {user_id}: {e}")
 
 
-# ==================== Online presence ====================
-# A user is "online" while they have a live streaming WebSocket — which is exactly
-# when they have an entry in _user_cache (added on WS connect, removed on disconnect).
 
 def get_online_user_ids() -> set:
     """Set of user_ids currently connected via the streaming WebSocket."""
@@ -73,7 +58,6 @@ def is_user_online(user_id: str) -> bool:
     return user_id in _user_cache
 
 
-# ==================== Session Management ====================
 
 def get_or_create_session(user_id: str) -> str:
     """
@@ -84,13 +68,11 @@ def get_or_create_session(user_id: str) -> str:
     """
     sessions = _sessions()
 
-    # Check for existing active session
     existing = sessions.find_one({"user_id": user_id, "status": "active"})
     if existing:
         logger.info(f"Resuming active session: {existing['session_id']}, user={user_id}")
         return existing["session_id"]
 
-    # Check for recently stopped session (within 15 minutes)
     cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
     recent = sessions.find_one({
         "user_id": user_id,
@@ -108,7 +90,6 @@ def get_or_create_session(user_id: str) -> str:
         logger.info(f"Resumed recent session: {session_id}, user={user_id}")
         return session_id
 
-    # Create new session
     session_id = str(uuid.uuid4())
     sessions.insert_one({
         "session_id": session_id,
@@ -135,20 +116,11 @@ def get_active_session(user_id: str) -> dict | None:
     return _sessions().find_one({"user_id": user_id, "status": "active"})
 
 
-# ==================== Presence-based clearance ====================
-# How long a track may go unseen before it counts as genuinely gone. Detections
-# drop out for a frame or two whenever confidence dips under the threshold while
-# the object is still very much there, so a single missed frame must never read
-# as "it left".
-_PRESENCE_TTL = 1.5      # seconds
+_PRESENCE_TTL = 1.5
 
-# How long an object must hold still before we say so out loud. Long enough that
-# a brief pause mid-approach doesn't get called "static".
 _STATIC_CONFIRM_SEC = 0.8
 
-# user_id -> {track_id: {seen, class_name, position, static_since, announced, engaged}}
 _ws_tracked = {}
-# user_id -> bool: did we have anything engaged on the previous frame?
 _ws_had_engaged = {}
 
 
@@ -175,12 +147,12 @@ def evaluate_presence(user_id: str, objects: list[dict]) -> dict:
 
     for obj in objects or []:
         if not obj.get("watched"):
-            continue                       # blue-boxed classes never speak
+            continue
         track_id = obj.get("motion", {}).get("track_id", -1)
         if track_id < 0:
-            continue                       # no stable identity to attach state to
+            continue
         if obj.get("distance") == "Far":
-            continue                       # too far to be a collision risk
+            continue
 
         st = tracks.setdefault(track_id, {
             "static_since": None, "announced": False, "engaged": False,
@@ -193,8 +165,6 @@ def evaluate_presence(user_id: str, objects: list[dict]) -> dict:
                   or obj.get("alert_level", "none") != "none")
 
         if moving:
-            # The warning path owns it while it moves. Reset the still-episode so
-            # that if it settles again, that gets its own announcement.
             st["static_since"] = None
             st["announced"] = False
             st["engaged"] = True
@@ -204,7 +174,7 @@ def evaluate_presence(user_id: str, objects: list[dict]) -> dict:
             elif (now - st["static_since"] >= _STATIC_CONFIRM_SEC) and not st["announced"]:
                 st["announced"] = True
                 st["engaged"] = True
-                if notice is None:         # one voice line per frame, closest first
+                if notice is None:
                     notice = {
                         "class_name": st["class_name"],
                         "position": st["position"],
@@ -220,7 +190,7 @@ def evaluate_presence(user_id: str, objects: list[dict]) -> dict:
         _ws_had_engaged[user_id] = True
     elif had:
         _ws_had_engaged[user_id] = False
-        danger_cleared = True              # everything we were watching is gone
+        danger_cleared = True
 
     return {"danger_cleared": danger_cleared, "static_notice": notice}
 
@@ -260,15 +230,12 @@ def has_new_alert(user_id: str, objects: list[dict]) -> bool:
 
         state[track_id] = {"level": level, "seen": now}
 
-    # Expire on a timer rather than on a single missed frame, so a momentary dip
-    # below the confidence threshold doesn't make a still-present object "new".
     for stale_id in [t for t, s in state.items() if now - s["seen"] > _ALERT_STATE_TTL]:
         del state[stale_id]
 
     return is_new
 
 
-# ==================== Background DB Writes ====================
 
 def save_frame_count_background(session_id: str, frame_count: int):
     """

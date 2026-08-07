@@ -29,7 +29,6 @@ const HEBREW_NAMES = {
 };
 const hebrewName = (c) => HEBREW_NAMES[c] || c || '?';
 
-// Handling-status metadata (colors + Hebrew labels).
 const STATUS_META = {
   pending:     { label: 'ממתין',  color: '#94a3b8', Icon: Clock },
   in_progress: { label: 'בטיפול', color: '#f59e0b', Icon: Loader },
@@ -47,7 +46,6 @@ function fmtDate(ts) {
   return formatServerDateTime(ts);
 }
 
-// ── One labelled detail row in the user modal (hidden when value is empty) ──
 const DetailRow = ({ icon: Icon, label, value, ltr }) => {
   if (value == null || value === '') return null;
   return (
@@ -59,7 +57,6 @@ const DetailRow = ({ icon: Icon, label, value, ltr }) => {
   );
 };
 
-// ── Stat card (clickable = sets filter) ──
 const StatCard = ({ icon: Icon, label, value, color, active, onClick }) => (
   <button className={`admin-stat-card-btn${active ? ' active' : ''}`} onClick={onClick}
     style={active ? { borderColor: color } : undefined}>
@@ -71,7 +68,6 @@ const StatCard = ({ icon: Icon, label, value, color, active, onClick }) => (
   </button>
 );
 
-// ── One feedback card ──
 const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onUserClick, busyId }) => {
   const st = STATUS_META[item.handling_status] ?? STATUS_META.pending;
   const snap = item.detection_snapshot;
@@ -82,13 +78,10 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onU
   const iAmHandler = item.handling_admin_id && item.handling_admin_id === myId;
   const canResolve = item.handling_status === 'in_progress' && (actorLevel >= 2 || iAmHandler);
   const isPending  = item.handling_status === 'pending';
-  // A level-1 admin cannot touch a feedback another admin already took — only the
-  // handler can resolve it, and only a level-2 admin can reassign/override it.
   const lockedForMe = item.handling_status === 'in_progress' && actorLevel < 2 && !iAmHandler;
 
   return (
     <div className="afb-card">
-      {/* Header: user (clickable → details) + status */}
       <div className="afb-head">
         <button className="afb-user afb-user-btn" onClick={() => onUserClick(item)}
           title="הצג פרטי משתמש">
@@ -104,13 +97,11 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onU
         </span>
       </div>
 
-      {/* Type + date */}
       <div className="afb-meta">
         <span className="afb-type">{FEEDBACK_TYPE_LABELS[item.feedback_type] ?? item.feedback_type}</span>
         <span className="afb-date">{fmtDate(item.created_at)}</span>
       </div>
 
-      {/* Detection snapshot */}
       {names && (
         <div className="afb-detection">
           <span className="afb-detection-names">{names}</span>
@@ -119,10 +110,8 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onU
         </div>
       )}
 
-      {/* User notes */}
       {item.notes && <p className="afb-notes">{item.notes}</p>}
 
-      {/* Handling info (in progress / resolved) */}
       {item.handling_admin_name && (
         <div className="afb-handler">
           <UserCheck size={13} style={{ color: st.color }} />
@@ -133,7 +122,6 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onU
         </div>
       )}
 
-      {/* Admin response (resolved) */}
       {item.handling_status === 'resolved' && item.admin_response && (
         <div className="afb-response">
           <span className="afb-response-label">פירוט הטיפול:</span>
@@ -142,7 +130,6 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onU
         </div>
       )}
 
-      {/* Actions */}
       <div className="afb-actions">
         {isPending && (
           <button className="afb-btn take" onClick={() => onTake(item)} disabled={busy}>
@@ -169,37 +156,33 @@ const FeedbackCard = ({ item, actorLevel, myId, onTake, onResolve, onAssign, onU
   );
 };
 
-// ══════════════════════════════════════════════════════════
 const AdminFeedback = () => {
   const navigate = useNavigate();
   const { user: me } = useAuth();
   const myId = me?.id ?? me?.user_id;
 
-  const [data, setData]       = useState(null);   // { feedback, stats, actor_level }
+  const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [filter, setFilter]   = useState('all');
   const [busyId, setBusyId]   = useState(null);
 
-  // Resolve modal
   const [resolveItem, setResolveItem] = useState(null);
   const [responseText, setResponseText] = useState('');
 
-  // Assign modal (L2)
   const [assignItem, setAssignItem]   = useState(null);
   const [admins, setAdmins]           = useState([]);
   const [adminsLoading, setAdminsLoading] = useState(false);
 
-  // User-details modal
-  const [userModal, setUserModal]       = useState(null);  // the feedback item whose user we're viewing
-  const [userDetail, setUserDetail]     = useState(null);  // fetched full user
+  const [userModal, setUserModal]       = useState(null);
+  const [userDetail, setUserDetail]     = useState(null);
   const [userLoading, setUserLoading]   = useState(false);
   const [userError, setUserError]       = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const res = await getFeedbackAdmin();  // full list; filter client-side to keep stats live
+      const res = await getFeedbackAdmin();
       setData(res);
     } catch (err) {
       setError(err?.response?.status === 403 ? 'אין הרשאת אדמין' : 'שגיאה בטעינת המשובים');
@@ -208,14 +191,12 @@ const AdminFeedback = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  // Load admins when the assign modal opens.
   useEffect(() => {
     if (!assignItem) return;
     setAdminsLoading(true);
     getAdmins().then((d) => setAdmins(d.admins || [])).catch(() => setAdmins([])).finally(() => setAdminsLoading(false));
   }, [assignItem]);
 
-  // Load the submitting user's full details when the user modal opens.
   useEffect(() => {
     if (!userModal?.user_email) return;
     setUserLoading(true); setUserError(''); setUserDetail(null);
@@ -233,7 +214,6 @@ const AdminFeedback = () => {
     return filter === 'all' ? list : list.filter((f) => f.handling_status === filter);
   }, [data, filter]);
 
-  // Replace one item in place after an action (keeps scroll/filter), refresh stats.
   const patchItem = (updated) => {
     setData((d) => {
       if (!d) return d;
@@ -281,7 +261,6 @@ const AdminFeedback = () => {
       </header>
 
       <div className="inner-page-body">
-        {/* Stat cards double as filters */}
         <div className="admin-stats-grid" style={{ marginBottom: 14 }}>
           <StatCard icon={MessageSquare} label="הכל" value={stats.total} color="#22d3ee"
             active={filter === 'all'} onClick={() => setFilter('all')} />
@@ -293,7 +272,6 @@ const AdminFeedback = () => {
             active={filter === 'resolved'} onClick={() => setFilter('resolved')} />
         </div>
 
-        {/* Filter chips (mirror the cards, for clarity) */}
         <div className="admin-range-bar" style={{ marginBottom: 14 }}>
           {FILTERS.map((f) => (
             <button key={f.key} className={`admin-range-chip${filter === f.key ? ' active' : ''}`}
@@ -320,7 +298,6 @@ const AdminFeedback = () => {
         <div style={{ height: 40 }} />
       </div>
 
-      {/* ── Resolve modal ── */}
       <AnimatePresence>
         {resolveItem && (
           <motion.div className="admin-modal-backdrop"
@@ -350,7 +327,6 @@ const AdminFeedback = () => {
         )}
       </AnimatePresence>
 
-      {/* ── Assign modal (L2) ── */}
       <AnimatePresence>
         {assignItem && (
           <motion.div className="admin-modal-backdrop"
@@ -389,7 +365,6 @@ const AdminFeedback = () => {
         )}
       </AnimatePresence>
 
-      {/* ── User details modal ── */}
       <AnimatePresence>
         {userModal && (
           <motion.div className="admin-modal-backdrop"

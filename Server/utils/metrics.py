@@ -20,63 +20,28 @@ class PerformanceTracker:
     def __init__(self, window_size: int = 100):
         self.window_size = window_size
         self.latencies = deque(maxlen=window_size)
-        # Latency of frames that completed the WHOLE pipeline. Separate from
-        # `latencies` because server capacity must not be computed from frames
-        # that were rejected early — see get_recent_fps.
         self.success_latencies = deque(maxlen=window_size)
         self.total_frames = 0
         self.success_count = 0
         self.failure_count = 0
-        # failure_count split by cause. A blurry photo and a server bug are both
-        # "a frame that didn't work", but they demand completely different
-        # responses — one is the world being difficult, the other is us being
-        # broken — so a single counter hid the only distinction that mattered.
-        self.reject_count = 0   # arrived, failed a quality check (blur/dark/covered/small)
-        self.error_count = 0    # arrived, raised an unexpected exception
-        # Sent by the client but never answered. Measured on the PHONE (the server
-        # cannot count what never reached it) and reported periodically.
+        self.reject_count = 0
+        self.error_count = 0
         self.lost_count = 0
         self._start_time = time.time()
 
-        # Client RTT — end-to-end latency reported by the client
         self.client_rtts = deque(maxlen=window_size)
-        # BASE RTT — the client's tiny /health ping (a few bytes each way). With no
-        # payload worth transmitting it is essentially two one-way propagations, so
-        # it is the reference that lets the frame RTT be split into an outbound leg
-        # (which carries the ~40-70 KB JPEG) and a return leg (a small JSON).
         self.client_base_rtts = deque(maxlen=window_size)
-        # Compressed size of the frames actually arriving, in bytes. The whole point
-        # of the compression setting is to move this number, and without it the
-        # outbound-leg estimate can't be read as "cost per KB".
         self.frame_bytes = deque(maxlen=window_size)
-        # Timestamped history for live chart (last 60 data points)
         self.rtt_history = deque(maxlen=60)
 
-        # Frame arrival timestamps (last 100) — for actual FPS calculation
         self.frame_arrival_times = deque(maxlen=window_size)
-        # Client-reported FPS (capture rate at the client side)
         self.client_fps_reports = deque(maxlen=window_size)
 
-        # Completion timestamps of SUCCESSFULLY processed frames — for throughput
-        # (real useful output rate over a short recent wall-clock window). Unlike the
-        # FPS numbers above this is not diluted by long idle gaps: it decays to 0 when
-        # nothing is being processed and reflects "how many detections/sec are flowing
-        # right now". Kept generous so a full window still fits at high FPS.
         self.throughput_events = deque(maxlen=1000)
 
-        # Stage-level breakdown of where server_latency actually goes —
-        # decode_quality, inference, tracking, logic, db_write.
         self.stage_latencies = defaultdict(lambda: deque(maxlen=window_size))
 
-        # Latest CLIENT-side stage breakdown (capture/encode/render/feedback). The
-        # client aggregates its own per-frame timings and reports the avg/min/max
-        # every few seconds, so we just keep the most recent snapshot — never on any
-        # hot path. {stage: {avg_ms,min_ms,max_ms}}.
         self.client_stages = {}
-        # Square input size the most recent connection actually negotiated. Lives
-        # in the client bundle (streamConfig.js) but is clamped server-side, so
-        # this is the only place the EFFECTIVE value is knowable — a stale or
-        # cached client bundle otherwise silently keeps sending the old size.
         self.last_input_size = None
 
     def reset(self):
@@ -135,7 +100,6 @@ class PerformanceTracker:
 
         if success:
             self.success_count += 1
-            # Capacity is derived from these only — see get_recent_fps.
             self.success_latencies.append(latency_ms)
             self.throughput_events.append(time.time())
         else:
@@ -145,15 +109,9 @@ class PerformanceTracker:
             elif outcome == "error":
                 self.error_count += 1
 
-        # DEBUG, not INFO. This runs once per frame: at 25 FPS it was 25 formatted
-        # log lines a second written to stdout from inside the frame loop, and in a
-        # container stdout is a pipe — when the collector is slow that write blocks
-        # the event loop serving the WebSocket. It also logged a number measured
-        # before the line itself, so it never showed its own cost.
         logger.debug(f"Frame processed in {latency_ms:.1f}ms")
         return latency_ms
 
-    # ── Client FPS reporting ─────────────────────────────
 
     def record_input_size(self, size: int):
         """Note the input size a connection negotiated (called on WS connect)."""
@@ -184,13 +142,12 @@ class PerformanceTracker:
             return 0.0
         return round((len(self.frame_arrival_times) - 1) / time_span, 2)
 
-    # ── Client RTT reporting ─────────────────────────────
 
     def record_client_rtt(self, rtt_ms: float):
         """Record a client-reported round-trip time measurement."""
         self.client_rtts.append(rtt_ms)
         self.rtt_history.append({
-            "ts": round(time.time() * 1000),  # epoch ms for JS
+            "ts": round(time.time() * 1000),
             "rtt": round(rtt_ms, 1)
         })
 
@@ -236,7 +193,6 @@ class PerformanceTracker:
             "base_ms": base,
         }
 
-    # ── Stage-level latency breakdown ────────────────────
 
     def record_stage(self, stage: str, ms: float):
         """Record how long one pipeline stage took for this frame (ms)."""
@@ -256,7 +212,6 @@ class PerformanceTracker:
             }
         return breakdown
 
-    # ── Client-side stage breakdown (reported by the client) ─────────────
 
     def record_client_stages(self, stages: dict):
         """Store the latest client-side stage breakdown (capture/encode/render/feedback).
@@ -286,7 +241,6 @@ class PerformanceTracker:
         if cleaned:
             self.client_stages = cleaned
 
-    # ── Server latency stats ─────────────────────────────
 
     def get_avg_latency(self) -> float:
         """Average latency over sliding window (ms)."""
@@ -384,13 +338,12 @@ class PerformanceTracker:
             "frame_bytes": self.get_frame_bytes(),
             "throughput": self.get_throughput(),
             "fps": {
-                "server_capacity": self.get_recent_fps(),       # תיאורטי - יכולת
-                "server_actual":   self.get_actual_server_fps(), # בפועל - מה שנכנס
-                "client_actual":   self.get_client_fps()["avg"], # מה שהלקוח שולח
-                "overall":         self.get_fps()                # ממוצע על כל הריצה
+                "server_capacity": self.get_recent_fps(),
+                "server_actual":   self.get_actual_server_fps(),
+                "client_actual":   self.get_client_fps()["avg"],
+                "overall":         self.get_fps()
             }
         }
 
 
-# Single global instance — shared across the server
 tracker = PerformanceTracker()

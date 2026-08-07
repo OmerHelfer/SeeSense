@@ -5,17 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../api/client';
 import { getOverview } from '../services/adminService';
 
-// ── Animation variants (match Settings page) ──
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
   visible: { opacity: 1, x: 0,  transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
   exit:    { opacity: 0, x: 40, transition: { duration: 0.22, ease: 'easeIn' } },
 };
 
-// ── Helpers ──
-// Elapsed span as a live clock. Always shows seconds, and rolls into days once
-// past 24h ("יום אחד, 3:05:12"). Hebrew needs three forms for the day count:
-// singular, dual (יומיים), and plural.
 const fmtUptime = (seconds) => {
   const total = Math.max(0, Math.floor(seconds || 0));
   const days = Math.floor(total / 86400);
@@ -33,11 +28,6 @@ const fmtUptime = (seconds) => {
 
 const fmtMs = (ms) => ms > 0 ? `${Math.round(ms)}ms` : '—';
 
-// Formats a time SPAN (not a point in time) into "X <unit> אחרונות" — picks
-// whichever unit actually fits (seconds → minutes → hours → days → weeks),
-// instead of always dividing by 60,000 and calling it "minutes" even when the
-// span is really hours or days (e.g. a stale point sitting in a count-capped
-// history buffer from a much earlier session).
 const formatSpanLabel = (spanMs) => {
   const sec = Math.round(spanMs / 1000);
   if (sec < 60) return `${sec} שניות אחרונות`;
@@ -62,17 +52,12 @@ const formatSpanLabel = (spanMs) => {
   return remDays > 0 ? `${weeks} שבועות ו-${remDays} ימים אחרונות` : `${weeks} שבועות אחרונות`;
 };
 
-// For the per-stage breakdown, a value under 1ms is REAL data (a stage that took
-// e.g. 0.3ms), not "missing" — so show it with one decimal (e.g. "0.4ms") rather
-// than the "—" that fmtMs uses for zero. Only a truly absent value shows "—".
-// This keeps the min/avg/max columns symmetric and precise for sub-ms stages.
 const fmtStageMs = (ms) => {
   if (ms == null || Number.isNaN(ms)) return '—';
   if (ms < 10) return `${ms.toFixed(1)}ms`;
   return `${Math.round(ms)}ms`;
 };
 
-// ── Stat Card ──
 const StatCard = ({ icon: Icon, label, value, sub, color }) => (
   <div className="admin-stat-card">
     <div className="admin-stat-icon" style={{ color }}>
@@ -86,11 +71,6 @@ const StatCard = ({ icon: Icon, label, value, sub, color }) => (
   </div>
 );
 
-// ── Frame-outcome row ──
-// Every frame the client sent ended in exactly one of these states, so the counts
-// are a partition and the percentages sum to 100. The bar is there because the
-// interesting reading is almost always "is anything non-green above noise", which
-// is far quicker to see than to read off four numbers.
 const OutcomeRow = ({ label, value = 0, total, color }) => {
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
@@ -101,9 +81,6 @@ const OutcomeRow = ({ label, value = 0, total, color }) => {
       </span>
       <span className="admin-outcome-value" dir="ltr">
         {value.toLocaleString()}
-        {/* A rare failure is the whole point of the counter, so don't round it to
-            "0%" and hide it — give small non-zero values enough decimals to stay
-            visible. */}
         <span className="admin-outcome-pct">
           {value === 0 ? '0%' : `${pct < 1 ? pct.toFixed(2) : pct.toFixed(1)}%`}
         </span>
@@ -112,7 +89,6 @@ const OutcomeRow = ({ label, value = 0, total, color }) => {
   );
 };
 
-// ── Stage labels (Hebrew) ──
 const STAGE_LABELS = {
   decode_quality: 'פענוח + בדיקת איכות',
   inference:      'YOLO (מודל)',
@@ -121,11 +97,8 @@ const STAGE_LABELS = {
   response:       'בניית תשובה ושליחה',
   db_write:       'כתיבה ל-DB',
 };
-// db_write last on purpose: it is the only row that is NOT part of the frame's
-// own total (the writes are batched onto a background thread once a second).
 const STAGE_ORDER = ['decode_quality', 'inference', 'tracking', 'danger_logic', 'response', 'db_write'];
 
-// ── Client-side stage labels (Hebrew) — the on-device half of the pipeline ──
 const CLIENT_STAGE_LABELS = {
   capture:  'צילום פריים',
   encode:   'דחיסת JPEG',
@@ -134,23 +107,11 @@ const CLIENT_STAGE_LABELS = {
 };
 const CLIENT_STAGE_ORDER = ['capture', 'encode', 'render', 'feedback'];
 
-/* Utilisation is deliberately NOT clamped to 100%.
-   Over 100% is not a rendering bug to be hidden — it means the model behind the
-   number stopped holding, and that is exactly when you want to see it:
-     server — capacity and actual are sampled over different windows, so a burst
-              can outrun the capacity estimate computed a moment earlier;
-     client — the capacity figure treats capture and encode as strictly serial,
-              but toBlob is partly off the main thread, so the true ceiling is
-              higher than the estimate and the ratio can legitimately exceed 100.
-   Clamping would replace a visible anomaly with a confident-looking lie, so it
-   goes red instead: the number is still real, it just can't be read as "% of a
-   known ceiling" any more. */
 const UTIL_OVER_COLOR = '#ef4444';
 const overStyle = (util) =>
   (util != null && util > 100 ? { color: UTIL_OVER_COLOR, fontWeight: 700 } : undefined);
 const OVER_TITLE = 'מעל 100% — ההערכה של התקרה כבר לא מדויקת (ראה הערה בקוד). המספר אמיתי, אבל אי אפשר לקרוא אותו כאחוז מתקרה ידועה.';
 
-// ── Latency Row ──
 const LatencyRow = ({ label, avg, min, max, color, fmt = fmtMs }) => (
   <div className="admin-latency-row">
     <span className="admin-latency-label" style={{ borderRightColor: color }}>{label}</span>
@@ -171,7 +132,6 @@ const LatencyRow = ({ label, avg, min, max, color, fmt = fmtMs }) => (
   </div>
 );
 
-// ── Mini RTT Chart (canvas-based) ──
 const RttChart = ({ history }) => {
   const canvasRef = useRef(null);
 
@@ -192,10 +152,8 @@ const RttChart = ({ history }) => {
     const plotW  = w - pad.left - pad.right;
     const plotH  = h - pad.top  - pad.bottom;
 
-    // Background
     ctx.clearRect(0, 0, w, h);
 
-    // Grid lines + labels
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.fillStyle   = 'rgba(255,255,255,0.3)';
     ctx.font        = '10px system-ui';
@@ -210,7 +168,6 @@ const RttChart = ({ history }) => {
       ctx.fillText(`${v}`, pad.left - 4, y + 3);
     }
 
-    // Threshold lines
     const drawThreshold = (ms, color, label) => {
       if (ms > maxVal) return;
       const y = pad.top + plotH * (1 - ms / maxVal);
@@ -225,11 +182,10 @@ const RttChart = ({ history }) => {
       ctx.textAlign = 'left';
       ctx.fillText(label, w - pad.right - 40, y - 4);
     };
-    drawThreshold(100, 'rgba(234,179,8,0.5)',  '100ms');  // yellow — unstable
-    drawThreshold(150, 'rgba(249,115,22,0.5)', '150ms');  // orange — severe
-    drawThreshold(200, 'rgba(239,68,68,0.5)',  '200ms');  // red — disconnect
+    drawThreshold(100, 'rgba(234,179,8,0.5)',  '100ms');
+    drawThreshold(150, 'rgba(249,115,22,0.5)', '150ms');
+    drawThreshold(200, 'rgba(239,68,68,0.5)',  '200ms');
 
-    // Data line
     ctx.beginPath();
     const stepX = plotW / (values.length - 1);
     values.forEach((v, i) => {
@@ -242,7 +198,6 @@ const RttChart = ({ history }) => {
     ctx.lineJoin    = 'round';
     ctx.stroke();
 
-    // Gradient fill
     const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
     grad.addColorStop(0, 'rgba(34,211,238,0.25)');
     grad.addColorStop(1, 'rgba(34,211,238,0)');
@@ -252,7 +207,6 @@ const RttChart = ({ history }) => {
     ctx.fillStyle = grad;
     ctx.fill();
 
-    // Last point dot
     if (values.length > 0) {
       const lastX = pad.left + (values.length - 1) * stepX;
       const lastY = pad.top + plotH * (1 - values[values.length - 1] / maxVal);
@@ -262,11 +216,6 @@ const RttChart = ({ history }) => {
       ctx.fill();
     }
 
-    // X-axis label — computed from actual timestamps, not a hardcoded guess.
-    // rtt_history is capped by COUNT (60 points), not by time, so if the points
-    // aren't evenly spaced (e.g. a stale point from a session hours/days ago is
-    // still sitting in the buffer) the real span can be hours or days, not just
-    // minutes — format whichever unit actually fits, not always "X דקות".
     const spanLabel = formatSpanLabel(history[history.length - 1].ts - history[0].ts);
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
     ctx.textAlign = 'center';
@@ -280,13 +229,9 @@ const RttChart = ({ history }) => {
   );
 };
 
-// ══════════════════════════════════════════════════════════
-// AdminStatus Page
-// ══════════════════════════════════════════════════════════
 
 const AdminStatus = () => {
   const navigate = useNavigate();
-  // ?email=... lets AdminUsers deep-link straight into one user's report.
   const [searchParams, setSearchParams] = useSearchParams();
   const emailParam = searchParams.get('email');
   const [data, setData]       = useState(null);
@@ -294,17 +239,12 @@ const AdminStatus = () => {
   const [error, setError]     = useState(null);
   const intervalRef = useRef(null);
 
-  // Scope of the report: null = every user, or an email to drill into one.
-  // There is no time selector any more — the page always reports the full recorded
-  // history, which is what the persisted per-minute buckets already hold.
-  const [scope, setScope]     = useState(emailParam);   // applied email (or null)
+  const [scope, setScope]     = useState(emailParam);
   const scopeRef              = useRef(scope);
   useEffect(() => { scopeRef.current = scope; }, [scope]);
 
-  const [emailInput, setEmailInput] = useState(emailParam ?? '');  // what's typed in the box
+  const [emailInput, setEmailInput] = useState(emailParam ?? '');
 
-  // Follow the URL when it changes (deep link, back/forward) without fighting
-  // the search box: only react when the param genuinely differs from the scope.
   useEffect(() => {
     const next = emailParam || null;
     if (next !== scopeRef.current) {
@@ -314,10 +254,9 @@ const AdminStatus = () => {
   }, [emailParam]);
   const [notFound, setNotFound]     = useState(false);
 
-  // Reset confirmation
   const [showReset, setShowReset] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [actorLevel, setActorLevel] = useState(0);   // gate reset button to super admin
+  const [actorLevel, setActorLevel] = useState(0);
 
   useEffect(() => { getOverview().then((o) => setActorLevel(o.actor_level ?? 0)).catch(() => {}); }, []);
 
@@ -333,8 +272,6 @@ const AdminStatus = () => {
     } catch (err) {
       const status = err.response?.status;
       if (status === 403)      setError('אין הרשאת אדמין');
-      // Drop the previous scope's report too: leaving it on screen under "no such
-      // user" reads as if those numbers belong to the email that was just searched.
       else if (status === 404) { setNotFound(true); setError(null); setData(null); }
       else                     setError('שגיאה בטעינת נתונים');
     } finally {
@@ -342,18 +279,17 @@ const AdminStatus = () => {
     }
   };
 
-  // Re-fetch (and restart auto-refresh) whenever the scope changes.
   useEffect(() => {
     fetchStatus();
     clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(fetchStatus, 3000); // refresh every 3s
+    intervalRef.current = setInterval(fetchStatus, 3000);
     return () => clearInterval(intervalRef.current);
   }, [scope]);
 
   const applySearch = (e) => {
     e?.preventDefault();
     const v = emailInput.trim();
-    setScope(v || null);          // empty box => back to all users
+    setScope(v || null);
     setSearchParams(v ? { email: v } : {}, { replace: true });
   };
 
@@ -363,10 +299,6 @@ const AdminStatus = () => {
     setSearchParams({}, { replace: true });
   };
 
-  // Local 1s tick for the measured-span clock. The server's uptime_seconds comes
-  // from minute-aligned buckets, so on its own it sits still and then jumps a
-  // whole minute; deriving the span from the first bucket's timestamp against the
-  // current clock lets it run smoothly between the 3s data refreshes.
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
     const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
@@ -375,16 +307,10 @@ const AdminStatus = () => {
 
   const measuredSpan = useMemo(() => {
     const first = data?.range?.first_ts;
-    // No buckets yet (or an unexpected future timestamp) → fall back to the
-    // server's own figure rather than showing a nonsense duration.
     if (!first || nowSec < first) return data?.uptime_seconds ?? 0;
     return nowSec - first;
   }, [data, nowSec]);
 
-  // Rates measured over time actually spent streaming. The server reports both
-  // these and the calendar-based figures; fall back to the calendar ones so an
-  // older server (or history recorded before per-bucket timestamps existed) still
-  // renders a number rather than a blank card.
   const activeSeconds = data?.range?.active_seconds ?? 0;
   const userFps = data?.fps?.active ?? data?.fps?.overall ?? 0;
   const throughputPs = data?.throughput?.active_per_second
@@ -393,8 +319,6 @@ const AdminStatus = () => {
   const handleReset = async () => {
     setResetting(true);
     try {
-      // Scope the wipe to whoever is on screen. Sending no email wipes EVERY
-      // user, so this must follow the view rather than default to "everything".
       await apiClient.post('/reset_system_status', null, {
         params: scope ? { email: scope } : {},
       });
@@ -407,13 +331,6 @@ const AdminStatus = () => {
     }
   };
 
-  // "לקוח בלבד" — the on-device cost of producing one frame, to sit alongside
-  // "שרת בלבד" and End-to-End. Only capture + encode count: those are the two
-  // stages a frame passes through BEFORE it is sent, so together they're the
-  // client's share of the send path (render/feedback happen after the reply and
-  // would double-count if added here). Present only for the all-users view: client
-  // stage timings are process-wide, so the server omits them when scoped to one
-  // user rather than misattribute other people's numbers.
   const clientOnly = useMemo(() => {
     const cs = data?.client_stage_latency;
     if (!cs) return null;
@@ -426,10 +343,6 @@ const AdminStatus = () => {
     };
   }, [data]);
 
-  /* Utilisation — what fraction of each side's own ceiling is being used. This is
-     the number that answers "can I raise MAX_INFLIGHT": depth adds throughput only
-     while the bottleneck still has headroom, and past ~85% the remaining FPS cost
-     disproportionately more latency, which for this app is the safety number. */
   const srvUtil = useMemo(() => {
     const cap = data?.fps?.server_capacity ?? 0;
     const act = data?.fps?.server_actual ?? 0;
@@ -437,12 +350,6 @@ const AdminStatus = () => {
     return Math.round((act / cap) * 100);
   }, [data]);
 
-  /* The phone's equivalent: capture + encode is its per-frame cost, so 1000/that
-     is how many frames it could produce per second. Deliberately a FLOOR, not an
-     exact figure — toBlob is asynchronous and partly off the main thread, so real
-     capacity can be higher than treating the two stages as strictly serial implies.
-     It answers one question well: if this ever approaches 100%, the camera pipeline
-     is the limit and no amount of extra pipeline depth will help. */
   const cliUtil = useMemo(() => {
     const act  = data?.fps?.client_actual ?? 0;
     const cost = clientOnly?.avg ?? 0;
@@ -450,9 +357,6 @@ const AdminStatus = () => {
     return Math.round((act / (1000 / cost)) * 100);
   }, [data, clientOnly]);
 
-  /* Frame outcomes. Denominator is everything the client SENT — server-side totals
-     plus the frames that never arrived — so the four states partition the whole and
-     the percentages are directly comparable. */
   const outcomes = useMemo(() => {
     if (!data) return null;
     const success      = data.success_count ?? 0;
@@ -465,14 +369,6 @@ const AdminStatus = () => {
     return { success, reject, error, unclassified, lost, sent };
   }, [data]);
 
-  /* Split the network time into an outbound and a return leg.
-     There is no way to measure a ONE-WAY delay without synchronised clocks, so
-     this leans on the one asymmetry we do have: the frame going up is ~40-70 KB
-     while the result coming back is a small JSON. The health watchdog's /health
-     ping carries almost nothing in either direction, so its round trip is
-     essentially two propagations — half of it is what the reply needs just to
-     travel, and everything left over is the time the compressed frame itself
-     spends being pushed up the link. That is the number compression moves. */
   const netLegs = useMemo(() => {
     const rtt  = data?.client_rtt?.avg_ms ?? 0;
     const srv  = data?.server_latency?.avg_ms ?? 0;
@@ -483,12 +379,6 @@ const AdminStatus = () => {
     const net = rtt - srv;
     const kbR = Math.round(kb * 10) / 10;
 
-    // The two legs are NOT measured over the same window, and that is why this
-    // block used to blink out of existence. rtt and srv are all-time averages
-    // read from the persisted per-minute buckets; base_ms is live — the last 100
-    // /health pings of the CURRENT server process, gone on every restart. So the
-    // split can legitimately be uncomputable, and when it is, saying why beats
-    // disappearing: a row that silently vanishes reads as a broken page.
     if (!(base > 0)) {
       return { kb: kbR, unavailable: 'אין עדיין דגימת פינג חיה מהשרת הנוכחי — הפיצול לשני הכיוונים יופיע ברגע שמישהו יתחיל לסרוק.' };
     }
@@ -515,7 +405,6 @@ const AdminStatus = () => {
       animate="visible"
       exit="exit"
     >
-      {/* Header */}
       <header className="inner-page-header">
         <button className="back-btn" onClick={() => navigate('/settings')} aria-label="חזור">
           <ArrowRight size={22} />
@@ -526,7 +415,6 @@ const AdminStatus = () => {
 
       <div className="inner-page-body">
 
-      {/* ── Scope: all users, or drill into one by email ── */}
       <form className="admin-scope-bar" onSubmit={applySearch}>
         <Search size={16} className="admin-scope-icon" />
         <input
@@ -551,7 +439,6 @@ const AdminStatus = () => {
 
       {data && (
         <div className="admin-content">
-          {/* ── Who this report covers ── */}
           {data.user && (
             <div className="admin-scope-note">
               <Smartphone size={13} />
@@ -562,31 +449,16 @@ const AdminStatus = () => {
             </div>
           )}
 
-          {/* ── Top stat cards ── */}
           <div className="admin-stats-grid">
             <StatCard
               icon={Clock}
               label="טווח נמדד"
               value={fmtUptime(measuredSpan)}
-              // Streaming time is what the FPS card divides by, so it belongs next
-              // to the calendar span: together they explain why a 30 FPS stream can
-              // average 1.5 over the period. Summed across users it is session time,
-              // not wall-clock (concurrent sessions overlap) — hence the two labels.
               sub={activeSeconds > 0
                 ? `${data.user ? 'זמן שידור בפועל' : 'זמן שידור מצטבר'}: ${fmtUptime(activeSeconds)}`
                 : undefined}
               color="#22d3ee"
             />
-            {/* Capacity / actual / client are live rates from the in-memory tracker,
-                so they describe the SERVER right now — not the searched user. When
-                scoped to one person, show that person's own rate instead rather than
-                put process-wide numbers under their name.
-
-                That per-user rate is measured over time spent streaming, which is
-                what makes it comparable to the live gauge beside it. Dividing by the
-                calendar instead (fps.overall) answers a different question — how much
-                of the period was used — so it rides along in the sub-line rather than
-                masquerading as the same "FPS" the global view shows. */}
             <StatCard
               icon={Zap}
               label={data.user ? 'FPS ממוצע (למשתמש)' : 'FPS שרת (יכולת)'}
@@ -594,10 +466,6 @@ const AdminStatus = () => {
               sub={data.user
                 ? `בזמן שידור בפועל · לאורך כל התקופה: ${data.fps?.overall ?? 0}`
                 : (
-                  /* One line per side, each with its own utilisation beside it.
-                     Side by side on one line, the four numbers read as a single
-                     run and it was not obvious which utilisation belonged to which
-                     rate. */
                   <span className="admin-stat-sub-rows">
                     <span
                       style={overStyle(srvUtil)}
@@ -624,8 +492,6 @@ const AdminStatus = () => {
               sub={`${data.success_count} ✓  ${data.failure_count} ✗`}
               color="#22c55e"
             />
-            {/* Same correction as the FPS card: successful frames per second of
-                streaming, not per second of calendar. */}
             <StatCard
               icon={Gauge}
               label="תפוקה (Throughput)"
@@ -638,7 +504,6 @@ const AdminStatus = () => {
             />
           </div>
 
-          {/* ── What happened to every frame ── */}
           {outcomes && (
             <div className="admin-section">
               <h2 className="admin-section-title">
@@ -665,7 +530,6 @@ const AdminStatus = () => {
             </div>
           )}
 
-          {/* ── Response-time comparison ── */}
           <div className="admin-section">
             <h2 className="admin-section-title">
               <Activity size={16} />
@@ -678,9 +542,6 @@ const AdminStatus = () => {
               max={data.server_latency?.max_ms}
               color="#a78bfa"
             />
-            {/* Client-only = the on-device cost of PRODUCING a frame (capture + encode).
-                render/feedback are excluded on purpose: they happen after the result
-                comes back, so they aren't part of the send path this row compares. */}
             {clientOnly && (
               <LatencyRow
                 label="לקוח בלבד"
@@ -733,7 +594,6 @@ const AdminStatus = () => {
             )}
           </div>
 
-          {/* ── Stage-by-stage server latency breakdown ── */}
           {data.stage_latency && Object.keys(data.stage_latency).length > 0 && (
             <div className="admin-section">
               <h2 className="admin-section-title">
@@ -753,11 +613,6 @@ const AdminStatus = () => {
                     fmt={fmtStageMs}
                   />
                 ))}
-              {/* The size the client actually negotiated, not what the repo says.
-                  INPUT_SIZE lives in the client bundle, so a cached or un-redeployed
-                  bundle keeps sending the old size — and since it directly sets how
-                  much work YOLO does, that is otherwise only inferable by comparing
-                  inference times. */}
               {data.input_size && (
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 6 }}>
                   גודל קלט בפועל: <strong dir="ltr">{data.input_size}×{data.input_size}</strong>
@@ -776,7 +631,6 @@ const AdminStatus = () => {
             </div>
           )}
 
-          {/* ── Stage-by-stage CLIENT latency breakdown (live only) ── */}
           {data.client_stage_latency && Object.keys(data.client_stage_latency).length > 0 && (
             <div className="admin-section">
               <h2 className="admin-section-title">
@@ -802,7 +656,6 @@ const AdminStatus = () => {
             </div>
           )}
 
-          {/* ── RTT Live Chart ── */}
           {data.rtt_history && data.rtt_history.length >= 2 && (
             <div className="admin-section">
               <h2 className="admin-section-title">
@@ -813,9 +666,6 @@ const AdminStatus = () => {
             </div>
           )}
 
-          {/* ── Reset performance data (super admin / level 2 only) ──
-               Scoped to whatever is on screen, and the label says which, so the
-               button can't read as "reset this user" while wiping everyone. */}
           {actorLevel >= 2 && (
             <button className="admin-reset-btn" onClick={() => setShowReset(true)}>
               <RotateCcw size={16} />
@@ -828,7 +678,6 @@ const AdminStatus = () => {
       )}
       </div>
 
-      {/* ── Reset confirmation modal (centered) ── */}
       <AnimatePresence>
         {showReset && (
           <motion.div

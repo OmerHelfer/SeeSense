@@ -87,7 +87,6 @@ def _reset_codes_col():
     return get_db()["reset_codes"]
 
 
-# ==================== Auth ====================
 
 @router.post("/register")
 async def register(user: UserCreate):
@@ -139,8 +138,6 @@ async def delete_account(current_user: dict = Depends(verify_token)):
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Anyone may delete their own account — except the LAST super admin, which
-    # would leave the system with no one able to manage it.
     from services.user_service import is_last_super_admin
     if is_last_super_admin(user_id):
         raise HTTPException(
@@ -148,7 +145,6 @@ async def delete_account(current_user: dict = Depends(verify_token)):
             detail="You are the last super admin — assign another super admin before deleting your account.",
         )
 
-    # Notify verified emergency contacts
     contacts = profile.get("emergency_contacts", [])
     for contact in contacts:
         if contact["status"] == "verified":
@@ -159,7 +155,6 @@ async def delete_account(current_user: dict = Depends(verify_token)):
                 profile["name"]
             )
 
-    # Send confirmation to user
     _send_email_background(send_account_deleted_email, profile["email"], profile["name"])
 
     success = delete_user_account(user_id)
@@ -170,7 +165,6 @@ async def delete_account(current_user: dict = Depends(verify_token)):
 
     return {"status": "success", "message": "Account and all data permanently deleted"}
 
-# ==================== Password Management ====================
 
 @router.post("/change_password")
 async def change_password_endpoint(
@@ -196,12 +190,8 @@ async def forgot_password(request: Request, req: ForgotPasswordRequest):
     """Send password reset code to email. No auth required."""
     profile = get_user_by_email(req.email)
     if not profile:
-        # Don't reveal if email exists or not (security)
         return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
 
-    # Generate 6-digit code and store in MongoDB (TTL handles expiry).
-    # Key reset codes by the canonical (lower-cased) email so lookup on
-    # reset matches regardless of the casing the user typed.
     email = _norm_email(req.email)
     code = ''.join(random.choices(string.digits, k=6))
     _reset_codes_col().update_one(
@@ -239,7 +229,6 @@ async def reset_password(request: ResetPasswordRequest):
     return {"status": "success", "message": "Password reset successfully"}
 
 
-# ==================== Profile ====================
 
 @router.get("/profile")
 async def get_profile(current_user: dict = Depends(verify_token)):
@@ -248,7 +237,6 @@ async def get_profile(current_user: dict = Depends(verify_token)):
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Add contacts summary
     contacts = profile.get("emergency_contacts", [])
     profile["contacts_summary"] = {
         "total": len(contacts),
@@ -271,7 +259,6 @@ async def update_profile(updates: UpdateProfileRequest, current_user: dict = Dep
     return {"status": "success", "message": "Profile updated successfully", "user": profile}
 
 
-# ==================== History ====================
 
 @router.get("/history")
 async def user_history(limit: int = 50, period: str = "all", session_id: str = None, current_user: dict = Depends(verify_token)):
@@ -299,7 +286,6 @@ async def clear_history(current_user: dict = Depends(verify_token)):
     return {"status": "success", "message": f"Cleared {count} records"}
 
 
-# ==================== Feedback ====================
 
 @router.post("/feedback/quick")
 async def quick_feedback(feedback: QuickFeedback, current_user: dict = Depends(verify_token)):
@@ -395,7 +381,6 @@ async def delete_feedback_endpoint(feedback_id: str, current_user: dict = Depend
     return {"status": "success", "message": "Feedback deleted"}
 
 
-# ==================== Emergency Contacts ====================
 
 @router.post("/contacts/add")
 async def add_contact(request: AddEmergencyContactRequest, current_user: dict = Depends(verify_token)):
@@ -408,7 +393,6 @@ async def add_contact(request: AddEmergencyContactRequest, current_user: dict = 
         profile = get_user(user_id)
         result = add_emergency_contact(user_id, request.name, request.phone, request.email)
 
-        # Send verification email with the code
         code = result.pop("_code")
         _send_email_background(
             send_emergency_contact_verification_email,
@@ -428,7 +412,6 @@ async def verify_contact(request: VerifyEmergencyContactRequest, current_user: d
         profile = get_user(user_id)
         contact = verify_emergency_contact(user_id, request.email, request.code)
 
-        # Notify contact they are confirmed
         _send_email_background(send_emergency_contact_confirmed_email, request.email, contact["name"], profile["name"])
         _send_email_background(send_contact_verified_notification, profile["email"], profile["name"], contact["name"])
 
@@ -444,7 +427,6 @@ async def resend_code(request: ResendContactCodeRequest, current_user: dict = De
         user_id = current_user["user_id"]
         profile = get_user(user_id)
 
-        # Get contact name before resending
         contacts = get_emergency_contacts(user_id)
         contact_info = next((c for c in contacts if c["email"] == request.email), None)
         contact_name = contact_info["name"] if contact_info else ""
@@ -467,7 +449,6 @@ async def remove_contact(request: RemoveEmergencyContactRequest, current_user: d
     user_id = current_user["user_id"]
     profile = get_user(user_id)
 
-    # Get contact info before removing (for email notification)
     contacts = get_emergency_contacts(user_id)
     contact_info = next((c for c in contacts if c["email"] == request.email), None)
 
@@ -475,7 +456,6 @@ async def remove_contact(request: RemoveEmergencyContactRequest, current_user: d
     if not success:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    # Notify the removed contact if they were verified
     if contact_info and contact_info["status"] == "verified":
         _send_email_background(
             send_emergency_contact_removed_email,
@@ -498,7 +478,6 @@ async def list_contacts(current_user: dict = Depends(verify_token)):
     }
 
 
-# ==================== Emergency Alert ====================
 
 @router.post("/emergency_alert")
 async def emergency_alert(alert: EmergencyAlertRequest, current_user: dict = Depends(verify_token)):

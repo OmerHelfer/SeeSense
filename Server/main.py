@@ -1,16 +1,6 @@
-# Ultralytics tries to pip-install missing optional dependencies at runtime.
-# A server must never install packages while serving requests — set this before
-# any ultralytics import so that check becomes a no-op.
 import os
 os.environ.setdefault("YOLO_AUTOINSTALL", "false")
 
-# NOTE: do NOT cap OMP_NUM_THREADS / MKL_NUM_THREADS / torch.set_num_threads here.
-# Capping to 8 (matching the replica's vCPU limit) looked obviously correct —
-# the container reports 48 cores but may only use 8 — and measured harmless
-# locally. In production it was severe: YOLO went 26-36ms -> 149ms and
-# end-to-end 138-160ms -> 805ms. Reverted. This is the second time thread caps
-# have regressed this server, so treat the reported core count as something to
-# observe, not something to correct.
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,19 +51,14 @@ async def lifespan(app: FastAPI):
     connect()
     from services.user_service import migrate_admin_levels
     migrate_admin_levels()
-    # Anchor the all-users performance clock to the oldest existing bucket if it
-    # was never recorded. Must happen before any reset can delete that bucket.
     from services.perf_history import backfill_recording_start
     backfill_recording_start()
     app.state.model = load_model(MODEL_PATH, mode=MODEL_MODE)
     app.state.start_time = time.time()
-    # Batched persistence for the frame loop — see services/db_writer.
     from services import db_writer
     db_writer.start()
     logger.info("Server is ready")
     yield
-    # Flush buffered history before the connection closes, so a clean shutdown
-    # doesn't discard the last second of records.
     db_writer.shutdown()
     disconnect()
     logger.info("SeeSense server shutting down...")
@@ -91,7 +76,6 @@ async def rate_limit_handler(request, exc):
         content={"detail": "Too many requests. Please slow down."}
     )
 
-# CORS — allows the client app to connect to the server
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -107,11 +91,6 @@ app.include_router(users_router)
 app.include_router(admin_router)
 
 
-# ==================== Static frontend ====================
-# When Client/dist exists (a production build), this process serves the React app
-# too, so the UI, the REST API and the WebSocket all share one origin, one port
-# and one TLS certificate — no CORS, no mixed content, nothing to deploy twice.
-# Absent (plain local dev), the server stays API-only and Vite serves the UI.
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "Client" / "dist"
 SERVE_FRONTEND = (FRONTEND_DIST / "index.html").is_file()
 
@@ -163,25 +142,15 @@ def get_system_status(
 
     if not email:
         data = perf_history.query_range(None, None)
-        # Persisted buckets carry the all-time totals but not the two live-only
-        # views: the RTT chart is a rolling in-memory series, and the client stage
-        # breakdown is whatever the connected clients last reported. Merge them in
-        # so one request still returns everything the page shows.
         live = tracker.get_status()
         data["rtt_history"] = live.get("rtt_history", [])
         data["client_stage_latency"] = live.get("client_stage_latency", {})
         data["input_size"] = live.get("input_size")
-        # Compressed frame size and the small-payload ping RTT are measured live and
-        # never bucketed. Together with the RTT and the server total they are what
-        # the outbound/return split on the page is computed from.
         data["frame_bytes"] = live.get("frame_bytes", {})
         data["client_rtt"] = {
             **data.get("client_rtt", {}),
             "base_ms": live.get("client_rtt", {}).get("base_ms", 0.0),
         }
-        # Same for the FPS card: capacity / server-actual / client-actual are
-        # instantaneous rates the live tracker measures and the per-minute buckets
-        # never stored. `overall` stays the all-time average computed from them.
         live_fps = live.get("fps", {})
         data["fps"] = {
             **data.get("fps", {}),
@@ -196,12 +165,8 @@ def get_system_status(
         raise HTTPException(status_code=404, detail="No user with that email")
 
     data = perf_history.query_range(None, None, user_id=user["user_id"])
-    # Deliberately NOT merged for a single user: the RTT chart and the client stage
-    # timings are process-wide, so showing them beside one user's totals would
-    # attribute other people's numbers to them.
     data["rtt_history"] = []
     data["client_stage_latency"] = {}
-    # Echo identity so the page can label whose data it is showing.
     data["user"] = {
         "user_id": user["user_id"],
         "email": user.get("email"),
@@ -252,13 +217,7 @@ def reset_system_status(
         "message": f"Performance data reset for {user.get('email')}",
     }
 
-# ==================== SPA routing (registered last on purpose) ====================
-# Everything below must come AFTER every API route: FastAPI matches in
-# registration order, so a catch-all declared earlier would swallow /users/login,
-# /health and friends.
 if SERVE_FRONTEND:
-    # Hashed bundles get their own mount so Starlette handles ETag/range/caching
-    # for them rather than re-reading the file on every request.
     assets_dir = FRONTEND_DIST / "assets"
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
@@ -274,8 +233,6 @@ if SERVE_FRONTEND:
         served directly when they exist.
         """
         candidate = (FRONTEND_DIST / full_path).resolve()
-        # Path-traversal guard: full_path comes from the URL, so "../.." must not
-        # be able to reach outside the build directory.
         if (
             full_path
             and candidate.is_file()

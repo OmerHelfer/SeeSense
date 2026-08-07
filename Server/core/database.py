@@ -17,23 +17,15 @@ def _ensure_indexes(db):
     """Create TTL indexes for collections that need automatic expiry."""
     from core.config import JWT_EXPIRATION_HOURS
 
-    # Blacklisted tokens — expire after JWT lifetime (no need to keep after token expires anyway)
     db["blacklisted_tokens"].create_index(
         "created_at", expireAfterSeconds=JWT_EXPIRATION_HOURS * 3600
     )
-    # Reset codes — expire after 15 minutes
     db["reset_codes"].create_index(
         "created_at", expireAfterSeconds=900
     )
-    # Performance history — per-minute rollups. Index minute_ts for range queries,
-    # and TTL created_at so history self-prunes after the retention window (~13
-    # months, enough for a "last year" range).
     from services.perf_history import RETENTION_SECONDS
     db["perf_history"].create_index("minute_ts")
     db["perf_history"].create_index("created_at", expireAfterSeconds=RETENTION_SECONDS)
-    # Per-user lookups (admin "search by email") filter on user_id and sort by time.
-    # Compound so a single user's whole history is one index range scan rather than
-    # a collection scan across every user's minutes.
     db["perf_history"].create_index([("user_id", 1), ("minute_ts", 1)])
     logger.info("MongoDB TTL indexes ensured")
 
@@ -44,7 +36,6 @@ def connect():
     try:
         _client = MongoClient(MONGODB_URI)
         _db = _client[MONGODB_DB_NAME]
-        # Test connection
         _client.admin.command("ping")
         _ensure_indexes(_db)
         logger.info(f"Connected to MongoDB: {MONGODB_DB_NAME}")

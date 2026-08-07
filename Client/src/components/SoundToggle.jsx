@@ -13,12 +13,6 @@ import {
 } from '../services/feedbackService';
 import { getSettings, updateSettings } from '../services/settingsService';
 
-/**
- * Global sound toggle — a small floating button shown on every page while logged
- * in. It is a shortcut for the audio channel: tapping it mutes (volume 0) or
- * unmutes (volume 80%). State lives in the shared feedback store, so it stays in
- * sync with the volume slider in Settings, and is persisted to the DB.
- */
 const SoundToggle = () => {
   const { isAuthenticated, user } = useAuth();
   const location = useLocation();
@@ -26,38 +20,33 @@ const SoundToggle = () => {
 
   const [muted, setMutedState] = useState(isMuted());
 
-  // ── Seed the shared store from the DB once, so audio/haptic use the
-  //    user's real preferences everywhere (not just after opening Settings). ──
   useEffect(() => {
     if (!isAuthenticated || !userId) return;
     let cancelled = false;
     getSettings(userId)
       .then((s) => { if (!cancelled) seedFeedbackSettings(s); })
-      .catch(() => { /* keep cached defaults */ });
+      .catch(() => {  });
     return () => { cancelled = true; };
   }, [isAuthenticated, userId]);
 
-  // ── Keep the icon in sync with the store (e.g. slider dragged to 0). ──
   useEffect(() => subscribeFeedback(() => setMutedState(isMuted())), []);
 
-  // Only shown on the camera page (Dashboard, path "/") — hidden elsewhere.
   if (!isAuthenticated || location.pathname !== '/') return null;
 
   const handleToggle = () => {
-    toggleMuted();               // updates the shared runtime store
+    toggleMuted();
     const nowMuted = isMuted();
     setMutedState(nowMuted);
 
-    haptic('aligned');           // tactile tick (no-op where unsupported, e.g. iOS)
-    announceMute(nowMuted);      // spoken "הקול פועל" / "הקול כבוי"
+    haptic('aligned');
+    announceMute(nowMuted);
 
-    // Persist the resulting volume (and any alert_type change from unmuting).
     if (userId) {
       const fb = getFeedbackSettings();
       updateSettings(userId, {
         volume_intensity: fb.volume_intensity,
         alert_type:       fb.alert_type,
-      }).catch(() => { /* non-fatal: store already updated locally */ });
+      }).catch(() => {  });
     }
   };
 

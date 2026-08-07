@@ -140,10 +140,6 @@ class UpdateProfileRequest(BaseModel):
 
 
 class EmergencyAlertRequest(BaseModel):
-    # Optional: a device can fail to get a fix (indoors, permission denied, cold
-    # start). The alert must still go out — a contact who knows the location is
-    # unknown can call; one sent to fabricated 0,0 coordinates drives to the
-    # wrong place believing it is right.
     gps_lat: float | None = None
     gps_lon: float | None = None
 

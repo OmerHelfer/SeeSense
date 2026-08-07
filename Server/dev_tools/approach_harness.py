@@ -22,7 +22,6 @@ logging.disable(logging.CRITICAL)
 
 FRAME_PX = 640
 FOV_DEG = 60.0
-# Pinhole focal length in pixels for the frame width / field of view above.
 FOCAL_PX = FRAME_PX / (2 * __import__("math").tan(__import__("math").radians(FOV_DEG / 2)))
 
 HIGH_RISK = {"car", "person", "dog", "stairs", "pole", "bicycle", "motorcycle"}
@@ -47,12 +46,12 @@ class Scenario:
         self.name = name
         self.cls = cls
         self.real_size_m = real_size_m
-        self.path = path              # t (seconds) -> distance in metres
+        self.path = path
         self.expect_alert = expect_alert
         self.note = note
         self.jitter = jitter
         self.center = center
-        self.dropout = dropout        # (start_s, end_s) with no detections
+        self.dropout = dropout
 
     def run(self, fps, duration_s, seed=1):
         """Feed the scenario through the real tracker + danger logic."""
@@ -64,8 +63,6 @@ class Scenario:
         dt = 1.0 / fps
         n = int(duration_s * fps)
 
-        # The tracker's window is wall-clock based, so drive its clock rather than
-        # sleeping — otherwise a 30s scenario takes 30s to evaluate.
         import services.motion_tracker as mt
         virtual = {"t": 0.0}
         real_monotonic = mt.time.monotonic
@@ -187,7 +184,6 @@ def main():
     else:
         print("ALL SCENARIOS PASS")
 
-    # Clearing behaviour on the stop scenario
     sc = [s for s in scenarios() if "STOP" in s.name][0]
     print("\nclear-after-stop (object halts at t=3.5s):")
     for fps in rates:

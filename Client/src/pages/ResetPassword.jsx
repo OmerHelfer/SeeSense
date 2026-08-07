@@ -24,7 +24,6 @@ const ResetPassword = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Email may be passed from ForgotPassword via router state
   const [email, setEmail]               = useState(location.state?.email ?? '');
   const [code, setCode]                 = useState('');
   const [newPassword, setNewPassword]   = useState('');
@@ -99,7 +98,6 @@ const ResetPassword = () => {
             )}
           </AnimatePresence>
 
-          {/* Email field — pre-filled but editable in case user landed here directly */}
           <div className="input-group">
             <label className="input-label" htmlFor="rp-email">אימייל</label>
             <input
@@ -115,7 +113,6 @@ const ResetPassword = () => {
             />
           </div>
 
-          {/* 6-digit code */}
           <div className="input-group">
             <label className="input-label" htmlFor="rp-code">קוד חד-פעמי (6 ספרות)</label>
             <input
@@ -132,7 +129,6 @@ const ResetPassword = () => {
             />
           </div>
 
-          {/* New password */}
           <div className="input-group">
             <label className="input-label" htmlFor="rp-password">סיסמה חדשה</label>
             <div className="input-password-wrap">
@@ -157,7 +153,6 @@ const ResetPassword = () => {
             </div>
           </div>
 
-          {/* Confirm password */}
           <div className="input-group">
             <label className="input-label" htmlFor="rp-confirm">אימות סיסמה</label>
             <input

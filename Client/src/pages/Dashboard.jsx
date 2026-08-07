@@ -11,35 +11,23 @@ import { emergencyAlert, quickFeedback } from '../services/userService';
 import { startHealthWatch, stopHealthWatch } from '../services/healthService';
 import { recordClientStage } from '../services/clientMetrics';
 
-// ── Constants ────────────────────────────────────────────
 
 const ALERT_LABELS = {
   high: '⚠ סכנה קרובה',
   low:  '! שים לב',
 };
 
-// How often to repeat the spoken warning while something is STILL approaching.
-// Long enough not to talk over itself (an utterance takes ~1s), short enough that
-// a situation getting worse keeps sounding urgent instead of falling silent.
 const DANGER_REPEAT_MS = 2000;
 
-// ── Sub-components ───────────────────────────────────────
 
-/** One corner bracket of the HUD frame */
 const Corner = ({ position }) => (
   <div className={`hud-corner hud-corner-${position}`} />
 );
 
-/**
- * Spirit Level — gyroscope bubble indicator.
- * Bubble moves based on device tilt (beta/gamma).
- * Glows green when the device is aligned.
- */
 const SpiritLevel = ({ beta, gamma, isAligned }) => {
-  const CONTAINER_R = 23; // (62px container - 16px bubble) / 2
+  const CONTAINER_R = 23;
   const clamp       = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-  // gamma = left/right tilt, beta deviation = front/back tilt from vertical
   const bubbleX = clamp((gamma ?? 0) * 0.38, -CONTAINER_R, CONTAINER_R);
   const bubbleY = clamp(((beta ?? 90) - 90) * 0.38, -CONTAINER_R, CONTAINER_R);
 
@@ -63,15 +51,12 @@ const SpiritLevel = ({ beta, gamma, isAligned }) => {
   );
 };
 
-/** Whole FPS for the admin readout — a tenth of a frame is noise at this size. */
 const fmtFps = (v) => (v == null ? '–' : Math.round(v));
 
-/** Health status indicator dot + live latency (ms, admin only) + label */
 const HealthDot = ({ status, rtt, user, fps }) => {
   if (status === 'idle') return null;
   const colors = { green: '#22c55e', yellow: '#eab308', orange: '#f97316', red: '#ef4444' };
   const labels = { green: 'חיבור יציב', yellow: 'חיבור לא יציב', orange: 'חיבור חלש', red: 'אין חיבור' };
-  // Only admins level 1+ see the latency number; regular users see only the dot and label.
   const isAdmin = user?.admin_level >= 1;
   const rttText = rtt != null ? `${rtt} ms` : ' ';
   const showFps = isAdmin && (fps?.server != null || fps?.client != null);
@@ -82,9 +67,6 @@ const HealthDot = ({ status, rtt, user, fps }) => {
           className={`health-dot ${status}`}
           style={{ backgroundColor: colors[status] }}
         />
-        {/* dir="ltr" so the number and unit read "87 ms" (unit attached to the right
-            of the number) instead of being reordered to "ms 87" by the RTL layout.
-            Only visible to admins level 1+. */}
         {isAdmin && (
           <span className="health-ms" dir="ltr" style={{ color: colors[status] }}>
             {rttText}
@@ -97,10 +79,6 @@ const HealthDot = ({ status, rtt, user, fps }) => {
         )}
       </div>
 
-      {/* Live throughput, admin-only, directly under the connection line.
-          Laid out as flex items rather than one string with separators: the
-          visual order then comes from flex-direction, so mixing Hebrew labels
-          with Latin digits can't reorder them the way bidi does to plain text. */}
       {showFps && (
         <div className="health-fps" title="פריימים לשנייה — שרת מול לקוח">
           <span className="health-fps-unit">FPS</span>
@@ -112,53 +90,37 @@ const HealthDot = ({ status, rtt, user, fps }) => {
   );
 };
 
-// ── Dashboard ────────────────────────────────────────────
 
 const Dashboard = () => {
   const { logout, user }            = useAuth();
   const navigate                    = useNavigate();
   const [isScanning, setIsScanning]       = useState(false);
-  const [alertLevel, setAlertLevel]       = useState('none');   // 'none' | 'low' | 'high'
-  const [healthStatus, setHealthStatus]   = useState('idle');   // 'idle' | 'green' | 'yellow' | 'red'
-  const [healthRtt, setHealthRtt]         = useState(null);     // last ping RTT in ms (null = no reading)
-  const [detectionDir, setDetectionDir]   = useState(null);     // 'left' | 'right' | 'center' | null
-  const [detectedClass, setDetectedClass] = useState(null);     // hebrew class name of leading object
-  const [detections, setDetections]       = useState([]);       // per-frame boxes for the overlay
-  const [quickReportState, setQuickReportState] = useState('idle'); // 'idle' | 'sent'
+  const [alertLevel, setAlertLevel]       = useState('none');
+  const [healthStatus, setHealthStatus]   = useState('idle');
+  const [healthRtt, setHealthRtt]         = useState(null);
+  const [detectionDir, setDetectionDir]   = useState(null);
+  const [detectedClass, setDetectedClass] = useState(null);
+  const [detections, setDetections]       = useState([]);
+  const [quickReportState, setQuickReportState] = useState('idle');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [inputSize, setInputSize]         = useState(640);      // driven by server input_size on connect
-  const [liveFps, setLiveFps]             = useState({ server: null, client: null }); // admin readout
+  const [inputSize, setInputSize]         = useState(640);
+  const [liveFps, setLiveFps]             = useState({ server: null, client: null });
 
-  // Gyroscope — isAligned: beta within ±15° of 90° (phone held upright)
   const { beta, gamma, isAligned, requestPermission } = useOrientation();
 
-  /* ── Refs: let the capture callbacks read the latest state without being
-     re-created. CameraView keys its poll interval on the callback identity,
-     so a new function on every state change would restart the capture loop. ── */
   const isScanningRef  = useRef(isScanning);
   const isAlignedRef   = useRef(isAligned);
-  const visionStreamRef    = useRef(null);       // active VisionStream instance
+  const visionStreamRef    = useRef(null);
   const prevAlignedRef     = useRef(isAligned);
-  const quickReportTimerRef = useRef(null);      // quick-report reset timer
-  const lastRecordIdRef    = useRef(null);       // record_id from last detection
+  const quickReportTimerRef = useRef(null);
+  const lastRecordIdRef    = useRef(null);
 
-  // ── Feedback state ──
-  // 'hidden' | 'visible' | 'sent'
   const [feedbackState, setFeedbackState] = useState('hidden');
-  const feedbackTimerRef = useRef(null);        // auto-hide timer
-  // Cooldown for the repeated "still closing in" warning (see handleResult).
+  const feedbackTimerRef = useRef(null);
   const lastDangerRepeatRef = useRef(0);
 
-  // ── SOS state ──
-  // 'idle' | 'sending' | 'sent'  (single tap → sending → sent → idle)
   const [sosState, setSosState]       = useState('idle');
 
-  /* ── Tear everything down if the page unmounts mid-scan ──
-     Navigating to /settings unmounts Dashboard (routes are keyed by pathname), and
-     CameraView already releases the camera on unmount — but the WebSocket and the
-     health watchdog live outside React and kept running: an orphan stream session
-     (user stuck "online", session never stopped) plus a 5s ping loop that speaks
-     Hebrew connection alerts over whatever page the user is now on. */
   useEffect(() => () => {
     visionStreamRef.current?.disconnect();
     visionStreamRef.current = null;
@@ -171,21 +133,11 @@ const Dashboard = () => {
   useEffect(() => { isScanningRef.current = isScanning;        }, [isScanning]);
   useEffect(() => { isAlignedRef.current  = isAligned;         }, [isAligned]);
 
-  /* ── Live FPS readout (admins level 1+) ──
-     Both numbers are already known to the stream object, so this samples them on
-     a 1s timer instead of reading them in the per-frame result handler: the HUD
-     only needs to be readable, and updating it 25 times a second would re-render
-     the page for nothing. Nothing is polled from the server — see
-     VisionStream.serverFps. The state object is reused when the rounded values
-     haven't changed, so a steady stream costs zero extra renders.
-     Cleared in toggleScan alongside the other per-session HUD state. */
   const isAdminView = (user?.admin_level ?? 0) >= 1;
   useEffect(() => {
     if (!isScanning || !isAdminView) return undefined;
     const id = setInterval(() => {
       const s = visionStreamRef.current;
-      // Rounded here, not at render time, so the equality check below actually
-      // catches "unchanged" — the raw rates wobble by tenths every sample.
       const server = s?.serverFps != null ? Math.round(s.serverFps) : null;
       const client = s?.clientFps != null ? Math.round(s.clientFps) : null;
       setLiveFps((prev) =>
@@ -194,7 +146,6 @@ const Dashboard = () => {
     return () => clearInterval(id);
   }, [isScanning, isAdminView]);
 
-  /* ── Haptic feedback when device becomes aligned while scanning ── */
   useEffect(() => {
     if (isScanning && isAligned && !prevAlignedRef.current) {
       haptic('aligned');
@@ -202,7 +153,6 @@ const Dashboard = () => {
     prevAlignedRef.current = isAligned;
   }, [isAligned, isScanning]);
 
-  /* ── Permanent quick-report button (bottom-left, always visible while scanning) ── */
   const handleQuickReport = useCallback(async () => {
     if (quickReportState === 'sent') return;
     haptic('aligned');
@@ -216,14 +166,12 @@ const Dashboard = () => {
     quickReportTimerRef.current = setTimeout(() => setQuickReportState('idle'), 2500);
   }, [quickReportState]);
 
-  /* ── Show feedback button for 3.5 s after any detection ── */
   const showFeedbackBriefly = useCallback(() => {
     clearTimeout(feedbackTimerRef.current);
     setFeedbackState('visible');
     feedbackTimerRef.current = setTimeout(() => setFeedbackState('hidden'), 3500);
   }, []);
 
-  /* ── Quick feedback submit ── */
   const handleFeedback = useCallback(async () => {
     if (feedbackState !== 'visible') return;
     clearTimeout(feedbackTimerRef.current);
@@ -236,34 +184,21 @@ const Dashboard = () => {
     feedbackTimerRef.current = setTimeout(() => setFeedbackState('hidden'), 1500);
   }, [feedbackState]);
 
-  /* ── WebSocket result handler ──
-     Fires for every frame result pushed by the server.
-     TTS always uses Hebrew class-name mapping — backend alert_message is English.
-     Uses only stable references → safe with [] deps. */
   const handleResult = useCallback((result) => {
     if (!isScanningRef.current) return;
     if (result.status === 'paused') return;
 
-    // Client stage timing: "render" = the synchronous work of applying a result
-    // (overlay + HUD state updates). performance.now() deltas are effectively free.
     const tRender = performance.now();
 
     const level   = result.alert_level ?? 'none';
     const objects = result.objects ?? [];
 
-    // Track last record_id for quick feedback linking
     if (result.record_id) lastRecordIdRef.current = result.record_id;
 
-    // Update the live bounding-box overlay every frame (all detected objects,
-    // regardless of alert level). Cleared to [] when a frame has no detections.
     setDetections(objects);
 
     setAlertLevel(level);
 
-    // Track direction and class of leading object for HUD display
-    // Where the object IS (position), not which way it is drifting
-    // (motion.direction) — the arrow points the user somewhere, so it has to mean
-    // location. See the same fix in feedbackService.announceDetections.
     const dir = objects[0]?.position ?? null;
     const cls = objects[0]?.class_name ?? null;
     setDetectionDir(level !== 'none' ? dir : null);
@@ -271,12 +206,8 @@ const Dashboard = () => {
 
     recordClientStage('render', performance.now() - tRender);
 
-    // "Danger cleared" → one-shot Hebrew "Path Clear" announcement
     if (result.danger_cleared) {
       const tFb = performance.now();
-      // priority: this is a one-shot edge (red → nothing), and the warning it
-      // ends has been re-arming speakMessage's cooldown every 2s. Without the
-      // bypass it was the message most likely to be swallowed.
       speakMessage('נתיב פנוי', { priority: true });
       recordClientStage('feedback', performance.now() - tFb);
       setDetectionDir(null);
@@ -284,22 +215,12 @@ const Dashboard = () => {
       return;
     }
 
-    // A watched object that is present and confirmed motionless. The server sends
-    // this once per still episode, so it needs no cooldown of its own — and it is
-    // QUEUED rather than prioritised, so it can never cut off a danger warning
-    // that is still being spoken.
     if (result.static_notice) {
       const tFb = performance.now();
       speakStatus(staticPhrase(result.static_notice.class_name, result.static_notice.position));
       recordClientStage('feedback', performance.now() - tFb);
     }
 
-    // Keep warning while something is STILL closing in. alert_is_new only fires
-    // on an escalation, so a car that stays red as it bears down on the user
-    // would be announced once and then go quiet — the opposite of what a
-    // worsening situation should sound like. While the danger persists AND the
-    // object is still approaching, repeat on a cooldown so the warning tracks
-    // reality without becoming a stutter.
     const stillClosingIn =
       result.danger && (objects[0]?.motion?.approaching ?? false);
     const now = performance.now();
@@ -307,42 +228,32 @@ const Dashboard = () => {
       lastDangerRepeatRef.current = now;
       const tRep = performance.now();
       haptic('danger');
-      // Name the threat and where it is — "סכנה קרובה, מכונית לפניך". priority
-      // because DANGER_REPEAT_MS already paces this, and its 2s beat against the
-      // 3s speech cooldown meant every other repeat was dropped.
       speakMessage(dangerPhrase(objects), { priority: true });
       showFeedbackBriefly();
       recordClientStage('feedback', performance.now() - tRep);
       return;
     }
-    // Reset the cooldown once the danger ends, so the next one speaks immediately.
     if (!result.danger) lastDangerRepeatRef.current = 0;
 
-    // alert_is_new (server-side, per track_id) gates TTS/haptic so the same
-    // still-present object doesn't re-trigger them every single frame — the
-    // HUD above (alertLevel/detectionDir/detectedClass) still updates live.
     if (!result.alert_is_new) return;
 
-    // "feedback" stage = the voice/haptic dispatch cost (only when an alert fires).
     const tFb = performance.now();
     if (result.danger) {
       haptic('danger');
-      announceDetections(objects, true);   // "סכנה! מכונית מצד ימין"
+      announceDetections(objects, true);
       showFeedbackBriefly();
     } else if (level === 'low') {
       haptic('detection');
-      announceDetections(objects, false);  // "כלב מצד שמאל"
+      announceDetections(objects, false);
       showFeedbackBriefly();
     }
     recordClientStage('feedback', performance.now() - tFb);
   }, [showFeedbackBriefly]);
 
-  /* ── Start / Stop scanning ── */
   const toggleScan = async () => {
     const next = !isScanning;
 
     if (next) {
-      // On iOS 13+, gyroscope permission must be requested from a user gesture
       await requestPermission();
 
       const token  = localStorage.getItem('token');
@@ -351,10 +262,6 @@ const Dashboard = () => {
         onConnected: (msg) => {
           console.info('[SeeSense] WS connected, session:', msg.session_id, '| input_size:', msg.input_size);
           if (msg.input_size) setInputSize(msg.input_size);
-          // Queued, so it lands AFTER "מתחבר" finishes rather than cutting it off.
-          // Ordering is guaranteed, not hoped for: the server sends this message
-          // before it enters its frame loop, and a WebSocket delivers in order —
-          // so no detection result can ever overtake it.
           speakStatus('התחבר בהצלחה');
         },
         onError:     (err) => console.warn('[SeeSense] WS error:', err?.message),
@@ -363,15 +270,12 @@ const Dashboard = () => {
       setActiveStream(stream);
       visionStreamRef.current = stream;
 
-      // ── Start Health Watchdog ──
       startHealthWatch({
         onStatusChange: (status, rtt) => { setHealthStatus(status); setHealthRtt(rtt ?? null); },
         onDisconnect: () => {
-          // Health RED → pause scanning visually (WebSocket may still be open but unusable)
           console.warn('[SeeSense] Health watchdog: connection lost');
         },
         onReconnect: () => {
-          // Health recovered from RED → log recovery
           console.info('[SeeSense] Health watchdog: connection restored');
         },
       });
@@ -393,46 +297,28 @@ const Dashboard = () => {
     setIsScanning(next);
     haptic(next ? 'start' : 'stop');
     if (next) {
-      // Queued: "התחבר בהצלחה" follows this one from onConnected above, and the
-      // two only make sense spoken in that order.
       speakStatus('סריקה הופעלה, מתחבר');
     } else {
-      // priority → cancels whatever is queued. Stopping should cut off any
-      // pending connection chatter rather than let it talk over the stop.
       speakMessage('סריקה הופסקה', { priority: true });
     }
   };
 
-  /* ── Capture gate ──
-     Predicate handed to CameraView, checked BEFORE the (async) JPEG encode so we
-     never spend CPU encoding a frame we'd only drop. May we capture+send now? */
   const canCaptureFrame = useCallback(() => {
     if (!isScanningRef.current || !isAlignedRef.current) return false;
     const s = visionStreamRef.current;
-    // Bounded-depth backpressure (MAX_INFLIGHT) — the ONLY thing governing the
-    // send rate. Allow that many frames in flight so the pipe stays full and the
-    // server never starves, while the queue stays bounded (no runaway backlog).
     return !!s && s.isOpen && s.canSend;
   }, []);
 
-  /* ── Frame capture → WebSocket send ──
-     Stable callback (empty deps) — reads live values via refs.
-     Called by CameraView each capture tick with a ready-to-send JPEG Blob. */
   const handleFrameCapture = useCallback((blob) => {
-    // Re-check the gate at send time: state (alignment / in-flight count) may
-    // have changed during the async encode between canCaptureFrame() and here.
     if (!isScanningRef.current || !isAlignedRef.current) return;
     const s = visionStreamRef.current;
     if (!s?.isOpen || !s.canSend) return;
     s.sendFrame(blob);
-  }, []); // stable reference — no deps, reads state through refs
+  }, []);
 
-  /* ── SOS: single tap ──
-     One press → get GPS → POST /users/emergency_alert.
-     No long-press: the button fires immediately and shows a sending state. */
   const handleSOSClick = (e) => {
     e.preventDefault();
-    if (sosState !== 'idle') return; // ignore taps while sending / just-sent
+    if (sosState !== 'idle') return;
     fireSOS();
   };
 
@@ -456,14 +342,6 @@ const Dashboard = () => {
       setTimeout(() => setSosState('idle'), 3000);
     };
 
-    // Never fabricate coordinates. Sending 0,0 on failure produced a Google Maps
-    // link to Null Island (off West Africa) that looks like a real location, so a
-    // contact would confidently head to the wrong place. Send nothing instead and
-    // let the email say the location is unavailable.
-    //
-    // Two attempts: GPS-accurate first, then a fast cached/network fix. High
-    // accuracy can take well over 5s indoors or from a cold start, which is what
-    // was silently failing here.
     if (!navigator.geolocation) { send(null, null); return; }
 
     navigator.geolocation.getCurrentPosition(
@@ -471,26 +349,22 @@ const Dashboard = () => {
       () => navigator.geolocation.getCurrentPosition(
         (pos) => send(pos.coords.latitude, pos.coords.longitude),
         ()    => send(null, null),
-        // Accept a fix up to 5 min old — a slightly stale position beats none.
         { timeout: 8000, enableHighAccuracy: false, maximumAge: 300000 },
       ),
       { timeout: 12000, enableHighAccuracy: true, maximumAge: 0 },
     );
   };
 
-  /* ── CSS class string for corner brackets ── */
   const bracketClass = [
     'hud-brackets',
     isScanning ? 'active'  : '',
     isScanning && isAligned ? 'aligned' : '',
   ].filter(Boolean).join(' ');
 
-  /* ── LIVE badge label ── */
   const badgeLabel = !isScanning ? 'IDLE'
     : isAligned ? 'TRACKING'
     : 'LIVE';
 
-  // ── Render ────────────────────────────────────────
 
   return (
     <motion.div
@@ -500,7 +374,6 @@ const Dashboard = () => {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.25 }}
     >
-      {/* ── Header ── */}
       <header className="dashboard-header">
         <span className="header-brand">SEE<span>SENSE</span></span>
         <div className="header-actions">
@@ -514,7 +387,6 @@ const Dashboard = () => {
         </div>
       </header>
 
-      {/* ── Camera + HUD ── */}
       <main className={[
         'camera-viewport',
         isScanning ? 'scanning' : '',
@@ -522,10 +394,8 @@ const Dashboard = () => {
       ].filter(Boolean).join(' ')}>
         <CameraView isActive={isScanning} onFrameCapture={handleFrameCapture} shouldCapture={canCaptureFrame} inputSize={inputSize} detections={detections} />
 
-        {/* Non-interactive HUD elements */}
         <div className="hud-overlay">
 
-          {/* Corner brackets: gray → cyan (active) → green (aligned) */}
           <div className={bracketClass}>
             <Corner position="tl" />
             <Corner position="tr" />
@@ -533,7 +403,6 @@ const Dashboard = () => {
             <Corner position="br" />
           </div>
 
-          {/* Status badge */}
           <div className="hud-top-row">
             <div className={`live-badge${isScanning ? ' active' : ''}`}>
               <div className={`status-dot${isScanning ? ' active' : ''}`} />
@@ -541,7 +410,6 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Quick feedback button — appears 3.5 s after a detection */}
           <AnimatePresence>
             {feedbackState !== 'hidden' && (
               <motion.button
@@ -559,10 +427,8 @@ const Dashboard = () => {
             )}
           </AnimatePresence>
 
-          {/* Scan sweep line — only shown when scanning AND aligned (frames are being sent) */}
           {isScanning && isAligned && <div className="scan-line" />}
 
-          {/* Tilt warning — shown when scanning but device is not aligned */}
           <AnimatePresence>
             {isScanning && !isAligned && (
               <motion.div
@@ -579,7 +445,6 @@ const Dashboard = () => {
             )}
           </AnimatePresence>
 
-          {/* Direction indicator — shows while a detection is active */}
           <AnimatePresence>
             {isScanning && detectionDir && detectionDir !== 'unknown' && (
               <motion.div
@@ -603,11 +468,9 @@ const Dashboard = () => {
             )}
           </AnimatePresence>
 
-          {/* Gyroscope spirit level */}
           <SpiritLevel beta={beta} gamma={gamma} isAligned={isAligned} />
         </div>
 
-        {/* Danger / caution alert overlay */}
         <AnimatePresence>
           {isScanning && alertLevel !== 'none' && (
             <motion.div
@@ -624,7 +487,6 @@ const Dashboard = () => {
           )}
         </AnimatePresence>
 
-        {/* Idle overlay — shown when camera is off */}
         <AnimatePresence>
           {!isScanning && (
             <motion.div
@@ -641,7 +503,6 @@ const Dashboard = () => {
           )}
         </AnimatePresence>
 
-        {/* ── Quick Report Button (bottom-left, visible while scanning) ── */}
         <AnimatePresence>
           {isScanning && (
             <motion.button
@@ -661,7 +522,6 @@ const Dashboard = () => {
           )}
         </AnimatePresence>
 
-        {/* ── SOS Emergency Button ── */}
         <button
           type="button"
           className={`sos-btn sos-${sosState}`}
@@ -676,7 +536,6 @@ const Dashboard = () => {
         </button>
       </main>
 
-      {/* ── Main scan button ── */}
       <div className="scan-btn-wrap">
         <motion.button
           className={`scan-btn ${isScanning ? 'stop' : 'start'}`}
@@ -703,7 +562,6 @@ const Dashboard = () => {
         </motion.button>
       </div>
 
-      {/* ── Floating glass tab bar ── */}
       <div className="tab-bar-wrap">
         <nav className="tab-bar" role="navigation" aria-label="ניווט ראשי">
           <button className="tab-btn" onClick={() => setShowLogoutConfirm(true)} aria-label="יציאה">
@@ -721,7 +579,6 @@ const Dashboard = () => {
         </nav>
       </div>
 
-      {/* ── Logout confirmation ── */}
       <AnimatePresence>
         {showLogoutConfirm && (
           <motion.div

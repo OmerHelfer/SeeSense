@@ -45,15 +45,9 @@ from core.database import get_db
 
 logger = logging.getLogger(__name__)
 
-# Retention for the TTL index (see database.py). ~13 months so a "last year"
-# range always has data available.
 RETENTION_SECONDS = 400 * 24 * 3600
 
 _lock = threading.Lock()
-# Current in-progress minute, accumulated per user: {user_id or _UNATTRIBUTED: bucket}.
-# One doc per (minute, user) is written on rollover — with a handful of concurrent
-# users that is a few small writes a minute, and it is what makes a per-user view
-# possible without a second storage path.
 _buckets: dict = {}
 _bucket_minute = None
 
@@ -66,18 +60,9 @@ def _meta_col():
     return get_db()["perf_meta"]
 
 
-# ==================== Recording-start marker ====================
-#
-# The all-users measured span used to be derived from the oldest bucket in the
-# collection. That made it a function of surviving data rather than a clock:
-# deleting one user's buckets (a scoped reset, or TTL expiry) removed the row
-# that WAS the minimum, so the global span silently jumped forward. The origin
-# is now stored explicitly and only a global reset clears it.
 
 _META_ID = "recording"
 
-# Set once we know the marker exists, so the common case costs no write. Only a
-# global reset clears it (a scoped reset must not touch the marker).
 _recording_start_known = False
 
 
@@ -127,7 +112,6 @@ def backfill_recording_start():
         logger.error(f"perf_history recording-start backfill failed: {e}")
 
 
-# ==================== Accumulation ====================
 
 def _new_metric():
     return {"sum": 0.0, "min": None, "max": None, "n": 0}
@@ -144,9 +128,6 @@ def _current_minute() -> int:
     return int(time.time() // 60) * 60
 
 
-# Bucket key used for samples that arrive without a user_id. Kept distinct from a
-# real user id so it can never be returned by a per-user query, while still being
-# counted in the global totals.
 _UNATTRIBUTED = "_global"
 
 
@@ -160,19 +141,10 @@ def _new_bucket(minute_ts: int, user_id: str | None = None) -> dict:
         "frames": 0,
         "success": 0,
         "fail": 0,
-        # fail split by cause. `fail` stays the total so existing buckets and any
-        # older reader keep their meaning; these two only refine it. Buckets
-        # written before this split have neither, which is why the reader derives
-        # an "unclassified" remainder rather than assuming reject+error == fail.
-        "reject": 0,   # arrived, failed a quality check
-        "error": 0,    # arrived, raised
-        # Sent by the client, never answered. Not a frame this server ever saw —
-        # it is reported BY the phone — so it is deliberately not in `frames`.
+        "reject": 0,
+        "error": 0,
         "lost": 0,
         "stages": {},
-        # Wall-clock of the first and last frame in this minute. Their difference is
-        # the time genuinely spent streaming, which is what FPS should be measured
-        # against — see the module docstring.
         "first_frame_ts": None,
         "last_frame_ts": None,
     }
@@ -256,28 +228,17 @@ def record_lost(n: int, user_id: str | None = None):
         bucket["lost"] = bucket.get("lost", 0) + n
 
 
-# ==================== Flushing ====================
 
 def _flush_async(bucket: dict):
     threading.Thread(target=_flush, args=(bucket,), daemon=True).start()
 
 
 def _flush(bucket: dict):
-    # Skip empty buckets (nothing observed at all). Lost frames count as content:
-    # a minute in which every frame vanished has frames == 0 and no RTT samples,
-    # and that is precisely the minute worth keeping.
     if bucket["frames"] == 0 and bucket["rtt"]["n"] == 0 and bucket.get("lost", 0) == 0:
         return
-    # Anchor the recording clock to this bucket's minute the first time anything
-    # is persisted. Done here rather than in record_frame so the hot path stays
-    # free of Mongo, and the minute_ts is an accurate origin either way.
     if not _recording_start_known:
         note_recording_start(bucket["minute_ts"])
     try:
-        # Keyed by (minute_ts, user_id) so re-flushing the in-progress minute
-        # overwrites rather than duplicates. Legacy docs written before per-user
-        # attribution have no user_id field; {"user_id": None} matches those too,
-        # which is correct — they are unattributed by definition.
         _col().replace_one(
             {"minute_ts": bucket["minute_ts"], "user_id": bucket.get("user_id")},
             bucket,
@@ -287,11 +248,6 @@ def _flush(bucket: dict):
         logger.error(f"perf_history flush failed: {e}")
 
 
-# Minimum gap between on-demand flushes. The admin page polls every 3s, and each
-# poll deepcopied every bucket and wrote one doc per active user — CPU and Mongo
-# work competing for the same vCPUs the model runs on, so simply watching the page
-# degraded the thing being measured. Throttling costs at most this much freshness
-# on the in-progress minute, which is well under one bucket.
 _FLUSH_MIN_INTERVAL_S = 20
 _last_flush_at = 0.0
 
@@ -309,19 +265,12 @@ def flush_now(force: bool = False):
         if not force and (now - _last_flush_at) < _FLUSH_MIN_INTERVAL_S:
             return
         _last_flush_at = now
-        # deepcopy, not dict(): a shallow copy shares the nested lat/rtt/stages
-        # dicts with the live bucket, so record_frame keeps mutating them while
-        # the write runs outside the lock. That persists a torn doc — frames /
-        # success / fail frozen at copy time, but lat.n and the stage counts as
-        # of whenever the BSON encoder happened to read them.
         pending = [copy.deepcopy(b) for b in _buckets.values()
                    if b["frames"] > 0 or b["rtt"]["n"] > 0]
-    # Flush outside the lock — a slow write must not stall the frame hot path.
     for b in pending:
         _flush(b)
 
 
-# ==================== Querying ====================
 
 def _agg_metric(dst: dict, src: dict):
     dst["sum"] += src.get("sum", 0.0)
@@ -359,7 +308,7 @@ def _active_span(bucket: dict) -> tuple[float, int, int]:
 
     first, last = bucket.get("first_frame_ts"), bucket.get("last_frame_ts")
     if first is None or last is None:
-        return 60.0, frames, successes          # legacy bucket
+        return 60.0, frames, successes
 
     span = last - first
     if frames < 2 or span <= 0:
@@ -388,7 +337,7 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
     are unattributed and are correctly excluded from a per-user view (we don't know
     whose they were) while still counting toward the global totals.
     """
-    flush_now()  # include the current partial minute
+    flush_now()
 
     query = {}
     if user_id is not None:
@@ -415,7 +364,6 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
         total += b.get("frames", 0)
         success += b.get("success", 0)
         fail += b.get("fail", 0)
-        # .get with a default because buckets predating the split have neither.
         reject += b.get("reject", 0)
         error += b.get("error", 0)
         lost += b.get("lost", 0)
@@ -430,28 +378,13 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
         active_frames += n_frames
         active_success += n_success
 
-    # Span for FPS: from first bucket start to last bucket end (+60s), else 0
     span_seconds = (max_minute + 60 - min_minute) if (min_minute is not None) else 0
     overall_fps = round(total / span_seconds, 2) if span_seconds > 0 else 0.0
-    # Throughput over a range = successful frames per second across the measured span
-    # (the useful-output equivalent of the live 10s-window throughput).
     throughput_ps = round(success / span_seconds, 2) if span_seconds > 0 else 0.0
 
-    # The rates a person actually experienced: measured only over time spent
-    # streaming. `overall_fps` above divides by the calendar, so it is really
-    # "capacity x duty cycle" — a user who streams 3 minutes an hour reads ~1.5 FPS
-    # while every one of their frames came back at 30. Both are reported: this is
-    # the rate, that is the utilisation.
     active_fps = round(active_frames / active_seconds, 2) if active_seconds > 0 else 0.0
     active_throughput = round(active_success / active_seconds, 2) if active_seconds > 0 else 0.0
 
-    # The span the PAGE displays ("טווח נמדד") is a clock, not a property of the
-    # surviving rows: for the all-users view it runs from the recording-start
-    # marker, so resetting one user cannot move it. Per-user views keep meaning
-    # "since that user's first recorded frame", which is what their label says.
-    # span_seconds above stays bucket-derived — it is the FPS/throughput divisor,
-    # where dividing by wall-clock time (including long idle stretches) would
-    # understate the measured rates.
     recording_start = get_recording_start() if user_id is None else None
     if recording_start is not None:
         display_first = recording_start
@@ -467,14 +400,10 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
             "start_ts": start_ts,
             "end_ts": end_ts,
             "buckets": len(buckets),
-            "span_seconds": span_seconds,   # bucket-derived; the FPS divisor
-            "first_ts": display_first,      # clock origin for the displayed span
+            "span_seconds": span_seconds,
+            "first_ts": display_first,
             "oldest_bucket_ts": min_minute,
             "last_ts": max_minute,
-            # Time actually spent streaming. For one user this is their real
-            # session time; aggregated over everyone it is the SUM of concurrent
-            # sessions, so it can exceed the calendar span. The page labels the
-            # two cases differently.
             "active_seconds": round(active_seconds),
         },
         "uptime_seconds": display_span,
@@ -483,9 +412,6 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
         "failure_count": fail,
         "reject_count": reject,
         "error_count": error,
-        # Whatever failed before the reject/error split existed. Reported rather
-        # than silently folded into one of the two, so the page never claims a
-        # cause it doesn't actually know.
         "unclassified_count": max(0, fail - reject - error),
         "lost_count": lost,
         "server_latency": _finalize(lat),
@@ -496,26 +422,23 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
         },
         "stage_latency": {name: _finalize(s) for name, s in stages.items()},
         "throughput": {
-            # Successful frames per second of streaming — the rate that was really
-            # achieved. `per_second` keeps the old calendar-based figure alongside.
             "active_per_second": active_throughput,
             "per_second": throughput_ps,
             "window_seconds": span_seconds,
             "active_seconds": round(active_seconds),
             "frames_in_window": success,
         },
-        "rtt_history": [],  # not available for aggregated ranges (live view only)
+        "rtt_history": [],
         "fps": {
             "server_capacity": 0.0,
             "server_actual": 0.0,
             "client_actual": 0.0,
-            "active": active_fps,       # while streaming — comparable to the live rates
-            "overall": overall_fps,     # over the calendar — rate x utilisation
+            "active": active_fps,
+            "overall": overall_fps,
         },
     }
 
 
-# ==================== Reset ====================
 
 def reset_history(user_id: str | None = None):
     """

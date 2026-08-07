@@ -18,10 +18,9 @@ provides the "offline since X" timestamp across restarts.
 
 import time
 
-# user_id -> last activity epoch seconds
 _last_active: dict[str, float] = {}
 
-ONLINE_THRESHOLD_SECONDS = 90  # ~3 missed 30s heartbeats
+ONLINE_THRESHOLD_SECONDS = 90
 
 
 def mark_active(user_id: str):

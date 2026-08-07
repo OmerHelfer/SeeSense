@@ -77,7 +77,6 @@ const Register = () => {
         animate="visible"
         exit="exit"
       >
-        {/* Logo */}
         <div className="auth-logo">
           <div className="auth-logo-mark">
             <Scan size={28} strokeWidth={2.5} />

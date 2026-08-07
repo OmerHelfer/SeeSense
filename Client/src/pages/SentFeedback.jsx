@@ -23,8 +23,6 @@ const FEEDBACK_TYPES = [
   { key: 'general',         label: 'כללי'         },
 ];
 
-// Admin-handling status, shown to the user so they know what's happening with
-// their feedback (mirrors the handling_status the admin sets).
 const HANDLING_META = {
   pending:     { label: 'ממתין לטיפול', color: '#94a3b8' },
   in_progress: { label: 'בטיפול',       color: '#f59e0b' },
@@ -43,7 +41,6 @@ function formatDate(ts) {
 
 function hebrewName(cls) { return HEBREW_NAMES[cls] || cls || '?'; }
 
-/** Detection snapshot card */
 const DetectionCard = ({ snapshot }) => {
   if (!snapshot) return null;
   const objs = snapshot.objects ?? [];
@@ -82,7 +79,6 @@ const DetectionCard = ({ snapshot }) => {
   );
 };
 
-// ── Edit form ─────────────────────────────────────────
 const EditForm = ({ item, onBack, onSaved }) => {
   const [fbType,  setFbType]  = useState(item.feedback_type || 'wrong_detection');
   const [notes,   setNotes]   = useState(item.notes || '');
@@ -113,10 +109,8 @@ const EditForm = ({ item, onBack, onSaved }) => {
         <span style={{ fontSize: 14, color: 'var(--text-2)' }}>חזרה לרשימה</span>
       </button>
 
-      {/* Detection snapshot */}
       <DetectionCard snapshot={item.detection_snapshot} />
 
-      {/* Feedback type selector */}
       <div className="glass-section" style={{ marginBottom: 16 }}>
         <p style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>סוג משוב:</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -134,7 +128,6 @@ const EditForm = ({ item, onBack, onSaved }) => {
         </div>
       </div>
 
-      {/* Notes */}
       <div className="glass-section">
         <p className="section-label" style={{ marginBottom: 10 }}>הערה</p>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
@@ -158,22 +151,19 @@ const EditForm = ({ item, onBack, onSaved }) => {
   );
 };
 
-// ── Main page ─────────────────────────────────────────
 const SentFeedback = () => {
   const navigate = useNavigate();
   const [items,     setItems]     = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [loadError, setLoadError] = useState('');
   const [editing,   setEditing]   = useState(null);
-  const [responseView, setResponseView] = useState(null);  // item whose full team response is open
+  const [responseView, setResponseView] = useState(null);
 
   const loadFeedback = useCallback(async () => {
     setLoading(true); setLoadError('');
     try {
       const feedbacks = await getSubmittedFeedback();
       setItems(feedbacks);
-      // Any unseen team responses are now on screen → clear the badge (keeps the
-      // "חדש" highlight for this visit since local items still read as unseen).
       if (feedbacks.some((f) => f.handling_status === 'resolved' && f.response_seen === false)) {
         markResponsesSeen().catch(() => {});
       }
@@ -189,7 +179,7 @@ const SentFeedback = () => {
     try {
       await deleteFeedback(feedbackId);
       setItems((prev) => prev.filter((f) => (f.feedback_id ?? f._id) !== feedbackId));
-    } catch { /* silent */ }
+    } catch {  }
   };
 
   const handleSaved = (feedbackId, updated) => {
@@ -244,7 +234,6 @@ const SentFeedback = () => {
                       const snap = item.detection_snapshot;
                       const objs = snap?.objects ?? [];
                       const names = objs.length > 0 ? objs.map((o) => hebrewName(o.class_name)).join(', ') : null;
-                      // Editable only while still pending — locked once an admin takes it.
                       const locked   = item.handling_status === 'in_progress' || item.handling_status === 'resolved';
                       const hasReply = item.handling_status === 'resolved' && item.admin_response;
                       const isNew    = hasReply && item.response_seen === false;
@@ -257,7 +246,6 @@ const SentFeedback = () => {
                             borderRadius: 'var(--r-md)', padding: '14px 16px', direction: 'rtl',
                           }}
                         >
-                          {/* Top row: type + handling-status badges + date */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                               <span style={{
@@ -290,7 +278,6 @@ const SentFeedback = () => {
                             </span>
                           </div>
 
-                          {/* Detection info */}
                           {names && (
                             <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
                               <span style={{ fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-body)', fontWeight: 600 }}>
@@ -303,14 +290,12 @@ const SentFeedback = () => {
                             </div>
                           )}
 
-                          {/* Notes */}
                           {item.notes && (
                             <p style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)', margin: '0 0 8px 0', lineHeight: 1.5 }}>
                               {item.notes}
                             </p>
                           )}
 
-                          {/* Team response (once an admin has resolved it) — click to read in full */}
                           {hasReply && (
                             <button className="sf-response" onClick={() => setResponseView(item)}>
                               <span className="sf-response-label">
@@ -322,7 +307,6 @@ const SentFeedback = () => {
                             </button>
                           )}
 
-                          {/* Actions: edit (only while pending) + delete */}
                           <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                             {locked ? (
                               <span style={{
@@ -360,7 +344,6 @@ const SentFeedback = () => {
         <div style={{ height: 40 }} />
       </div>
 
-      {/* Full team-response modal */}
       <AnimatePresence>
         {responseView && (
           <motion.div className="admin-modal-backdrop"
@@ -372,10 +355,6 @@ const SentFeedback = () => {
                 <MessageSquare size={26} />
               </div>
               <h3 className="admin-modal-title">תשובת הצוות</h3>
-              {/* <bdi> isolates each part from the RTL paragraph around it. As one
-                  concatenated string the bidi algorithm reordered the Latin name, the
-                  digits and the Hebrew month against each other — "Omer Helfer ·
-                  25 ביולי, 20:54" rendered as "20:54 ביולי, Omer Helfer · 25". */}
               {responseView.handling_admin_name && (
                 <p className="admin-modal-body" style={{ marginBottom: 8, color: 'var(--safe)' }}>
                   <bdi>{responseView.handling_admin_name}</bdi>

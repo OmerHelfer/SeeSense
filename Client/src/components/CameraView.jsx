@@ -5,71 +5,34 @@ import { recordClientStage } from '../services/clientMetrics';
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 
-// Fallback square capture/analysis size until the server reports the size it
-// actually uses (via the `inputSize` prop). YOLO bbox coords arrive in this space.
 const DEFAULT_FRAME_SIZE = 640;
 
-// How often to CHECK whether a frame may be sent — not the frame rate itself.
-// See the capture effect below: the rate comes from MAX_INFLIGHT alone.
 const CAPTURE_POLL_HZ = 120;
 
-// Box colour per danger level — mirrors the app's alert palette (red / amber / cyan HUD).
 const BOX_COLORS = { high: '#ff3b30', low: '#eab308', none: '#00f0ff' };
 
-/**
- * CameraView
- *
- * Renders the rear-facing camera feed with:
- * - Pinch-to-zoom via PointerEvents (tries native MediaTrack zoom first,
- *   falls back to CSS transform + adjusted canvas crop)
- * - Periodic frame capture (640×640 JPEG) at the configured capture rate
- * - Real-time detection overlay (bounding boxes + class/confidence labels)
- *
- * Props:
- *   isActive       {boolean}   Start/stop the camera
- *   onFrameCapture {function}  Called with a JPEG Blob each capture tick (ready to
- *                              send straight over the WebSocket — no base64 copy).
- *   shouldCapture  {function}  Optional predicate () => boolean. Checked BEFORE the
- *                              (async) JPEG encode; return false to skip a tick so we
- *                              don't waste CPU encoding frames the consumer will drop
- *                              (backpressure / not aligned). Defaults to always-on.
- *   inputSize      {number}    Square capture/analysis size (px), driven by the
- *                              server's reported input size. bbox coords arrive
- *                              in this space. Defaults to 640 until reported.
- *   detections     {Array}     Latest detections to draw, each { bbox:[x1,y1,x2,y2],
- *                              class_name, confidence, alert_level, motion } in inputSize space
- *
- * Frame compression is fixed by JPEG_QUALITY in config/streamConfig.js.
- */
 const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAULT_FRAME_SIZE, detections = [] }) => {
   const videoRef     = useRef(null);
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
-  const streamRef    = useRef(null);  // active MediaStream
+  const streamRef    = useRef(null);
 
-  // Mirror inputSize into a ref so changing it doesn't recreate captureFrame
-  // (which would restart the capture interval).
   const frameSize    = Math.max(1, Math.round(inputSize) || DEFAULT_FRAME_SIZE);
   const frameSizeRef = useRef(frameSize);
   useEffect(() => { frameSizeRef.current = frameSize; }, [frameSize]);
 
-  // Mirror shouldCapture into a ref so changing it doesn't recreate captureFrame
-  // (which would restart the capture interval).
   const shouldCaptureRef = useRef(shouldCapture);
   useEffect(() => { shouldCaptureRef.current = shouldCapture; }, [shouldCapture]);
 
   const [zoom, setZoom]           = useState(1);
-  const zoomRef                   = useRef(1);   // mirror for use inside intervals/callbacks
+  const zoomRef                   = useRef(1);
 
-  // Geometry needed to map 640×640 detection coords onto the displayed video
-  const [videoSize, setVideoSize]         = useState({ w: 0, h: 0 }); // intrinsic video pixels
-  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 }); // on-screen viewport pixels
+  const [videoSize, setVideoSize]         = useState({ w: 0, h: 0 });
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
 
-  // Pinch tracking
-  const pointersRef = useRef(new Map()); // pointerId → {x, y}
+  const pointersRef = useRef(new Map());
   const pinchRef    = useRef({ initialDist: null, initialZoom: 1 });
 
-  // ── Camera lifecycle ──────────────────────────────
 
   useEffect(() => {
     if (isActive) {
@@ -106,12 +69,7 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
     if (videoRef.current) videoRef.current.srcObject = null;
   };
 
-  // ── Native zoom (MediaTrack constraint) ─────────
 
-  /**
-   * Try to apply zoom via the camera hardware (better quality than CSS scale).
-   * Silently ignored if the device/browser doesn't support the zoom constraint.
-   */
   const applyNativeZoom = useCallback((z) => {
     const track        = streamRef.current?.getVideoTracks()[0];
     if (!track) return;
@@ -121,47 +79,27 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
     track.applyConstraints({ advanced: [{ zoom: clamped }] }).catch(() => {});
   }, []);
 
-  // ── Frame capture ────────────────────────────────
 
-  /**
-   * Captures a square JPEG (inputSize × inputSize) from the current video frame.
-   * The canvas crop is adjusted for the current zoom level so that the
-   * extracted region matches what the user actually sees on screen.
-   *
-   * Encoding uses canvas.toBlob (async, off the main thread) rather than
-   * toDataURL (synchronous, blocks the main thread and forces a base64→bytes
-   * copy on the consumer side). The consumer gets a Blob it can send straight
-   * over the WebSocket. We also bail out early — before touching the canvas —
-   * when shouldCapture() says the frame would be dropped, so we never pay the
-   * encode cost for a frame nobody will send.
-   */
   const captureFrame = useCallback(() => {
     const video  = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth) return;
 
-    // Cheap early-out: skip the whole draw+encode if the consumer can't use a
-    // frame right now (not scanning/aligned, or backpressure says wait).
     if (shouldCaptureRef.current && !shouldCaptureRef.current()) return;
 
     const ctx      = canvas.getContext('2d');
     const baseSize = Math.min(video.videoWidth, video.videoHeight);
     const size     = frameSizeRef.current;
 
-    // Keep the offscreen canvas square at the current input size.
     if (canvas.width !== size || canvas.height !== size) {
       canvas.width  = size;
       canvas.height = size;
     }
 
-    // A higher zoom means we sample a smaller central region of the raw video
     const cropSize = baseSize / zoomRef.current;
     const startX   = (video.videoWidth  - cropSize) / 2;
     const startY   = (video.videoHeight - cropSize) / 2;
 
-    // Stage timing (client breakdown): capture = the synchronous video→canvas draw;
-    // encode = the async JPEG compression (wall time until toBlob's callback fires).
-    // performance.now() deltas are sub-microsecond — no measurable overhead.
     const tCap = performance.now();
     ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, size, size);
     recordClientStage('capture', performance.now() - tCap);
@@ -179,33 +117,16 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
 
   useEffect(() => {
     if (!isActive) return;
-    // This timer does NOT set the frame rate — it only asks, often, whether a
-    // frame may be sent. MAX_INFLIGHT is the only thing that decides the rate:
-    // shouldCapture returns false while the pipeline is full, and true the moment
-    // a reply frees a slot. Ticks that can't send early-out before the draw and
-    // the encode, so they cost one function call.
-    //
-    // Hence a fixed, generous rate rather than one derived from a target. A slot
-    // frees when a *result* arrives, which never aligns with a timer; polling
-    // slowly means a freed slot sits idle until the next tick, and that dead time
-    // is pure lost throughput. At 120Hz the wait is at most ~8ms.
-    //
-    // It is an upper bound on FPS (you cannot send more often than you look), but
-    // at 120 it sits far above what any server here can process, so in practice
-    // the pipeline depth always binds first.
     const id = setInterval(captureFrame, 1000 / CAPTURE_POLL_HZ);
     return () => clearInterval(id);
   }, [isActive, captureFrame]);
 
-  // ── Detection overlay geometry ───────────────────
 
-  /** Record the intrinsic video resolution once the stream metadata is ready. */
   const handleLoadedMetadata = useCallback(() => {
     const v = videoRef.current;
     if (v) setVideoSize({ w: v.videoWidth, h: v.videoHeight });
   }, []);
 
-  /** Keep the container's on-screen pixel size in sync (responsive layout). */
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -216,15 +137,6 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
     return () => ro.disconnect();
   }, []);
 
-  /**
-   * Map each detection's 640×640 bbox into on-screen (pre-zoom) container pixels.
-   *
-   * The captured frame is the centre square (side = min(videoW, videoH)) of the raw
-   * video. With object-fit: cover the video is scaled uniformly by `coverScale` and
-   * centred, so that centre square becomes a centred square of side `squareSide` in
-   * container coords. The zoom is applied separately via a CSS transform on the SVG
-   * (matching the video element), so we intentionally map in the *pre-zoom* space.
-   */
   const overlayBoxes = useMemo(() => {
     const { w: vW, h: vH } = videoSize;
     const { w: cW, h: cH } = containerSize;
@@ -235,7 +147,7 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
     const squareSide = baseSize * coverScale;
     const squareLeft = (cW - squareSide) / 2;
     const squareTop  = (cH - squareSide) / 2;
-    const s          = squareSide / frameSize; // inputSize-space → container px
+    const s          = squareSide / frameSize;
 
     return detections.map((d, i) => {
       const [x1, y1, x2, y2] = d.bbox ?? [0, 0, 0, 0];
@@ -251,7 +163,6 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
     });
   }, [detections, videoSize, containerSize, frameSize]);
 
-  // ── Pinch-to-zoom (PointerEvents) ───────────────
 
   const getPinchDist = () => {
     const pts = [...pointersRef.current.values()];
@@ -261,7 +172,6 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
 
   const handlePointerDown = (e) => {
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    // Capture so we keep receiving events even if the pointer leaves the element
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
@@ -269,11 +179,10 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
     if (!pointersRef.current.has(e.pointerId)) return;
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    if (pointersRef.current.size < 2) return; // single-finger drag — ignore
+    if (pointersRef.current.size < 2) return;
 
     const dist = getPinchDist();
 
-    // First frame of a new pinch gesture — record baseline
     if (pinchRef.current.initialDist === null) {
       pinchRef.current = { initialDist: dist, initialZoom: zoomRef.current };
       return;
@@ -292,11 +201,10 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
   const handlePointerUp = (e) => {
     pointersRef.current.delete(e.pointerId);
     if (pointersRef.current.size < 2) {
-      pinchRef.current.initialDist = null; // reset baseline for next gesture
+      pinchRef.current.initialDist = null;
     }
   };
 
-  // ── Render ───────────────────────────────────────
 
   return (
     <div
@@ -306,7 +214,7 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      style={{ touchAction: 'none' }} /* prevent browser scroll/zoom interfering */
+      style={{ touchAction: 'none' }}
     >
       <video
         ref={videoRef}
@@ -321,10 +229,6 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
         }}
       />
 
-      {/* ── Detection overlay ──
-          Bounding boxes are drawn in the same (pre-zoom) coordinate space as the
-          video and carry the identical CSS scale(zoom), so they track the feed at
-          any zoom level. Line/text sizes are divided by zoom to stay screen-constant. */}
       {overlayBoxes.length > 0 && (
         <svg
           className="detection-overlay"
@@ -340,12 +244,6 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
             const color = BOX_COLORS[b.level] ?? BOX_COLORS.none;
             const font  = 13 / zoom;
             const pad   = 4 / zoom;
-            // Centred on the box's TOP edge rather than tucked into its left
-            // corner. Anchoring to the corner put the text over whatever the box
-            // was framing, and with several boxes the labels drifted apart from
-            // the things they name; centred, each label sits directly above its
-            // own object. Falls inside the box when there is no room above, so a
-            // detection at the very top of the frame keeps its label visible.
             const above = b.y > font * 1.4;
             const ty    = above ? b.y - pad : b.y + font + pad;
             const tx    = b.x + b.w / 2;
@@ -376,7 +274,6 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
         </svg>
       )}
 
-      {/* Hidden canvas used for frame extraction */}
       <canvas
         ref={canvasRef}
         width="640"

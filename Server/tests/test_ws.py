@@ -31,13 +31,12 @@ import glob
 import cv2
 import numpy as np
 
-# ── Latency Tracker ──
 
 class LatencyTracker:
     """Collects latency samples and prints stats."""
 
     def __init__(self):
-        self.samples = []  # list of (round_trip_ms, server_ms, network_ms)
+        self.samples = []
 
     def record(self, round_trip_ms: float, server_ms: float):
         network_ms = round_trip_ms - server_ms
@@ -67,14 +66,13 @@ class LatencyTracker:
 latency_tracker = LatencyTracker()
 
 
-# ── Configuration ──
 TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjhjZGI4NjUiLCJlbWFpbCI6Im9tZXJoZWxmZXJAZ21haWwuY29tIiwiZXhwIjoxNzc1MDQ3OTI3LCJpYXQiOjE3NzQ5NjE1Mjd9.MTx7k2PRokFVayHfMxBccYu_b2hYVeljX99XCNt2fdk"
 SERVER = "ws://localhost:8000/stream/ws"
 IMAGES_DIR = "tests/test_images"
 VIDEOS_DIR = "tests/test_videos"
-DELAY_BETWEEN_FRAMES = 0.5  # seconds, for 'all' and 'video' mode
-VIDEO_FRAME_SKIP = 5  # extract every Nth frame from video
-CLIENT_RESIZE = True  # Simulate client-side resize to 640 before sending
+DELAY_BETWEEN_FRAMES = 0.5
+VIDEO_FRAME_SKIP = 5
+CLIENT_RESIZE = True
 CLIENT_TARGET = 640
 CLIENT_JPEG_QUALITY = 80
 
@@ -90,7 +88,7 @@ def client_resize(image_bytes):
     img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
     h, w = img.shape[:2]
     if max(w, h) <= CLIENT_TARGET:
-        return image_bytes  # already small enough
+        return image_bytes
     scale = min(CLIENT_TARGET / h, CLIENT_TARGET / w)
     resized = cv2.resize(img, (int(w * scale), int(h * scale)))
     _, buffer = cv2.imencode('.jpg', resized, [cv2.IMWRITE_JPEG_QUALITY, CLIENT_JPEG_QUALITY])
@@ -150,7 +148,6 @@ def print_result(result, round_trip_ms=None):
     cleared = " PATH CLEAR" if result.get("danger_cleared") else ""
     server_ms = result.get("latency_ms", 0)
 
-    # Timing info
     if round_trip_ms:
         network_ms = round_trip_ms - server_ms
         timing = f"Total: {round_trip_ms:.0f}ms (server: {server_ms}ms, network: {network_ms:.0f}ms)"
@@ -203,7 +200,6 @@ async def test():
     print(f"\nConnecting to {SERVER}...")
 
     async with websockets.connect(uri) as ws:
-        # Receive connection confirmation
         response = json.loads(await ws.recv())
         print(f"Connected! Session: {response['session_id']}\n")
 
@@ -249,7 +245,6 @@ async def test():
                     print(f"  No videos found in {VIDEOS_DIR}/")
                     continue
 
-                # Choose video
                 if len(videos) == 1:
                     vid_idx = 0
                 else:
@@ -271,7 +266,7 @@ async def test():
 
                 for i, frame_bytes in enumerate(frames):
                     original_size = len(frame_bytes)
-                    frame_bytes = client_resize(frame_bytes)  # before timing
+                    frame_bytes = client_resize(frame_bytes)
                     print(f"  Frame [{i}/{len(frames)}] ({original_size:,} → {len(frame_bytes):,} bytes)")
                     result, round_trip = await send_and_measure(ws, frame_bytes)
                     print_result(result, round_trip)
@@ -294,7 +289,7 @@ async def test():
                     with open(img_path, "rb") as f:
                         image_bytes = f.read()
                     original_size = len(image_bytes)
-                    image_bytes = client_resize(image_bytes)  # before timing
+                    image_bytes = client_resize(image_bytes)
                     print(f"  Sending [{i}] {os.path.basename(img_path)} ({original_size:,} → {len(image_bytes):,} bytes)")
                     result, round_trip = await send_and_measure(ws, image_bytes)
                     print_result(result, round_trip)
@@ -311,7 +306,6 @@ async def test():
                     print("  No images loaded")
                     continue
 
-                # Send single image — by number or next
                 if cmd.isdigit():
                     idx = int(cmd)
                     if idx >= len(images):
@@ -319,7 +313,7 @@ async def test():
                         continue
                     current_index = idx
                 elif cmd == "":
-                    pass  # use current_index
+                    pass
                 else:
                     print("  Unknown command")
                     continue
@@ -332,7 +326,7 @@ async def test():
                 with open(img_path, "rb") as f:
                     image_bytes = f.read()
                 original_size = len(image_bytes)
-                image_bytes = client_resize(image_bytes)  # before timing
+                image_bytes = client_resize(image_bytes)
 
                 print(f"  Sending [{current_index}] {os.path.basename(img_path)} ({original_size:,} → {len(image_bytes):,} bytes)")
                 result, round_trip = await send_and_measure(ws, image_bytes)

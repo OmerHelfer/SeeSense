@@ -26,8 +26,6 @@ const Login = () => {
   const [email, setEmail]             = useState('');
   const [password, setPassword]       = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  // If we landed here because the JWT expired, explain it instead of just showing
-  // a blank login form the user didn't ask for.
   const [error, setError]             = useState(
     () => (consumeSessionExpiredNotice() ? 'החיבור פג תוקף. יש להתחבר מחדש.' : ''),
   );
@@ -64,7 +62,6 @@ const Login = () => {
         animate="visible"
         exit="exit"
       >
-        {/* Logo */}
         <div className="auth-logo">
           <div className="auth-logo-mark">
             <Scan size={28} strokeWidth={2.5} />

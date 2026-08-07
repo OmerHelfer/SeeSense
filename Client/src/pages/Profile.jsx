@@ -23,9 +23,6 @@ const Profile = () => {
   const [saveError, setSaveError]     = useState('');
   const [saveOk, setSaveOk]           = useState(false);
 
-  // Change password. The old password is required by the server (it calls
-  // change_password with force=False), so a wrong current password comes back
-  // as a 400 rather than silently doing nothing.
   const [oldPw, setOldPw]         = useState('');
   const [newPw, setNewPw]         = useState('');
   const [confirmPw, setConfirmPw] = useState('');
@@ -33,12 +30,10 @@ const Profile = () => {
   const [pwError, setPwError]     = useState('');
   const [pwOk, setPwOk]           = useState(false);
 
-  // Self-delete
   const [showDelete, setShowDelete]   = useState(false);
   const [deleting, setDeleting]       = useState(false);
   const [deleteErr, setDeleteErr]     = useState('');
 
-  // Unsaved-changes guard on back
   const [showLeave, setShowLeave]     = useState(false);
 
   const handleChangePassword = async (e) => {
@@ -88,8 +83,6 @@ const Profile = () => {
       .catch(() => setLoadErr('לא ניתן לטעון את הפרופיל. נסה שוב.'));
   }, []);
 
-  // Core save — returns true on success. Shared by the "שמור" button and the
-  // "save & leave" path of the unsaved-changes guard.
   const saveChanges = async () => {
     setSaveError('');
     setSaveOk(false);
@@ -123,12 +116,10 @@ const Profile = () => {
     }
   };
 
-  // True if the user is editing and the form differs from the saved profile.
   const EDIT_KEYS = ['name', 'phone', 'country', 'date_of_birth', 'height_cm', 'weight_kg'];
   const hasUnsavedChanges = () =>
     isEditing && !!profile && EDIT_KEYS.some((k) => String(editData[k] ?? '') !== String(profile[k] ?? ''));
 
-  // Back arrow: warn about unsaved edits instead of leaving silently.
   const handleBack = () => {
     if (hasUnsavedChanges()) setShowLeave(true);
     else navigate('/settings');
@@ -138,7 +129,6 @@ const Profile = () => {
     const ok = await saveChanges();
     setShowLeave(false);
     if (ok) navigate('/settings');
-    // On failure the modal closes so the error banner is visible; user stays on page.
   };
 
   const handleDiscardAndLeave = () => {
@@ -196,7 +186,6 @@ const Profile = () => {
       <div className="inner-page-body">
         {loadErr && <div className="error-banner">{loadErr}</div>}
 
-        {/* Profile info */}
         <div className="glass-section">
           <div className="section-header">
             <div className="section-label-row">
@@ -249,10 +238,6 @@ const Profile = () => {
           </div>
         </div>
 
-        {/* Change password — the server endpoint has always existed and the client
-            wrapper with it; there was simply no UI reaching either, so a user could
-            never change their own password. Admins can set someone else's from
-            AdminUsers, which is a different thing entirely. */}
         <div className="glass-section">
           <div className="section-header">
             <div className="section-label-row">
@@ -308,14 +293,12 @@ const Profile = () => {
           </form>
         </div>
 
-        {/* Emergency contacts shortcut */}
         <button className="nav-row-btn" onClick={() => navigate('/contacts')}>
           <Users size={18} />
           <span>אנשי קשר לחירום</span>
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {/* Danger zone — self delete (available to all; the last super admin is blocked server-side) */}
         {profile && (
           <div className="danger-zone">
             <div className="danger-zone-head">
@@ -335,7 +318,6 @@ const Profile = () => {
         <div style={{ height: 40 }} />
       </div>
 
-      {/* Self-delete confirmation modal (centered) */}
       <AnimatePresence>
         {showDelete && (
           <motion.div className="admin-modal-backdrop"
@@ -360,7 +342,6 @@ const Profile = () => {
         )}
       </AnimatePresence>
 
-      {/* Unsaved-changes confirmation on back (centered) */}
       <AnimatePresence>
         {showLeave && (
           <motion.div className="admin-modal-backdrop"

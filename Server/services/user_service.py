@@ -35,7 +35,6 @@ CONTACT_CODE_EXPIRY_MINUTES = 30
 MAX_CODE_ATTEMPTS = 3
 
 
-# ==================== User CRUD ====================
 
 def migrate_admin_levels():
     """One-time backfill: give every user an admin_level field (0/1/2).
@@ -144,7 +143,6 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
     return True
 
 
-# ==================== Detection History ====================
 
 def build_detection_entry(user_id: str, record: dict, session_id: str = None):
     """Build a detection-history document with a pre-generated _id (no DB write).
@@ -153,7 +151,6 @@ def build_detection_entry(user_id: str, record: dict, session_id: str = None):
     client immediately and persist `entry` asynchronously via insert_detection_entry,
     keeping the DB write off the hot path.
     """
-    # Extract object summaries (class_name, confidence, distance) for history display
     raw_objects = record.get("objects", [])
     objects_summary = []
     for obj in raw_objects:
@@ -164,7 +161,7 @@ def build_detection_entry(user_id: str, record: dict, session_id: str = None):
         })
 
     entry = {
-        "_id": ObjectId(),  # pre-generate so we can return the id before the insert
+        "_id": ObjectId(),
         "user_id": user_id,
         "session_id": session_id,
         "timestamp": datetime.now().isoformat(),
@@ -181,7 +178,7 @@ def insert_detection_entry(entry: dict) -> None:
     """Persist a pre-built detection-history document (safe to call in a thread)."""
     try:
         _detection_history().insert_one(entry)
-    except Exception as e:  # never let a background write crash the stream
+    except Exception as e:
         logger.warning(f"Deferred detection insert failed: {e}")
 def get_user_history(user_id: str, limit: int = 50, period: str = "all", session_id: str = None) -> list[dict]:
     """Retrieve detection history filtered by time period and/or session."""
@@ -232,7 +229,6 @@ def clear_user_history(user_id: str) -> int:
     return result.deleted_count
 
 
-# ==================== Feedback ====================
 
 def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = None) -> str:
     """Quick feedback from user during walk — no notes, status is pending."""
@@ -251,7 +247,6 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
         if existing:
             raise ValueError("Feedback already exists for this record")
 
-        # Save snapshot of detection data for later review
         detection_snapshot = {
             "timestamp": record.get("timestamp"),
             "danger": record.get("danger", False),
@@ -261,7 +256,6 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
             "objects_detected": record.get("objects_detected", 0),
         }
 
-    # Find active session
     from core.database import get_db
     session = get_db()["sessions"].find_one({"user_id": user_id, "status": "active"})
     session_id = session["session_id"] if session else None
@@ -296,7 +290,6 @@ def create_feedback_from_history(user_id: str, record_id: str, feedback_type: st
     if existing:
         raise ValueError("Feedback already exists for this record")
 
-    # Save snapshot of detection data for review
     detection_snapshot = {
         "timestamp": record.get("timestamp"),
         "danger": record.get("danger", False),
@@ -435,13 +428,6 @@ def mark_responses_seen(user_id: str) -> int:
     return result.modified_count
 
 
-# ==================== Admin feedback handling ====================
-# A SEPARATE lifecycle layered on top of the user-side `status` (pending/submitted):
-# once a user has *submitted* a feedback, admins triage it through
-#   pending (ממתין) → in_progress (בטיפול) → resolved (טופל).
-# `handling_status` (+ the handling_admin / admin_response fields) is independent of
-# the misdetection `status` field and never touches it. Legacy docs without a
-# handling_status read as "pending".
 
 VALID_HANDLING = {"pending", "in_progress", "resolved"}
 
@@ -556,7 +542,7 @@ def admin_resolve_feedback(feedback_id: str, admin_id: str, admin_level: int, re
         "handling_status": "resolved",
         "admin_response": response.strip(),
         "resolved_at": now,
-        "response_seen": False,   # drives the user's "new response" notification
+        "response_seen": False,
     }
     if not handler:
         updates["handling_admin_id"] = admin_id
@@ -589,7 +575,6 @@ def admin_assign_feedback(feedback_id: str, assignee_id: str) -> dict:
     return _feedback_admin_view(r)
 
 
-# ==================== Emergency Contacts (embedded in user document) ====================
 
 def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> dict:
     """
@@ -602,7 +587,6 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
         import threading
         profile = _users().find_one({"user_id": user_id})
 
-        # Background thread — blocking SMTP here would freeze the async event loop.
         def _notify_expired(to_email, to_name, items):
             for _exp_email, exp_name in items:
                 try:
@@ -620,23 +604,18 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
     if not profile:
         raise ValueError("User not found")
 
-    # Can't add yourself
     if email == profile["email"]:
         raise ValueError("Cannot add yourself as an emergency contact")
 
-    # Get current contacts
     contacts = profile.get("emergency_contacts", [])
 
-    # Max contacts reached
     if len(contacts) >= MAX_EMERGENCY_CONTACTS:
         raise ValueError(f"Maximum {MAX_EMERGENCY_CONTACTS} emergency contacts allowed")
 
-    # Duplicate email check
     for c in contacts:
         if c["email"] == email:
             raise ValueError(f"Contact with email {email} already exists")
 
-    # Generate verification code
     code = ''.join(random.choices(string.digits, k=6))
 
     contact = {
@@ -676,15 +655,12 @@ def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
     if contact["status"] == "verified":
         raise ValueError("Contact is already verified")
 
-    # Too many wrong attempts
     if contact["code_attempts"] >= MAX_CODE_ATTEMPTS:
         raise ValueError("Too many failed attempts. Please request a new code.")
 
-    # Code expired
     if datetime.now().isoformat() > contact["code_expires"]:
         raise ValueError("Verification code has expired. Please request a new code.")
 
-    # Wrong code
     if contact["verification_code"] != code:
         _users().update_one(
             {"user_id": user_id, "emergency_contacts.email": email},
@@ -693,7 +669,6 @@ def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
         remaining = MAX_CODE_ATTEMPTS - contact["code_attempts"] - 1
         raise ValueError(f"Invalid code. {remaining} attempts remaining.")
 
-    # Verify the contact
     _users().update_one(
         {"user_id": user_id, "emergency_contacts.email": email},
         {"$set": {
@@ -725,7 +700,6 @@ def resend_contact_code(user_id: str, email: str) -> str:
     if contact["status"] == "verified":
         raise ValueError("Contact is already verified")
 
-    # Generate new code and reset attempts
     code = ''.join(random.choices(string.digits, k=6))
 
     _users().update_one(
@@ -784,7 +758,6 @@ def get_verified_contacts(user_id: str) -> list[dict]:
 
 
 
-# ==================== Helpers ====================
 
 def _hash_password(password: str) -> bytes:
     """Hash password using bcrypt."""
@@ -800,7 +773,6 @@ def _safe_profile(profile: dict) -> dict:
     """Return profile without password hash, MongoDB _id, and internal contact fields."""
     safe = {k: v for k, v in profile.items() if k not in ("password_hash", "_id")}
 
-    # Clean internal fields from emergency contacts
     if "emergency_contacts" in safe:
         safe["emergency_contacts"] = [{
             "name": c["name"],
@@ -834,7 +806,6 @@ def _cleanup_expired_contacts(user_id: str) -> list[str]:
 
     return expired
 
-# ==================== Emergency Alert ====================
 
 def _emergency_alerts():
     return get_db()["emergency_alerts"]
@@ -851,8 +822,6 @@ def trigger_emergency(user_id: str, gps_lat: float | None, gps_lon: float | None
     if not contacts:
         raise ValueError("No verified emergency contacts configured")
 
-    # 0,0 is a real place (Null Island, in the Atlantic). Treat "no fix" as no
-    # link at all rather than a plausible-looking link to the wrong continent.
     has_fix = gps_lat is not None and gps_lon is not None
     maps_link = f"https://maps.google.com/?q={gps_lat},{gps_lon}" if has_fix else None
 
@@ -869,13 +838,8 @@ def trigger_emergency(user_id: str, gps_lat: float | None, gps_lon: float | None
         ],
     }
 
-    # Persist alert to DB
     _emergency_alerts().insert_one(alert.copy())
 
-    # Send emails on a background thread and return immediately. Blocking SMTP
-    # here would run on the async event loop and freeze the WHOLE server — the
-    # /health pings would time out (watchdog → RED "connection lost") and every
-    # other request/WebSocket would stall until all emails finished sending.
     import threading
 
     def _notify_contacts():
@@ -906,7 +870,6 @@ def get_emergency_alert_history(user_id: str, limit: int = 50) -> list:
     )
     return alerts
 
-# ==================== Admin: user management ====================
 
 def touch_last_seen(user_id: str):
     """Update last_seen (called on login and WS disconnect)."""
@@ -1052,7 +1015,6 @@ def delete_user_account(user_id: str) -> bool:
     if not profile:
         return False
 
-    # Delete all user data
     _users().delete_one({"user_id": user_id})
     _detection_history().delete_many({"user_id": user_id})
     _feedback().delete_many({"user_id": user_id})

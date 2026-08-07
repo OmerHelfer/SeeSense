@@ -1,11 +1,5 @@
-/* ═══════════════════════════════════════════════════════════════════
-   SeeSense — Premium Dark Futuristic Design System
-   Dark Glassmorphism · Neon HUD · Mobile-first PWA
-   ═══════════════════════════════════════════════════════════════════ */
 
-/* ─── Design Tokens ─── */
 :root {
-  /* Core palette */
   --bg:            #000000;
   --bg-1:          #060a0f;
   --bg-2:          #0d1117;
@@ -20,42 +14,35 @@
   --text-2:        rgba(255, 255, 255, 0.65);
   --text-3:        rgba(255, 255, 255, 0.35);
 
-  /* Glass surfaces */
   --glass-bg:      rgba(255, 255, 255, 0.04);
   --glass-bg-2:    rgba(255, 255, 255, 0.07);
   --glass-border:  rgba(255, 255, 255, 0.09);
   --glass-shine:   rgba(255, 255, 255, 0.14);
 
-  /* Glows */
   --glow-cyan:     0 0 24px rgba(0, 240, 255, 0.45);
   --glow-cyan-lg:  0 0 48px rgba(0, 240, 255, 0.35);
   --glow-danger:   0 0 24px rgba(255, 59, 48, 0.5);
   --glow-safe:     0 0 16px rgba(0, 229, 160, 0.45);
 
-  /* Shadows */
   --shadow-card:   0 40px 80px rgba(0, 0, 0, 0.7),
                    0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-btn:    0 8px 24px rgba(0, 0, 0, 0.4);
 
-  /* Radii */
   --r-xs: 8px;
   --r-sm: 14px;
   --r-md: 20px;
   --r-lg: 26px;
   --r-xl: 32px;
 
-  /* Safe areas */
   --sat: env(safe-area-inset-top,    0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left,   0px);
   --sar: env(safe-area-inset-right,  0px);
 
-  /* Typography */
   --font-display: 'Montserrat', system-ui, sans-serif;
   --font-body:    'Inter', system-ui, sans-serif;
 }
 
-/* ─── Reset ─── */
 *, *::before, *::after {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -63,7 +50,6 @@
   padding: 0;
 }
 
-/* ─── Base ─── */
 html {
   font-size: 16px;
   height: 100%;
@@ -97,9 +83,6 @@ body {
   border-radius: 4px;
 }
 
-/* ════════════════════════════════════════════════════════
-   ANIMATED MESH BACKGROUND
-   ════════════════════════════════════════════════════════ */
 
 .mesh-background {
   position: fixed;
@@ -160,9 +143,6 @@ body {
   to   { transform: translate(-6vw, 7vh)  scale(1.18); }
 }
 
-/* ════════════════════════════════════════════════════════
-   AUTH PAGES  (Login · Register)
-   ════════════════════════════════════════════════════════ */
 
 .auth-page {
   position: relative;
@@ -177,7 +157,6 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Glass card ── */
 .auth-card {
   position: relative;
   z-index: 2;
@@ -193,7 +172,6 @@ body {
   box-shadow: var(--shadow-card);
 }
 
-/* ── Logo ── */
 .auth-logo {
   display: flex;
   align-items: center;
@@ -234,7 +212,6 @@ body {
   margin-top: 2px;
 }
 
-/* ── Form heading ── */
 .auth-heading {
   font-family: var(--font-display);
   font-size: 1.3rem;
@@ -243,7 +220,6 @@ body {
   margin-bottom: 20px;
 }
 
-/* ── Error banner ── */
 .error-banner {
   display: flex;
   align-items: flex-start;
@@ -259,7 +235,6 @@ body {
   margin-bottom: 16px;
 }
 
-/* ── Input group ── */
 .input-group {
   display: flex;
   flex-direction: column;
@@ -308,13 +283,12 @@ body {
   box-shadow: 0 0 0 1px rgba(255, 59, 48, 0.4);
 }
 
-/* ── Password wrapper (relative for toggle btn) ── */
 .input-password-wrap {
   position: relative;
 }
 
 .input-password-wrap .input-field {
-  padding-left: 52px; /* space for toggle (RTL: left = visual end) */
+  padding-left: 52px;
 }
 
 .password-toggle {
@@ -336,7 +310,6 @@ body {
   color: var(--cyan);
 }
 
-/* ── Submit button ── */
 .auth-btn {
   width: 100%;
   height: 62px;
@@ -372,7 +345,6 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-/* ── Footer link ── */
 .auth-footer {
   margin-top: 22px;
   text-align: center;
@@ -386,9 +358,6 @@ body {
   text-decoration: none;
 }
 
-/* ════════════════════════════════════════════════════════
-   DASHBOARD PAGE
-   ════════════════════════════════════════════════════════ */
 
 .dashboard-page {
   display: flex;
@@ -400,7 +369,6 @@ body {
   overflow: hidden;
 }
 
-/* ── Header ── */
 .dashboard-header {
   display: flex;
   justify-content: space-between;
@@ -449,12 +417,11 @@ body {
   box-shadow: var(--glow-cyan);
 }
 
-/* ── Camera container + video feed (inside the viewport) ── */
 .camera-container {
   position: absolute;
   inset: 0;
-  overflow: hidden;       /* clip scaled video to the rounded viewport */
-  touch-action: none;     /* prevent browser pan/zoom fighting our pinch handler */
+  overflow: hidden;
+  touch-action: none;
 }
 
 .video-feed {
@@ -462,11 +429,9 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
-  /* Smooth zoom transitions driven by pinch gesture */
   transition: transform 0.05s ease-out;
 }
 
-/* ── Camera viewport ── */
 .camera-viewport {
   flex: 1;
   position: relative;
@@ -486,23 +451,20 @@ body {
     0 0 40px rgba(0, 240, 255, 0.08);
 }
 
-/* ── HUD Overlay ── */
 .hud-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-/* ── Detection overlay (bounding boxes) ── */
 .detection-overlay {
   position: absolute;
   top: 0;
   left: 0;
-  pointer-events: none;   /* never intercept camera/pinch gestures */
+  pointer-events: none;
   overflow: visible;
 }
 
-/* ── Corner brackets ── */
 .hud-corner {
   position: absolute;
   width: 30px;
@@ -535,7 +497,6 @@ body {
   border-radius: 0 0 4px 0;
 }
 
-/* Active corners — muted/dim when scanning but not yet aligned */
 .hud-brackets.active .hud-corner-tl,
 .hud-brackets.active .hud-corner-tr,
 .hud-brackets.active .hud-corner-bl,
@@ -549,7 +510,6 @@ body {
   50%       { opacity: 0.2; }
 }
 
-/* Aligned corners — switch to green glow (scanning + camera aligned) */
 .hud-brackets.active.aligned .hud-corner-tl,
 .hud-brackets.active.aligned .hud-corner-tr,
 .hud-brackets.active.aligned .hud-corner-bl,
@@ -569,15 +529,14 @@ body {
   }
 }
 
-/* ── HUD top row ── */
 .hud-top-row {
   position: absolute;
   top: 14px;
-  right: 54px;   /* Clear of corner bracket */
+  right: 54px;
   left: 54px;
   display: flex;
   align-items: center;
-  justify-content: flex-end; /* RTL: end = visual left */
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -623,7 +582,6 @@ body {
   50%       { opacity: 0.2; }
 }
 
-/* ── Scan line (sweeps down camera when active) ── */
 .scan-line {
   position: absolute;
   left: 0;
@@ -643,7 +601,6 @@ body {
   100% { top: 98%;  opacity: 0;   }
 }
 
-/* ── Spirit Level (gyroscope) ── */
 .spirit-level-wrap {
   position: absolute;
   bottom: 20px;
@@ -719,7 +676,6 @@ body {
   color: var(--safe);
 }
 
-/* ── Alert overlay (danger) ── */
 .alert-overlay {
   position: absolute;
   inset: 0;
@@ -763,7 +719,6 @@ body {
   color: #000;
 }
 
-/* ── Idle overlay (camera off) ── */
 .idle-overlay {
   position: absolute;
   inset: 0;
@@ -794,7 +749,6 @@ body {
   letter-spacing: 0.3px;
 }
 
-/* ── Scan button ── */
 .scan-btn-wrap {
   padding: 14px 12px 12px;
   flex-shrink: 0;
@@ -850,7 +804,6 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
-/* ── Floating Glass Tab Bar ── */
 .tab-bar-wrap {
   padding: 0 12px calc(var(--sab) + 14px);
   flex-shrink: 0;
@@ -896,13 +849,11 @@ body {
   background: rgba(0, 240, 255, 0.08);
 }
 
-/* ─── Universal press feedback ─── */
 button:active {
   transform: scale(0.96);
   transition: transform 0.08s;
 }
 
-/* ─── Framer-motion page wrapper ─── */
 .page-wrapper {
   flex: 1;
   display: flex;
@@ -910,7 +861,6 @@ button:active {
   min-height: 0;
 }
 
-/* ── Alignment (tilt) warning overlay ── */
 .alignment-overlay {
   position: absolute;
   inset: 0;
@@ -944,7 +894,6 @@ button:active {
   color: var(--text-2);
 }
 
-/* ── Danger border — pulsing red glow around the whole viewport ── */
 .camera-viewport.danger-border {
   border-color: var(--danger) !important;
   animation: danger-pulse-border 0.75s ease-in-out infinite;
@@ -965,9 +914,6 @@ button:active {
   }
 }
 
-/* ════════════════════════════════════════════════════════
-   SUCCESS BANNER  (shared across pages)
-   ════════════════════════════════════════════════════════ */
 
 .success-banner {
   display: flex;
@@ -984,7 +930,6 @@ button:active {
   margin-bottom: 16px;
 }
 
-/* ── Auth sub-text ── */
 .auth-subtext {
   font-size: 0.88rem;
   color: var(--text-2);
@@ -992,7 +937,6 @@ button:active {
   line-height: 1.5;
 }
 
-/* ── Numeric code input (centered, large) ── */
 .code-input {
   text-align: center;
   letter-spacing: 6px;
@@ -1001,10 +945,6 @@ button:active {
   font-family: var(--font-display);
 }
 
-/* ════════════════════════════════════════════════════════
-   INNER PAGES  (Profile · EmergencyContacts)
-   Full-height scrollable layout with sticky header.
-   ════════════════════════════════════════════════════════ */
 
 .inner-page {
   display: flex;
@@ -1016,7 +956,6 @@ button:active {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Sticky top header ── */
 .inner-page-header {
   position: sticky;
   top: 0;
@@ -1032,7 +971,6 @@ button:active {
   flex-shrink: 0;
 }
 
-/* RTL: ArrowRight points left visually, acting as "back" */
 .back-btn {
   width: 46px;
   height: 46px;
@@ -1061,7 +999,6 @@ button:active {
   letter-spacing: -0.2px;
 }
 
-/* ── Scrollable body ── */
 .inner-page-body {
   flex: 1;
   padding: 20px 16px;
@@ -1070,9 +1007,6 @@ button:active {
   gap: 14px;
 }
 
-/* ════════════════════════════════════════════════════════
-   GLASS SECTIONS  (reusable cards on inner pages)
-   ════════════════════════════════════════════════════════ */
 
 .glass-section {
   background: var(--glass-bg);
@@ -1088,7 +1022,6 @@ button:active {
   border-color: rgba(0, 240, 255, 0.15);
 }
 
-/* ── Section header row ── */
 .section-header {
   display: flex;
   align-items: center;
@@ -1111,9 +1044,6 @@ button:active {
   color: var(--text-3);
 }
 
-/* ════════════════════════════════════════════════════════
-   PROFILE FIELDS
-   ════════════════════════════════════════════════════════ */
 
 .profile-field {
   display: flex;
@@ -1150,24 +1080,18 @@ button:active {
   color: var(--text-3);
 }
 
-/* Input inside a profile field (smaller height than auth inputs) */
 .field-input {
   height: 48px !important;
   font-size: 0.95rem !important;
 }
 
-/* ── Info text ── */
 .info-text {
   font-size: 0.85rem;
   color: var(--text-2);
   line-height: 1.55;
 }
 
-/* ════════════════════════════════════════════════════════
-   BUTTONS  (ghost · accent · danger)
-   ════════════════════════════════════════════════════════ */
 
-/* Outlined secondary button */
 .ghost-btn {
   display: inline-flex;
   align-items: center;
@@ -1193,7 +1117,6 @@ button:active {
   font-size: 0.82rem;
 }
 
-/* Accent (cyan) button — smaller than auth-btn */
 .accent-btn {
   display: inline-flex;
   align-items: center;
@@ -1221,7 +1144,6 @@ button:active {
   box-shadow: none;
 }
 
-/* Red destructive button */
 .danger-btn {
   display: inline-flex;
   align-items: center;
@@ -1253,7 +1175,6 @@ button:active {
   margin-top: 4px;
 }
 
-/* Small icon-only button */
 .icon-btn-sm {
   width: 36px;
   height: 36px;
@@ -1273,9 +1194,6 @@ button:active {
   color: var(--danger);
 }
 
-/* ════════════════════════════════════════════════════════
-   NAVIGATION ROW BUTTON  (Profile → Contacts)
-   ════════════════════════════════════════════════════════ */
 
 .nav-row-btn {
   display: flex;
@@ -1300,14 +1218,11 @@ button:active {
 }
 
 .nav-row-arrow {
-  margin-right: auto; /* push arrow to the start (visual left in RTL) */
+  margin-right: auto;
   color: var(--text-3);
-  transform: scaleX(-1); /* flip: right arrow → points left (back direction in RTL = forward here) */
+  transform: scaleX(-1);
 }
 
-/* ════════════════════════════════════════════════════════
-   DANGER ZONE SECTION
-   ════════════════════════════════════════════════════════ */
 
 .danger-zone {
   border-color: rgba(255, 59, 48, 0.2);
@@ -1320,9 +1235,6 @@ button:active {
   margin-bottom: 14px;
 }
 
-/* ════════════════════════════════════════════════════════
-   MODAL  (delete confirmation)
-   ════════════════════════════════════════════════════════ */
 
 .modal-backdrop {
   position: fixed;
@@ -1394,9 +1306,6 @@ button:active {
   justify-content: center;
 }
 
-/* ════════════════════════════════════════════════════════
-   EMERGENCY CONTACTS PAGE
-   ════════════════════════════════════════════════════════ */
 
 .contact-list {
   display: flex;
@@ -1446,7 +1355,6 @@ button:active {
   flex-shrink: 0;
 }
 
-/* ── Status badges ── */
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -1481,7 +1389,6 @@ button:active {
   background: rgba(255, 159, 10, 0.2);
 }
 
-/* ── Add contact button ── */
 .add-contact-btn {
   display: flex;
   align-items: center;
@@ -1505,7 +1412,6 @@ button:active {
   background: rgba(0, 240, 255, 0.07);
 }
 
-/* ── Verify email display ── */
 .verify-email-display {
   font-size: 0.92rem;
   font-weight: 700;
@@ -1514,7 +1420,6 @@ button:active {
   word-break: break-all;
 }
 
-/* ── Resend code button ── */
 .resend-btn {
   display: flex;
   align-items: center;
@@ -1541,7 +1446,6 @@ button:active {
   cursor: not-allowed;
 }
 
-/* ── Hint text ── */
 .hint-text {
   font-size: 0.8rem;
   color: var(--text-3);
@@ -1549,7 +1453,6 @@ button:active {
   margin-top: 4px;
 }
 
-/* ── Empty state ── */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -1571,11 +1474,6 @@ button:active {
   font-size: 0.82rem;
 }
 
-/* ════════════════════════════════════════════════════════
-   SOS EMERGENCY BUTTON
-   Absolute-positioned inside .camera-viewport (bottom-right).
-   Glassmorphism + pulsing red glow. Long-press interaction.
-   ════════════════════════════════════════════════════════ */
 
 .sos-btn {
   position: absolute;
@@ -1588,7 +1486,6 @@ button:active {
   border-radius: 50%;
   appearance: none;
   -webkit-appearance: none;
-  /* Deep red glass core */
   background: radial-gradient(circle at 38% 38%,
     rgba(220, 30, 30, 0.95) 0%,
     rgba(160, 0, 0, 0.9)   100%);
@@ -1601,7 +1498,6 @@ button:active {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  /* Prevent text selection and browser long-press menus */
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
@@ -1625,7 +1521,6 @@ button:active {
   }
 }
 
-/* Sending: dim while awaiting GPS/network */
 .sos-btn.sos-sending {
   animation: none;
   opacity: 0.75;
@@ -1633,7 +1528,6 @@ button:active {
   cursor: default;
 }
 
-/* Sent: flip to green success state */
 .sos-btn.sos-sent {
   animation: none;
   background: radial-gradient(circle at 38% 38%,
@@ -1647,7 +1541,6 @@ button:active {
   transform: scale(1.05);
 }
 
-/* "SOS" / "✓" label */
 .sos-label {
   font-family: var(--font-display);
   font-size: 1rem;
@@ -1665,7 +1558,6 @@ button:active {
   letter-spacing: 0;
 }
 
-/* ── Quick Feedback Button ──────────────────────────── */
 .feedback-btn {
   position: absolute;
   top: 50px;
@@ -1696,7 +1588,6 @@ button:active {
   color: var(--accent-cyan);
 }
 
-/* ── Direction Indicator (HUD center-bottom) ────────── */
 .direction-indicator {
   position: absolute;
   top: 15%;
@@ -1725,7 +1616,6 @@ button:active {
   text-transform: uppercase;
 }
 
-/* ── Quick Report Button (bottom-left of camera) ─────── */
 .quick-report-btn {
   position: absolute;
   bottom: 18px;
@@ -1764,11 +1654,7 @@ button:active {
   line-height: 1;
 }
 
-/* ════════════════════════════════════════════════════════
-   SETTINGS PAGE
-   ════════════════════════════════════════════════════════ */
 
-/* ── Loading state ── */
 .settings-loading {
   display: flex;
   flex-direction: column;
@@ -1792,7 +1678,6 @@ button:active {
   to { transform: rotate(360deg); }
 }
 
-/* ── Description text under section labels ── */
 .settings-desc {
   font-size: 0.8rem;
   color: var(--text-3);
@@ -1800,9 +1685,6 @@ button:active {
   margin-bottom: 4px;
 }
 
-/* ════════════════════════════════════════════════════════
-   SEGMENTED CONTROL  (Sensitivity · Alert Type)
-   ════════════════════════════════════════════════════════ */
 
 .seg-control {
   display: flex;
@@ -1837,9 +1719,6 @@ button:active {
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
-/* ════════════════════════════════════════════════════════
-   HUD RANGE SLIDER  (Volume · Vibration)
-   ════════════════════════════════════════════════════════ */
 
 .slider-row {
   display: flex;
@@ -1847,14 +1726,12 @@ button:active {
   gap: 12px;
 }
 
-/* Disabled slider — grayed out and non-interactive (channel off via alert type) */
 .slider-row.disabled {
   opacity: 0.4;
   filter: grayscale(1);
   pointer-events: none;
 }
 
-/* Small inline note under a control (voice availability, vibration support…) */
 .settings-note {
   margin-top: 10px;
   font-size: 0.76rem;
@@ -1894,10 +1771,9 @@ button:active {
   color: var(--cyan);
   font-family: var(--font-display);
   min-width: 40px;
-  text-align: left; /* LTR so percentage reads left to right */
+  text-align: left;
 }
 
-/* Native range input — cross-browser neon fill */
 .hud-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -1906,7 +1782,7 @@ button:active {
   border-radius: 3px;
   outline: none;
   cursor: pointer;
-  direction: ltr; /* keep slider LTR inside RTL page */
+  direction: ltr;
   background: linear-gradient(
     to right,
     var(--cyan) 0%,
@@ -1916,7 +1792,6 @@ button:active {
   );
 }
 
-/* WebKit thumb */
 .hud-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -1937,7 +1812,6 @@ button:active {
     var(--glow-cyan-lg);
 }
 
-/* Firefox thumb */
 .hud-slider::-moz-range-thumb {
   width: 24px;
   height: 24px;
@@ -1948,16 +1822,12 @@ button:active {
   cursor: pointer;
 }
 
-/* Firefox track — fallback (no fill trick in Firefox) */
 .hud-slider::-moz-range-track {
   height: 5px;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* ════════════════════════════════════════════════════════
-   OBJECT FILTER  (High-Risk Class chips)
-   ════════════════════════════════════════════════════════ */
 
 .class-grid {
   display: grid;
@@ -1998,7 +1868,6 @@ button:active {
   flex-shrink: 0;
 }
 
-/* Select-all / clear-all shortcuts below chip grid */
 .chip-shortcuts {
   display: flex;
   justify-content: flex-end;
@@ -2022,7 +1891,6 @@ button:active {
   color: var(--cyan);
 }
 
-/* ── Reset button ── */
 .reset-btn {
   display: flex;
   align-items: center;
@@ -2052,12 +1920,7 @@ button:active {
   cursor: not-allowed;
 }
 
-/* ═══════════════════════════════════════════════════
-   Health Dot (Dashboard header)
-   ═══════════════════════════════════════════════════ */
 
-/* Column: the connection line on top, the admin FPS readout under it. Both lines
-   together are shorter than the 46px header buttons, so the header doesn't grow. */
 .health-dot-wrap {
   display: flex;
   flex-direction: column;
@@ -2073,7 +1936,6 @@ button:active {
   gap: 5px;
 }
 
-/* Live throughput — admins level 1+ only. */
 .health-fps {
   display: flex;
   align-items: center;
@@ -2098,7 +1960,6 @@ button:active {
   animation: health-pulse 1.5s ease-in-out infinite;
 }
 
-/* Green = stable connection: steady label, no pulsing (pulsing implies a warning). */
 .health-label.green {
   animation: none;
 }
@@ -2142,9 +2003,6 @@ button:active {
 }
 
 
-/* ═══════════════════════════════════════════════════
-   Admin Status Button (Settings page)
-   ═══════════════════════════════════════════════════ */
 
 .admin-status-btn {
   display: flex;
@@ -2170,9 +2028,6 @@ button:active {
 }
 
 
-/* ═══════════════════════════════════════════════════
-   Admin Status Page
-   ═══════════════════════════════════════════════════ */
 
 .admin-status-page {
   padding-bottom: 40px;
@@ -2197,7 +2052,6 @@ button:active {
   padding: 0 20px;
 }
 
-/* ── Stat cards grid ── */
 
 .admin-stats-grid {
   display: grid;
@@ -2254,7 +2108,6 @@ button:active {
   line-height: 1.3;
 }
 
-/* ── Sections ── */
 
 .admin-section {
   background: rgba(255, 255, 255, 0.03);
@@ -2273,7 +2126,6 @@ button:active {
   margin: 0 0 14px 0;
 }
 
-/* ── Latency rows ── */
 
 .admin-latency-row {
   display: flex;
@@ -2288,10 +2140,6 @@ button:active {
 }
 
 .admin-latency-label {
-  /* Fixed width (not min-width) so every row's label occupies the SAME space —
-     otherwise long labels ("פענוח + בדיקת איכות") push their value columns over
-     while short ones ("כתיבה ל-DB") don't, and the avg/min/max columns stop
-     lining up vertically across rows. flex:0 0 => never grow or shrink. */
   flex: 0 0 120px;
   width: 120px;
   font-size: 0.78rem;
@@ -2342,16 +2190,12 @@ button:active {
   color: rgba(34, 211, 238, 0.7);
 }
 
-/* Outbound / return split of the network estimate. Yellow, because unlike the
-   rows above it these are modelled, not measured. */
-/* Stat-card sub-line broken into rows (FPS card: rate + utilisation per side) */
 .admin-stat-sub-rows {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-/* ── Frame outcomes ── */
 .admin-outcome-row {
   display: flex;
   align-items: center;
@@ -2380,8 +2224,6 @@ button:active {
   display: block;
   height: 100%;
   border-radius: 3px;
-  /* A category at a fraction of a percent would round to a zero-width sliver and
-     read as "none". Keep a hairline so a rare failure is still visible. */
   min-width: 2px;
   transition: width 0.3s ease;
 }
@@ -2406,8 +2248,6 @@ button:active {
 }
 
 .admin-network-legs {
-  /* One line per leg. Side by side the two numbers read as a single sentence and
-     the eye had to hunt for where "הלוך" ended and "חזור" began. */
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2431,9 +2271,7 @@ button:active {
   color: rgba(255, 255, 255, 0.35);
 }
 
-/* ── Time-range selector ── */
 
-/* Scope bar — search performance data by user email (empty = all users) */
 .admin-scope-bar {
   display: flex;
   align-items: center;
@@ -2462,7 +2300,6 @@ button:active {
 
 .admin-scope-bar input::placeholder {
   color: rgba(255, 255, 255, 0.35);
-  /* placeholder is Hebrew even though the field itself is LTR for the address */
   direction: rtl;
   text-align: right;
 }
@@ -2490,7 +2327,6 @@ button:active {
 
 .admin-scope-btn.ghost:hover { background: rgba(255, 255, 255, 0.06); }
 
-/* Banner naming the user a scoped report belongs to */
 .admin-scope-note {
   display: flex;
   align-items: center;
@@ -2521,7 +2357,6 @@ button:active {
   direction: rtl;
 }
 
-/* ── Reset button + confirmation modal ── */
 
 .admin-reset-btn {
   display: flex;
@@ -2624,7 +2459,6 @@ button:active {
 
 .admin-modal-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ── Clickable stat card (button variant) ── */
 .admin-stat-card-btn {
   display: flex;
   flex-direction: column;
@@ -2646,7 +2480,6 @@ button:active {
 
 .admin-stat-card-btn:active { transform: scale(0.97); }
 
-/* ── Admins list modal ── */
 .admin-list-modal {
   max-width: 440px;
   text-align: right;
@@ -2676,7 +2509,6 @@ button:active {
 
 .admin-list-row.offline { opacity: 0.65; }
 
-/* Clickable admin row (opens full user detail) */
 .admin-list-row.clickable {
   width: 100%;
   font-family: inherit;
@@ -2690,7 +2522,7 @@ button:active {
 }
 .admin-list-chevron {
   flex: 0 0 auto;
-  margin-right: auto;   /* push to the visual-left in RTL */
+  margin-right: auto;
   color: var(--text-3);
 }
 
@@ -2721,15 +2553,11 @@ button:active {
   font-weight: 500;
 }
 
-/* ── Active (selected/filter) stat card ── */
 .admin-stat-card-btn.active {
   background: rgba(255, 255, 255, 0.09);
   border-width: 1.5px;
 }
 
-/* ═══════════════════════════════════════════════════
-   Admin feedback management (AdminFeedback page)
-   ═══════════════════════════════════════════════════ */
 
 .afb-list {
   display: flex;
@@ -2927,7 +2755,6 @@ button:active {
 
 .afb-textarea:focus { border-color: var(--cyan-dim); }
 
-/* Assign-modal admin row (button) */
 .afb-assign-row {
   display: flex;
   align-items: center;
@@ -2946,7 +2773,6 @@ button:active {
 .afb-assign-row:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(167, 139, 250, 0.4); }
 .afb-assign-row:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ══════════ Clickable user header in a feedback card ══════════ */
 .afb-user-btn {
   background: none;
   border: none;
@@ -2961,7 +2787,6 @@ button:active {
 .afb-user-btn:hover { background: rgba(255, 255, 255, 0.05); }
 .afb-user-chevron { color: var(--text-3); margin-right: 2px; flex-shrink: 0; }
 
-/* ══════════ User-details modal (feedback management) ══════════ */
 .afb-user-detail { text-align: right; margin-bottom: 6px; }
 
 .afb-ud-hero {
@@ -3034,9 +2859,8 @@ button:active {
 }
 .afb-ud-count span { font-size: 1.1rem; font-weight: 700; color: var(--text); }
 
-/* ══════════ "משובים שנשלחו" nav-row badge + feedback notifications ══════════ */
 .nav-row-badge {
-  margin-right: auto;   /* push to the visual-left, before the arrow */
+  margin-right: auto;
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
@@ -3052,7 +2876,6 @@ button:active {
 }
 .nav-row-badge + .nav-row-arrow { margin-right: 10px; }
 
-/* "new response" pill on a sent-feedback card */
 .sf-new-pill {
   display: inline-flex;
   align-items: center;
@@ -3072,7 +2895,6 @@ button:active {
   animation: health-pulse 1.2s ease-in-out infinite;
 }
 
-/* Clickable team-response block on a sent-feedback card */
 .sf-response {
   display: block;
   width: 100%;
@@ -3124,7 +2946,6 @@ button:active {
   margin-bottom: 18px;
 }
 
-/* ══════════ Confirm dialog (logout) ══════════ */
 .confirm-overlay {
   position: fixed;
   inset: 0;
@@ -3178,7 +2999,6 @@ button:active {
   color: var(--text-1, #fff);
 }
 
-/* ══════════ Global sound toggle ══════════ */
 .sound-toggle {
   position: fixed;
   top: 116px;
@@ -3202,7 +3022,6 @@ button:active {
 .sound-toggle.muted { color: #ef4444; border-color: rgba(239, 68, 68, 0.4); }
 .sound-toggle:active { transform: scale(0.92); }
 
-/* ══════════ Admin: user management ══════════ */
 
 .au-search {
   display: flex;
@@ -3343,7 +3162,6 @@ button:active {
 .au-info-label { color: rgba(255, 255, 255, 0.45); }
 .au-info-value { color: #fff; }
 
-/* Emergency-contacts list in the user-detail card */
 .au-contacts { display: flex; flex-direction: column; gap: 8px; }
 .au-contact {
   background: rgba(255, 255, 255, 0.04);
@@ -3435,7 +3253,6 @@ button:active {
 }
 .au-delete-btn:hover { background: rgba(239, 68, 68, 0.18); }
 
-/* Danger zone (profile self-delete) */
 .danger-zone {
   margin-top: 24px;
   padding: 16px;
@@ -3460,7 +3277,6 @@ button:active {
   margin-bottom: 12px;
 }
 
-/* ── RTT Chart ── */
 
 .admin-chart-wrap {
   width: 100%;
@@ -3475,9 +3291,6 @@ button:active {
   height: 100%;
   display: block;
 }
-/* ═══════════════════════════════════════════════════
-   Settings Category Headers
-   ═══════════════════════════════════════════════════ */
 
 .settings-category-header {
   font-size: 0.72rem;
@@ -3494,9 +3307,6 @@ button:active {
   margin-top: 4px;
 }
 
-/* ════════════════════════════════════════════════════════
-   COLLAPSIBLE ACCORDION (Scan settings under כללי)
-   ════════════════════════════════════════════════════════ */
 
 .collapsible-toggle .nav-row-arrow {
   transform-origin: center;
@@ -3506,9 +3316,6 @@ button:active {
   padding: 4px 0 0 0;
 }
 
-/* ════════════════════════════════════════════════════════
-   SOS HISTORY CARDS
-   ════════════════════════════════════════════════════════ */
 
 .sos-history-card {
   background: var(--glass-bg);
@@ -3652,9 +3459,6 @@ button:active {
   text-align: left;
 }
 
-/* ════════════════════════════════════════════════════════
-   SAVE TOAST (centered success message)
-   ════════════════════════════════════════════════════════ */
 
    .save-toast-overlay {
     position: fixed;
@@ -3693,9 +3497,6 @@ button:active {
     color: var(--safe);
   }
 
-  /* ════════════════════════════════════════════════════════
-   DETECTED CLASS LABEL (next to direction arrow)
-   ════════════════════════════════════════════════════════ */
 
 .dir-class {
   font-family: var(--font-display);
@@ -3706,7 +3507,6 @@ button:active {
   margin-top: 2px;
 }
 
-/* High alert (danger) — red */
 .direction-indicator.alert-high .dir-class {
   color: var(--danger);
 }
@@ -3715,7 +3515,6 @@ button:active {
   filter: drop-shadow(0 0 8px rgba(255, 59, 48, 0.7));
 }
 
-/* Low alert (caution) — orange */
 .direction-indicator.alert-low .dir-class {
   color: var(--caution);
 }
@@ -3723,7 +3522,6 @@ button:active {
   color: var(--caution);
   filter: drop-shadow(0 0 8px rgba(255, 159, 10, 0.7));
 }
-/* "Show this user's performance" — jumps from AdminUsers into the scoped report */
 .au-perf-btn {
   display: flex;
   align-items: center;

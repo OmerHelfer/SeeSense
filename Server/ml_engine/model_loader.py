@@ -8,10 +8,8 @@ from core.config import CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, CLASS_NAMES, TA
 logger = logging.getLogger(__name__)
 
 
-# ==================== GPU Detection ====================
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Torch's own thread count is left alone on purpose — see the note in main.py.
 
 
 def log_runtime_config():
@@ -38,7 +36,6 @@ def log_runtime_config():
     )
 
 
-# ==================== Mock Model (Testing Mode) ====================
 
 class MockModel:
     """Dummy model for testing without weight files"""
@@ -49,7 +46,6 @@ class MockModel:
         return []
 
 
-# ==================== Model Loading ====================
 
 def load_model(model_path: str, mode: str = "mock"):
     """
@@ -73,12 +69,6 @@ def load_model(model_path: str, mode: str = "mock"):
         logger.info("Model loaded successfully")
         return model
 
-    # if mode == "custom":
-    #     logger.info(f"Loading custom PyTorch model from {model_path}...")
-    #     model = torch.load(model_path, map_location=DEVICE)
-    #     model.eval()
-    #     logger.info(f"Custom model loaded successfully on {DEVICE}")
-    #     return model
     if mode == "custom":
         from ultralytics import YOLO
         logger.info(f"Loading custom YOLO model from {model_path}...")
@@ -91,7 +81,6 @@ def load_model(model_path: str, mode: str = "mock"):
     raise ValueError(f"Unknown mode: {mode}")
 
 
-# ==================== Inference ====================
 
 def run_inference(model, img_input, imgsz: int = TARGET_SIZE) -> list[dict]:
     """
@@ -106,12 +95,10 @@ def run_inference(model, img_input, imgsz: int = TARGET_SIZE) -> list[dict]:
     Detections are always returned in the input image's coordinate space, so the
     caller's overlay stays correct regardless of imgsz.
     """
-    # Mock model
     if isinstance(model, MockModel):
         model(img_input)
         return []
 
-    # Ultralytics model
     try:
         from ultralytics import YOLO
         if isinstance(model, YOLO):
@@ -129,7 +116,6 @@ def run_inference(model, img_input, imgsz: int = TARGET_SIZE) -> list[dict]:
     except ImportError:
         pass
 
-    # Custom PyTorch model
     with torch.no_grad():
         tensor = torch.from_numpy(img_input).float().to(DEVICE)
         raw_output = model(tensor)
@@ -139,7 +125,6 @@ def run_inference(model, img_input, imgsz: int = TARGET_SIZE) -> list[dict]:
     return detections
 
 
-# ==================== Ultralytics Result Parsing ====================
 
 def parse_ultralytics_results(results) -> list[dict]:
     """
@@ -179,7 +164,6 @@ def parse_ultralytics_results(results) -> list[dict]:
     return detections
 
 
-# ==================== Raw PyTorch Result Parsing ====================
 
 def parse_raw_detections(raw_output) -> list[dict]:
     """

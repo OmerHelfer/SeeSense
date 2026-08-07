@@ -20,7 +20,6 @@ import {
 } from '../services/feedbackService';
 import { getUnseenResponseCount } from '../services/userService';
 
-// ── Hebrew labels + emoji for each detectable class ──────
 const CLASS_META = {
   person:        { label: 'אדם',        emoji: '🧑' },
   car:           { label: 'מכונית',     emoji: '🚗' },
@@ -40,7 +39,6 @@ const pageVariants = {
   exit:    { opacity: 0, x: 40, transition: { duration: 0.22, ease: 'easeIn' } },
 };
 
-// ── Segmented control ──────────────────────────────────────
 const SegControl = ({ options, value, onChange }) => (
   <div className="seg-control">
     {options.map((opt) => (
@@ -56,7 +54,6 @@ const SegControl = ({ options, value, onChange }) => (
   </div>
 );
 
-// ── Range slider with neon fill track ─────────────────────
 const HudSlider = ({ label, emoji, value, onChange, disabled = false }) => (
   <div className={`slider-row${disabled ? ' disabled' : ''}`}>
     <div className="slider-header">
@@ -79,8 +76,6 @@ const HudSlider = ({ label, emoji, value, onChange, disabled = false }) => (
   </div>
 );
 
-// Fields persisted by "שמור". A stable JSON snapshot of these lets us detect
-// unsaved edits (arrays sorted so class-order changes don't count as a diff).
 const PERSIST_KEYS = ['alert_type', 'volume_intensity', 'vibration_intensity',
   'voice_gender', 'detection_sensitivity', 'high_risk_classes'];
 const snapshotOf = (s) => JSON.stringify(PERSIST_KEYS.reduce((acc, k) => {
@@ -89,7 +84,6 @@ const snapshotOf = (s) => JSON.stringify(PERSIST_KEYS.reduce((acc, k) => {
   return acc;
 }, {}));
 
-// ── Settings page ──────────────────────────────────────────
 const Settings = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -103,44 +97,37 @@ const Settings = () => {
   const [saveOk, setSaveOk]                 = useState(false);
   const [error, setError]                   = useState('');
 
-  // ── Collapsible state ──
   const [scanOpen, setScanOpen] = useState(false);
 
-  // ── Unsaved-changes guard on back ──
-  const [baseline, setBaseline]   = useState('');   // snapshot of last-saved settings
+  const [baseline, setBaseline]   = useState('');
   const [showLeave, setShowLeave] = useState(false);
 
-  // ── Unseen team-response count → badge on "משובים שנשלחו" ──
   const [unseenResponses, setUnseenResponses] = useState(0);
   useEffect(() => { getUnseenResponseCount().then(setUnseenResponses); }, []);
 
-  // ── Voice availability (async — voices load after page mount) ──
   const [voiceInfo, setVoiceInfo] = useState(getVoiceInfo());
   const vibrationSupported = isVibrationSupported();
 
-  // ── Load settings + class list in parallel ──
   useEffect(() => {
     if (!userId) return;
     Promise.all([getSettings(userId), getAvailableClasses()])
       .then(([s, classes]) => {
         setSettings(s);
-        setBaseline(snapshotOf(s));   // remember the saved state for the unsaved-guard
-        seedFeedbackSettings(s);   // feed the shared runtime store
+        setBaseline(snapshotOf(s));
+        seedFeedbackSettings(s);
         setAvailableClasses(classes);
       })
       .catch(() => setError('לא ניתן לטעון הגדרות. בדוק חיבור ונסה שוב.'))
       .finally(() => setLoading(false));
   }, [userId]);
 
-  // ── Keep the store-managed fields in sync with the shared store
-  //    (e.g. the floating mute button toggling volume while this page is open). ──
   useEffect(() => subscribeFeedback((fb) => {
     setSettings((prev) => {
       if (!prev) return prev;
       if (prev.volume_intensity === fb.volume_intensity &&
           prev.vibration_intensity === fb.vibration_intensity &&
           prev.alert_type === fb.alert_type &&
-          prev.voice_gender === fb.voice_gender) return prev; // no change → no re-render
+          prev.voice_gender === fb.voice_gender) return prev;
       return {
         ...prev,
         volume_intensity:    fb.volume_intensity,
@@ -151,7 +138,6 @@ const Settings = () => {
     });
   }), []);
 
-  // ── Refresh voice availability once voices load ──
   useEffect(() => {
     const update = () => setVoiceInfo(getVoiceInfo());
     update();
@@ -163,7 +149,6 @@ const Settings = () => {
     };
   }, []);
 
-  // ── Toggle a class on/off in high_risk_classes ──
   const toggleClass = (cls) => {
     setSettings((prev) => {
       const current = prev.high_risk_classes ?? [];
@@ -174,9 +159,6 @@ const Settings = () => {
     });
   };
 
-  // ── Save ──
-  // Core save — returns true on success. Shared by the "שמור" button and the
-  // "save & leave" path of the unsaved-changes guard.
   const saveChanges = async () => {
     setSaving(true);
     setError('');
@@ -211,10 +193,8 @@ const Settings = () => {
     }
   };
 
-  // True if the current settings differ from the last-saved snapshot.
   const hasUnsavedChanges = () => !!baseline && !!settings && snapshotOf(settings) !== baseline;
 
-  // Back arrow: warn about unsaved edits instead of leaving silently.
   const handleBack = () => {
     if (hasUnsavedChanges()) setShowLeave(true);
     else navigate('/');
@@ -224,7 +204,6 @@ const Settings = () => {
     const ok = await saveChanges();
     setShowLeave(false);
     if (ok) navigate('/');
-    // On failure the modal closes so the error banner is visible; user stays on page.
   };
 
   const handleDiscardAndLeave = () => {
@@ -232,7 +211,6 @@ const Settings = () => {
     navigate('/');
   };
 
-  // ── Reset to defaults ──
   const handleReset = async () => {
     setResetting(true);
     setError('');
@@ -251,13 +229,8 @@ const Settings = () => {
   const set = (key) => (val) =>
     setSettings((prev) => ({ ...prev, [key]: val }));
 
-  // Store-managed fields: write through the shared store (the subscriber above
-  // mirrors the change back into local `settings`), so the floating mute button
-  // and the live runtime reflect it immediately.
   const setFb = (key) => (val) => setFeedbackSettings({ [key]: val });
 
-  // When alert channel changes: disable one channel (→ 0), or restore disabled channels
-  // (0 → 0.8) when re-enabling both.
   const handleAlertType = (next) => {
     const fb = getFeedbackSettings();
     const patch = { alert_type: next };
@@ -265,18 +238,13 @@ const Settings = () => {
     const vol = fb.volume_intensity ?? 0;
     const vib = fb.vibration_intensity ?? 0;
 
-    // Rule: enabling a channel that was OFF (0) restores it to the default 0.8;
-    // disabling a channel zeroes it.
     if (next === 'audio') {
-      // Audio on (restore if it was off), vibration off
       if (vol === 0) patch.volume_intensity = 0.8;
       patch.vibration_intensity = 0;
     } else if (next === 'haptic') {
-      // Haptic on (restore if it was off), audio off
       if (vib === 0) patch.vibration_intensity = 0.8;
       patch.volume_intensity = 0;
     } else if (next === 'both') {
-      // Both on — restore any that were zeroed
       if (vol === 0) patch.volume_intensity = 0.8;
       if (vib === 0) patch.vibration_intensity = 0.8;
     }
@@ -286,12 +254,12 @@ const Settings = () => {
 
   const handleVoiceGender = (val) => {
     setFeedbackSettings({ voice_gender: val });
-    previewVoice(); // let the user hear the selected voice immediately
+    previewVoice();
   };
 
   const alertType   = settings?.alert_type ?? 'both';
-  const audioOff    = alertType === 'haptic';   // volume slider disabled
-  const hapticOff   = alertType === 'audio';    // vibration slider disabled
+  const audioOff    = alertType === 'haptic';
+  const hapticOff   = alertType === 'audio';
 
   const sensOptions = [
     { value: 'low',    label: 'נמוכה'   },
@@ -319,7 +287,6 @@ const Settings = () => {
       animate="visible"
       exit="exit"
     >
-      {/* ── Header ── */}
       <header className="inner-page-header">
         <button className="back-btn" onClick={handleBack} aria-label="חזרה">
           <ArrowRight size={22} />
@@ -330,7 +297,6 @@ const Settings = () => {
 
       <div className="inner-page-body">
 
-        {/* Error banner */}
         <AnimatePresence>
           {error && (
             <motion.div className="error-banner"
@@ -340,7 +306,6 @@ const Settings = () => {
           )}
         </AnimatePresence>
 
-        {/* Success toast — centered on screen */}
         <AnimatePresence>
           {saveOk && (
             <motion.div className="save-toast-overlay"
@@ -362,7 +327,6 @@ const Settings = () => {
           )}
         </AnimatePresence>
 
-        {/* ═══ כללי ═══ */}
         <p className="settings-category-header">כללי</p>
 
         <button className="nav-row-btn" onClick={() => navigate('/profile')}>
@@ -383,7 +347,6 @@ const Settings = () => {
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {/* ── Scan settings: collapsible accordion ── */}
         <button
           className="nav-row-btn collapsible-toggle"
           onClick={() => setScanOpen((o) => !o)}
@@ -417,7 +380,6 @@ const Settings = () => {
                 </div>
               ) : settings && (
                 <>
-                  {/* ── Detection Sensitivity ── */}
                   <div className="glass-section">
                     <div className="section-label-row" style={{ marginBottom: 6 }}>
                       <Target size={15} />
@@ -433,7 +395,6 @@ const Settings = () => {
                     />
                   </div>
 
-                  {/* ── Alert Type ── */}
                   <div className="glass-section">
                     <div className="section-label-row" style={{ marginBottom: 6 }}>
                       <Bell size={15} />
@@ -449,7 +410,6 @@ const Settings = () => {
                     />
                   </div>
 
-                  {/* ── Volume + Vibration ── */}
                   <div className="glass-section">
                     <div className="section-label-row" style={{ marginBottom: 18 }}>
                       <span className="section-label">עוצמת התראות</span>
@@ -476,7 +436,6 @@ const Settings = () => {
                     )}
                   </div>
 
-                  {/* ── Voice (TTS) ── */}
                   <div className="glass-section">
                     <div className="section-label-row" style={{ marginBottom: 6 }}>
                       <Bell size={15} />
@@ -497,7 +456,6 @@ const Settings = () => {
                     )}
                   </div>
 
-                  {/* ── High-Risk Object Filter ── */}
                   <div className="glass-section">
                     <div className="section-label-row" style={{ marginBottom: 6 }}>
                       <span className="section-label">עצמים בסיכון גבוה</span>
@@ -524,7 +482,6 @@ const Settings = () => {
                       })}
                     </div>
 
-                    {/* Select all / none shortcuts */}
                     <div className="chip-shortcuts">
                       <button
                         type="button"
@@ -543,7 +500,6 @@ const Settings = () => {
                     </div>
                   </div>
 
-                  {/* ── Actions ── */}
                   <motion.button
                     className="auth-btn"
                     onClick={handleSave}
@@ -568,7 +524,6 @@ const Settings = () => {
           )}
         </AnimatePresence>
 
-        {/* ═══ משוב ═══ */}
         <p className="settings-category-header">משוב</p>
 
         <button className="nav-row-btn" onClick={() => navigate('/feedback/general')}>
@@ -592,7 +547,6 @@ const Settings = () => {
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {/* ═══ ניהול (Admin only) ═══ */}
         {user?.is_admin && (
           <>
             <p className="settings-category-header">ניהול</p>
@@ -626,7 +580,6 @@ const Settings = () => {
         <div style={{ height: 40 }} />
       </div>
 
-      {/* Unsaved-changes confirmation on back (centered) */}
       <AnimatePresence>
         {showLeave && (
           <motion.div className="admin-modal-backdrop"

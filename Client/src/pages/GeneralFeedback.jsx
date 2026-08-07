@@ -73,7 +73,6 @@ const GeneralFeedback = () => {
           )}
         </AnimatePresence>
 
-        {/* Feedback type */}
         <div className="glass-section">
           <p className="section-label" style={{ marginBottom: 12 }}>סוג משוב</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -91,7 +90,6 @@ const GeneralFeedback = () => {
           </div>
         </div>
 
-        {/* Notes */}
         <div className="glass-section">
           <p className="section-label" style={{ marginBottom: 10 }}>תיאור</p>
           <textarea

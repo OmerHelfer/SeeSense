@@ -30,26 +30,20 @@ from collections import deque
 
 logger = logging.getLogger(__name__)
 
-# How often the worker drains the buffers. One second bounds the data at risk to
-# roughly one second of history rows while cutting round trips by ~40x at 40 FPS.
 FLUSH_INTERVAL_SEC = 1.0
 
-# Hard cap so a database outage can't grow the buffer until the process dies.
-# Oldest entries are dropped first: recent history is the useful history, and
-# losing old rows is strictly better than losing the server.
 MAX_PENDING = 5000
 
 _lock = threading.Lock()
 _pending_detections = deque()
-_pending_frame_counts = {}       # session_id -> latest frame_count
-_last_amortized_ms = 0.0         # real per-record write cost, for the metrics page
+_pending_frame_counts = {}
+_last_amortized_ms = 0.0
 _dropped = 0
 
 _thread = None
 _stop = threading.Event()
 
 
-# ==================== Public API ====================
 
 def queue_detection(entry: dict):
     """Buffer a detection-history document for the next batch insert."""
@@ -116,15 +110,13 @@ def pending_counts() -> tuple:
         return len(_pending_detections), len(_pending_frame_counts)
 
 
-# ==================== Worker ====================
 
 def _run():
     while not _stop.is_set():
-        # wait() rather than sleep() so shutdown doesn't have to wait out the interval
         _stop.wait(FLUSH_INTERVAL_SEC)
         try:
             _flush()
-        except Exception as e:  # a failed flush must never kill the writer
+        except Exception as e:
             logger.error(f"db_writer flush failed: {e}", exc_info=True)
 
 
@@ -147,8 +139,6 @@ def _flush():
 
     if detections:
         try:
-            # ordered=False lets the rest of the batch land even if one document
-            # is rejected — a single bad row must not lose the whole second.
             db["detection_history"].insert_many(detections, ordered=False)
             written += len(detections)
         except Exception as e:
@@ -168,8 +158,6 @@ def _flush():
 
     elapsed_ms = (time.perf_counter() - started) * 1000
     if written:
-        # Amortised: what persisting ONE record actually cost, which is the number
-        # that belongs next to the other per-frame stages.
         _last_amortized_ms = elapsed_ms / written
         if elapsed_ms > 500:
             logger.warning(

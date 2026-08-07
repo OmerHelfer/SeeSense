@@ -10,7 +10,6 @@ import {
   getFeedbackRecordIds,
 } from '../services/userService';
 
-// ── Page transition variants ──────────────────────────
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
   visible: { opacity: 1, x: 0,  transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
@@ -23,7 +22,6 @@ const modalVariants = {
   exit:    { opacity: 0, scale: 0.93, y: 24, transition: { duration: 0.18, ease: 'easeIn' } },
 };
 
-// ── Helpers ───────────────────────────────────────────
 
 const PERIODS = [
   { key: 'all',          label: 'הכל'       },
@@ -41,7 +39,6 @@ const FEEDBACK_TYPES = [
   { key: 'general',         label: 'כללי'           },
 ];
 
-/** Hebrew names for detected object classes. */
 const HEBREW_NAMES = {
   person:        'אדם',
   car:           'מכונית',
@@ -104,7 +101,6 @@ function safetyScoreColor(score) {
   return 'var(--danger)';
 }
 
-/** Group records by session_id, preserving order. */
 function groupBySession(records) {
   const groups = [];
   const map = new Map();
@@ -120,7 +116,6 @@ function groupBySession(records) {
   return groups;
 }
 
-/** Build display info for a session header. */
 function sessionInfo(records) {
   if (!records.length) return {};
   const first = new Date(records[records.length - 1].timestamp);
@@ -136,20 +131,17 @@ function sessionInfo(records) {
   return { date, time: `${t1} – ${t2}`, count: records.length, dangers };
 }
 
-/** Build display string for detected objects in a frame. */
 function objectsLabel(record) {
   const objs = record.objects ?? [];
   if (objs.length > 0) {
     return objs.map((o) => hebrewName(o.class_name)).join(', ');
   }
-  // Fallback for old records that don't have object names
   if (record.objects_detected > 0) {
     return `${record.objects_detected} עצמים`;
   }
   return 'ללא זיהוי';
 }
 
-// ── Component ─────────────────────────────────────────
 
 const History = () => {
   const navigate = useNavigate();
@@ -159,31 +151,24 @@ const History = () => {
   const [loadError,   setLoadError]   = useState('');
   const [period,      setPeriod]      = useState('all');
 
-  // Which sessions are expanded
   const [expandedSessions, setExpandedSessions] = useState(new Set());
 
-  // Record IDs that already have feedback
   const [feedbackIds, setFeedbackIds] = useState(new Set());
 
-  // modal
   const [activeRecord, setActiveRecord] = useState(null);
   const [modalView,    setModalView]    = useState('menu');
 
-  // feedback form
   const [fbType,    setFbType]    = useState('wrong_detection');
   const [fbNotes,   setFbNotes]   = useState('');
   const [fbLoading, setFbLoading] = useState(false);
   const [fbError,   setFbError]   = useState('');
 
-  // delete
   const [deleteLoading, setDeleteLoading] = useState(false);
-  // Clear-all history
   const [showClearAll, setShowClearAll] = useState(false);
   const [clearing, setClearing]         = useState(false);
   const [clearError, setClearError]     = useState('');
   const [deleteError,   setDeleteError]   = useState('');
 
-  // ── Fetch history ──────────────────────────────────
   const loadHistory = useCallback(async (p = period) => {
     setLoading(true);
     setLoadError('');
@@ -201,12 +186,10 @@ const History = () => {
     loadHistory(period);
   }, [period, loadHistory]);
 
-  // Load which records already have feedback
   useEffect(() => {
     getFeedbackRecordIds().then(setFeedbackIds).catch(() => {});
   }, [records]);
 
-  // Auto-expand first session on initial load
   useEffect(() => {
     if (records.length > 0) {
       const groups = groupBySession(records);
@@ -216,13 +199,11 @@ const History = () => {
     }
   }, [records]);
 
-  // ── Summary stats ──────────────────────────────────
   const total        = records.length;
   const todayDanger  = records.filter((r) => r.danger && isToday(r.timestamp)).length;
   const dangerCount  = records.filter((r) => r.danger).length;
   const safetyScore  = total > 0 ? Math.round((1 - dangerCount / total) * 100) : 100;
 
-  // ── Session expand/collapse ─────────────────────────
   const toggleSession = (sessionId) => {
     setExpandedSessions((prev) => {
       const next = new Set(prev);
@@ -235,7 +216,6 @@ const History = () => {
     });
   };
 
-  // ── Modal helpers ──────────────────────────────────
   const openActionSheet = (record) => {
     setActiveRecord(record);
     setModalView('menu');
@@ -250,7 +230,6 @@ const History = () => {
     setModalView('menu');
   };
 
-  // ── Feedback submit ────────────────────────────────
   const handleFeedbackSubmit = async () => {
     if (!activeRecord) return;
     setFbError('');
@@ -262,7 +241,6 @@ const History = () => {
         notes:         fbNotes.trim() || undefined,
       });
       setModalView('feedbackDone');
-      // Mark this frame as having feedback
       setFeedbackIds((prev) => new Set([...prev, activeRecord.record_id]));
       setTimeout(() => closeModal(), 1500);
     } catch (err) {
@@ -273,7 +251,6 @@ const History = () => {
     }
   };
 
-  // ── Delete record ──────────────────────────────────
   const handleDelete = async () => {
     if (!activeRecord) return;
     setDeleteError('');
@@ -289,7 +266,6 @@ const History = () => {
     }
   };
 
-  // ── Clear all history ──────────────────────────────
   const handleClearAll = async () => {
     setClearError('');
     setClearing(true);
@@ -307,7 +283,6 @@ const History = () => {
 
   const sessionGroups = groupBySession(records);
 
-  // ── Render ─────────────────────────────────────────
   return (
     <motion.div
       className="inner-page"
@@ -316,7 +291,6 @@ const History = () => {
       animate="visible"
       exit="exit"
     >
-      {/* ── Header ── */}
       <header className="inner-page-header">
         <button
           className="back-btn"
@@ -331,14 +305,12 @@ const History = () => {
 
       <div className="inner-page-body">
 
-        {/* ── Summary card ── */}
         <div className="glass-section" style={{ marginBottom: 16 }}>
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr 1fr',
             gap: 8,
           }}>
-            {/* Tile: daily danger */}
             <div style={statTileStyle}>
               <span style={statValueStyle}>
                 <AlertTriangle size={14} style={{ color: 'var(--danger)', marginInlineEnd: 4, flexShrink: 0 }} />
@@ -347,7 +319,6 @@ const History = () => {
               <span style={statLabelStyle}>התראות היום</span>
             </div>
 
-            {/* Tile: total scans */}
             <div style={statTileStyle}>
               <span style={statValueStyle}>
                 <Clock size={14} style={{ color: 'var(--cyan)', marginInlineEnd: 4, flexShrink: 0 }} />
@@ -356,7 +327,6 @@ const History = () => {
               <span style={statLabelStyle}>סריקות</span>
             </div>
 
-            {/* Tile: safety score */}
             <div style={statTileStyle}>
               <span style={{ ...statValueStyle, color: safetyScoreColor(safetyScore) }}>
                 {safetyScore}%
@@ -366,7 +336,6 @@ const History = () => {
           </div>
         </div>
 
-        {/* ── Filter chips ── */}
         <div style={{
           display: 'flex',
           flexDirection: 'row-reverse',
@@ -399,7 +368,6 @@ const History = () => {
           ))}
         </div>
 
-        {/* ── Loading ── */}
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
             <div className="settings-loading">
@@ -409,12 +377,10 @@ const History = () => {
           </div>
         )}
 
-        {/* ── Load error ── */}
         {!loading && loadError && (
           <div className="error-banner">{loadError}</div>
         )}
 
-        {/* ── Empty state ── */}
         {!loading && !loadError && records.length === 0 && (
           <div className="empty-state">
             <span style={{ fontSize: 38 }}>🧭</span>
@@ -422,7 +388,6 @@ const History = () => {
           </div>
         )}
 
-        {/* ── Sessions list ── */}
         {!loading && !loadError && sessionGroups.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {sessionGroups.map((group) => {
@@ -439,7 +404,6 @@ const History = () => {
                     overflow: 'hidden',
                   }}
                 >
-                  {/* ── Session header — tap to expand/collapse ── */}
                   <button
                     onClick={() => toggleSession(group.session_id)}
                     style={{
@@ -491,7 +455,6 @@ const History = () => {
                     </div>
                   </button>
 
-                  {/* ── Expanded frames ── */}
                   <AnimatePresence>
                     {isExpanded && (
                       <motion.div
@@ -528,7 +491,6 @@ const History = () => {
                                   : '1px solid rgba(255,255,255,0.04)',
                               }}
                             >
-                              {/* Frame info */}
                               <div style={{
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -536,7 +498,6 @@ const History = () => {
                                 flex: 1,
                                 minWidth: 0,
                               }}>
-                                {/* Row 1: time + alert badge */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                   <span style={{
                                     fontSize: 12,
@@ -559,7 +520,6 @@ const History = () => {
                                   </span>
                                 </div>
 
-                                {/* Row 2: object names in Hebrew */}
                                 <span style={{
                                   fontSize: 13,
                                   color: 'var(--text)',
@@ -571,7 +531,6 @@ const History = () => {
                                   {objectsLabel(record)}
                                 </span>
 
-                                {/* Row 3: distance */}
                                 <span style={{
                                   fontSize: 11,
                                   color: 'var(--text-3)',
@@ -581,7 +540,6 @@ const History = () => {
                                 </span>
                               </div>
 
-                              {/* Icons: danger + feedback */}
                               <div style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -609,10 +567,6 @@ const History = () => {
           </div>
         )}
 
-        {/* Clear-all. The DELETE /users/history endpoint and its client wrapper
-            have always existed; nothing reached them, so per-record delete was the
-            only way to remove anything. Shown only when there is something to
-            clear, so it can't be pressed into a no-op. */}
         {!loading && !loadError && records.length > 0 && (
           <div className="danger-zone" style={{ marginTop: 20 }}>
             <div className="danger-zone-head">
@@ -632,7 +586,6 @@ const History = () => {
         <div style={{ height: 40 }} />
       </div>
 
-      {/* Clear-all confirmation */}
       <AnimatePresence>
         {showClearAll && (
           <motion.div className="admin-modal-backdrop"
@@ -657,11 +610,9 @@ const History = () => {
         )}
       </AnimatePresence>
 
-      {/* ── Action sheet modal ── */}
       <AnimatePresence>
         {activeRecord && (
           <>
-            {/* Backdrop */}
             <motion.div
               className="modal-backdrop"
               initial={{ opacity: 0 }}
@@ -680,7 +631,6 @@ const History = () => {
               }}
             />
 
-            {/* Sheet */}
             <motion.div
               className="modal-card"
               variants={modalVariants}
@@ -702,14 +652,12 @@ const History = () => {
                 margin: '0 auto',
               }}
             >
-              {/* ── Menu view ── */}
               {modalView === 'menu' && (
                 <>
                   <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 6, fontFamily: 'var(--font-body)' }}>
                     {formatDate(activeRecord.timestamp)}
                   </p>
 
-                  {/* Show detected objects in modal header */}
                   {activeRecord.objects && activeRecord.objects.length > 0 && (
                     <p style={{
                       fontSize: 14,
@@ -750,7 +698,6 @@ const History = () => {
                 </>
               )}
 
-              {/* ── Confirm delete view ── */}
               {modalView === 'confirmDelete' && (
                 <>
                   <p style={{ fontSize: 15, color: 'var(--text)', marginBottom: 8, fontFamily: 'var(--font-body)', fontWeight: 600 }}>
@@ -785,14 +732,12 @@ const History = () => {
                 </>
               )}
 
-              {/* ── Feedback form view ── */}
               {modalView === 'feedback' && (
                 <>
                   <p style={{ fontSize: 15, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-body)', fontWeight: 600 }}>
                     דיווח שגיאה
                   </p>
 
-                  {/* Feedback type chips */}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
                     {FEEDBACK_TYPES.map((ft) => (
                       <button
@@ -819,7 +764,6 @@ const History = () => {
                     ))}
                   </div>
 
-                  {/* Notes textarea */}
                   <textarea
                     value={fbNotes}
                     onChange={(e) => setFbNotes(e.target.value)}
@@ -867,7 +811,6 @@ const History = () => {
                 </>
               )}
 
-              {/* ── Feedback done view ── */}
               {modalView === 'feedbackDone' && (
                 <div style={{ textAlign: 'center', padding: '20px 0' }}>
                   <p style={{ fontSize: 18, marginBottom: 8, fontFamily: 'var(--font-display)', color: 'var(--safe)' }}>
@@ -886,7 +829,6 @@ const History = () => {
   );
 };
 
-// ── Inline style constants ────────────────────────────
 
 const statTileStyle = {
   display: 'flex',

@@ -1,32 +1,17 @@
-/* ═══════════════════════════════════════════════════
-   userService.js
-   All user, profile, contacts, and password API calls.
-   Token is auto-attached by api/client.js interceptor.
-   ═══════════════════════════════════════════════════ */
 
    import apiClient from '../api/client';
 
-   // ── Profile ──────────────────────────────────────────
    
-   /** GET /users/profile — returns the user object (id from JWT) */
    export const getProfile = async () => {
      const { data } = await apiClient.get('/users/profile');
      return data.user;
    };
    
-   /**
-    * POST /users/profile/update — send only the fields you want to change.
-    * Updatable: name, phone, country, date_of_birth, height_cm, weight_kg
-    */
    export const updateProfile = async (fields) => {
      const { data } = await apiClient.post('/users/profile/update', fields);
      return data.user;
    };
    
-   /**
-    * POST /users/change_password
-    * @param {{ old_password: string, new_password: string }} payload
-    */
    export const changePassword = async ({ old_password, new_password }) => {
      const { data } = await apiClient.post('/users/change_password', {
        old_password,
@@ -35,30 +20,21 @@
      return data;
    };
    
-   /** DELETE /users/account — JWT alone authorises deletion, no password needed */
    export const deleteAccount = async () => {
      const { data } = await apiClient.delete('/users/account');
      return data;
    };
 
-   /** POST /users/heartbeat — presence ping so the user reads as "online" while the app is open */
    export const heartbeat = async () => {
-     try { await apiClient.post('/users/heartbeat'); } catch { /* offline / not fatal */ }
+     try { await apiClient.post('/users/heartbeat'); } catch {  }
    };
    
-   // ── Emergency Contacts ────────────────────────────────
    
-   /** GET /users/contacts — returns array of contact objects */
    export const getContacts = async () => {
      const { data } = await apiClient.get('/users/contacts');
      return data.contacts;
    };
    
-   /**
-    * POST /users/contacts/add — max 5 contacts.
-    * Side-effect: sends 6-digit verification code to contact's email (30 min TTL).
-    * @param {{ name: string, phone: string, email: string }} contact
-    */
    export const addContact = async ({ name, phone, email }) => {
      const { data } = await apiClient.post('/users/contacts/add', {
        name,
@@ -68,10 +44,6 @@
      return data;
    };
    
-   /**
-    * POST /users/contacts/verify — 3 wrong attempts auto-removes the contact.
-    * @param {{ email: string, code: string }} payload
-    */
    export const verifyContact = async ({ email, code }) => {
      const { data } = await apiClient.post('/users/contacts/verify', {
        email,
@@ -80,10 +52,6 @@
      return data;
    };
    
-   /**
-    * POST /users/contacts/resend_code
-    * @param {{ email: string }} payload — contact's email
-    */
    export const resendCode = async ({ email }) => {
      const { data } = await apiClient.post('/users/contacts/resend_code', {
        email,
@@ -91,25 +59,14 @@
      return data;
    };
    
-   /**
-    * DELETE /users/contacts/remove
-    * @param {{ email: string }} payload — contact's email
-    */
    export const removeContact = async ({ email }) => {
-     // Axios DELETE with JSON body requires the `data` key in config
      const { data } = await apiClient.delete('/users/contacts/remove', {
        data: { email },
      });
      return data;
    };
    
-   // ── Emergency Alert ───────────────────────────────────
    
-   /**
-    * POST /users/emergency_alert — No auth required (intentionally open).
-    * Sends GPS location to all verified emergency contacts via email.
-    *
-   * @param {{ gps_lat: number, gps_lon: number }} payload */
    export const emergencyAlert = async ({ gps_lat, gps_lon }) => {
      const { data } = await apiClient.post('/users/emergency_alert', {
        gps_lat,
@@ -118,46 +75,28 @@
      return data;
    };
 
-   /**
-    * GET /users/emergency_alerts — returns SOS alert history (newest first).
-    */
    export const getEmergencyAlerts = async () => {
      const { data } = await apiClient.get('/users/emergency_alerts');
      return data.alerts ?? [];
    };
-   // ── History ───────────────────────────────────────────
    
-   /**
-    * GET /users/history
-    * @param {{ limit?: number, period?: string, session_id?: string }} params
-    */
    export const getHistory = async ({ limit = 50, period = 'all', session_id } = {}) => {
      const params = { limit, period };
      if (session_id) params.session_id = session_id;
      const { data } = await apiClient.get('/users/history', { params });
-     return data; // { history, count }
+     return data;
    };
    
-   /**
-    * DELETE /users/history/{record_id}
-    */
    export const deleteHistoryRecord = async (record_id) => {
      const { data } = await apiClient.delete(`/users/history/${record_id}`);
      return data;
    };
    
-   /**
-    * DELETE /users/history — clear all records
-    */
    export const clearHistory = async () => {
      const { data } = await apiClient.delete('/users/history');
      return data;
    };
    
-   /**
-    * POST /users/feedback/from_history
-    * @param {{ record_id: string, feedback_type: string, notes?: string }} payload
-    */
    export const feedbackFromHistory = async ({ record_id, feedback_type, notes }) => {
      const { data } = await apiClient.post('/users/feedback/from_history', {
        record_id,
@@ -167,15 +106,7 @@
      return data;
    };
    
-   // ── Feedback ──────────────────────────────────────────
    
-   /**
-    * POST /users/feedback/quick
-    * Fired immediately after a detection event.
-    * Now includes record_id from the WebSocket response for frame linking.
-    *
-    * @param {{ feedback_type: string, record_id?: string }} payload
-    */
    export const quickFeedback = async ({ feedback_type, record_id }) => {
      const body = { feedback_type };
      if (record_id) body.record_id = record_id;
@@ -183,10 +114,6 @@
      return data;
    };
    
-   /**
-    * POST /users/feedback/general — standalone feedback, not linked to a detection.
-    * @param {{ feedback_type: string, notes?: string }} payload
-    */
    export const generalFeedback = async ({ feedback_type, notes }) => {
      const { data } = await apiClient.post('/users/feedback/general', {
        feedback_type,
@@ -195,47 +122,29 @@
      return data;
    };
    
-   /**
-    * GET /users/feedback/pending — list pending (un-reviewed) feedbacks.
-    */
    export const getPendingFeedback = async () => {
      const { data } = await apiClient.get('/users/feedback/pending');
      return data.feedback ?? [];
    };
    
-   /**
-    * GET /users/feedback/all — all feedback, filtered to submitted only.
-    */
    export const getSubmittedFeedback = async () => {
      const { data } = await apiClient.get('/users/feedback/all');
      return (data.feedback ?? []).filter((f) => f.status === 'submitted');
    };
    
-   /**
-    * POST /users/feedback/{feedback_id}/update — add notes and mark as submitted.
-    * @param {string} feedback_id
-    * @param {{ notes?: string, feedback_type?: string }} payload
-    */
    export const submitFeedback = async (feedback_id, { notes, feedback_type } = {}) => {
      if ((notes && notes.trim()) || feedback_type) {
-       // Has notes or type change → use /update
        const body = {};
        if (notes && notes.trim()) body.notes = notes.trim();
        if (feedback_type) body.feedback_type = feedback_type;
        const { data } = await apiClient.post(`/users/feedback/${feedback_id}/update`, body);
        return data;
      } else {
-       // No changes → just mark as submitted
        const { data } = await apiClient.post(`/users/feedback/${feedback_id}/submit`);
        return data;
      }
    };
 
-   /**
-    * POST /users/feedback/{feedback_id}/update — edit type and/or notes on any feedback.
-    * @param {string} feedback_id
-    * @param {{ feedback_type?: string, notes?: string }} payload
-    */
    export const updateFeedback = async (feedback_id, { feedback_type, notes }) => {
      const body = {};
      if (feedback_type) body.feedback_type = feedback_type;
@@ -244,10 +153,6 @@
      return data;
    };
 
-   /**
-    * GET /users/feedback/all — returns Set of record_ids that have feedback.
-    * Used by History page to mark frames.
-    */
    export const getFeedbackRecordIds = async () => {
      const { data } = await apiClient.get('/users/feedback/all');
      const ids = new Set();
@@ -257,20 +162,12 @@
      return ids;
    };
    
-   // ── Password Recovery ─────────────────────────────────
    
-   /**
-    * DELETE /users/feedback/{feedback_id}
-    */
    export const deleteFeedback = async (feedback_id) => {
      const { data } = await apiClient.delete(`/users/feedback/${feedback_id}`);
      return data;
    };
 
-   /**
-    * GET /users/feedback/responses/unseen_count → number of team responses the user
-    * hasn't seen yet (drives the "new response" badge).
-    */
    export const getUnseenResponseCount = async () => {
      try {
        const { data } = await apiClient.get('/users/feedback/responses/unseen_count');
@@ -278,29 +175,16 @@
      } catch { return 0; }
    };
 
-   /**
-    * POST /users/feedback/responses/seen → mark all team responses as seen (clears badge).
-    */
    export const markResponsesSeen = async () => {
      const { data } = await apiClient.post('/users/feedback/responses/seen');
      return data;
    };
    
-   /**
-    * POST /users/forgot_password (rate-limited: 3/min)
-    * Always returns 200 even if email not found (security).
-    * Side-effect: sends 6-digit code email (15 min TTL).
-    * @param {{ email: string }} payload
-    */
    export const forgotPassword = async ({ email }) => {
      const { data } = await apiClient.post('/users/forgot_password', { email });
      return data;
    };
    
-   /**
-    * POST /users/reset_password
-    * @param {{ email: string, code: string, new_password: string }} payload
-    */
    export const resetPassword = async ({ email, code, new_password }) => {
      const { data } = await apiClient.post('/users/reset_password', {
        email,

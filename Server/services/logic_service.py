@@ -22,7 +22,6 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
     if high_risk_classes is None:
         high_risk_classes = HIGH_RISK_CLASSES
 
-    # Get thresholds based on user's sensitivity setting
     profile = SENSITIVITY_PROFILES.get(sensitivity, SENSITIVITY_PROFILES["medium"])
     conf_threshold = profile["confidence_threshold"]
     close_ratio = profile["bbox_close_ratio"]
@@ -67,11 +66,6 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
             "position": position,
             "alert_level": alert_level,
             "alert_message": alert_message,
-            # Is this one of the classes the user asked to be warned about? Cannot
-            # be inferred from alert_level: a watched object that is standing still
-            # is "none" too, and the difference between "not dangerous right now"
-            # and "not something you care about" is exactly what presence tracking
-            # needs to tell apart.
             "watched": class_name in high_risk_classes,
             "motion": motion
         })
@@ -84,10 +78,6 @@ def assess_danger(detections: list[dict], high_risk_classes: set = None, sensiti
 
     danger = highest_alert == "high"
 
-    # Most dangerous first. The client announces objects[0] and drives the HUD
-    # direction arrow from it, so it must be the leading threat rather than
-    # whatever order YOLO happened to emit — otherwise the frame reads "danger"
-    # because of one object while the user is told about a different one.
     processed_objects.sort(
         key=lambda o: (
             _alert_priority(o["alert_level"]),
@@ -147,7 +137,6 @@ def _build_alert_message(class_name: str, distance: str, position: str, motion: 
     approaching = motion.get("approaching", False) if motion else False
     speed = motion.get("speed", "unknown") if motion else "unknown"
 
-    # Position text
     if position == "left":
         pos_text = "on your left"
     elif position == "right":
@@ -155,7 +144,6 @@ def _build_alert_message(class_name: str, distance: str, position: str, motion: 
     else:
         pos_text = "ahead"
 
-    # Build message based on motion and distance
     if approaching and speed == "fast":
         return f"{class_name} approaching fast {pos_text}"
     elif approaching:
@@ -181,29 +169,17 @@ def _classify_alert(class_name: str, distance: str, high_risk_classes: set, moti
     approaching = motion.get("approaching", False) if motion else False
     speed = motion.get("speed", "unknown") if motion else "unknown"
 
-    # ── Class the user switched OFF → never an alert, at any distance. ──
-    # The Settings screen promises "לא מסומנים — יזוהו אך לא יסומנו כסכנה", but this
-    # used to fall through to a distance-only rule below that returned "high" for
-    # any close approaching object — so an unchecked class (a bench) could turn the
-    # screen red. Detection still happens (the box is drawn); only alerting stops.
     if not is_high_risk:
         return "none"
 
-    # ── Not approaching (static or moving away) → no alert at all. ──
-    # Nothing is developing: the user and the object are at rest relative to each
-    # other, so there is nothing to warn about no matter how close it is. Sitting
-    # near your own dog, or facing a parked car, must stay silent. A genuine
-    # approach still fires, including when the USER walks toward a static object —
-    # closing distance grows the bbox, which reads as approaching.
     if not approaching:
         return "none"
 
-    # ── Approaching → escalate by distance / speed. ──
     if speed == "fast":
-        return "high"                       # fast approach at any distance
+        return "high"
     if distance in ("Close", "Medium"):
-        return "high"                       # approaching and already near
-    return "low"                            # approaching from Far → early heads-up
+        return "high"
+    return "low"
 
 
 def _alert_priority(level: str) -> int:
