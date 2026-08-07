@@ -4,9 +4,9 @@ import { haptic, speakStatus } from './feedbackService';
 
 const PING_INTERVAL_MS    = 5000;
 const PING_TIMEOUT_MS     = 4000;
-const THRESHOLD_YELLOW    = 120;
-const THRESHOLD_ORANGE    = 160;
-const THRESHOLD_RED       = 200;
+const THRESHOLD_YELLOW    = 150;
+const THRESHOLD_ORANGE    = 200;
+const THRESHOLD_RED       = 250;
 const RED_CONSECUTIVE     = 3;
 const RECOVER_CONSECUTIVE = 2;
 const DEGRADED_CONSECUTIVE = 2;
