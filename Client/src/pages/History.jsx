@@ -65,15 +65,14 @@ function formatDate(ts) {
   return `${datePart} ${timePart}`;
 }
 
+// Compared as a Jerusalem calendar day, not the browser's — otherwise the
+// "today" counter could disagree with the dates rendered next to it.
+const jerusalemDay = (d) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+
 function isToday(ts) {
   const d = parseServerDate(ts);
   if (!d) return false;
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth()    === now.getMonth()    &&
-    d.getDate()     === now.getDate()
-  );
+  return jerusalemDay(d) === jerusalemDay(new Date());
 }
 
 function alertLevelColor(level) {
