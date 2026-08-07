@@ -3545,3 +3545,161 @@ button:active {
   background: rgba(34, 211, 238, 0.18);
   border-color: rgba(34, 211, 238, 0.55);
 }
+
+/* ── Admin: stream config page ─────────────────────────── */
+.asc-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  direction: rtl;
+}
+.asc-notice svg { flex-shrink: 0; margin-top: 2px; }
+.asc-notice strong { color: #fcd34d; }
+
+.asc-notice-muted {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.asc-card-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 16px;
+  color: #a78bfa;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.asc-field {
+  padding: 14px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.asc-field:first-of-type { border-top: none; padding-top: 0; }
+
+.asc-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.asc-field-head label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+}
+.asc-range {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+
+.asc-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.asc-input-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.asc-input-row input:focus {
+  outline: none;
+  border-color: rgba(167, 139, 250, 0.6);
+  background: rgba(255, 255, 255, 0.07);
+}
+.asc-input-row input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.asc-unit {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+}
+
+.asc-help {
+  margin: 8px 0 0;
+  font-size: 0.74rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.asc-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+.asc-live strong { color: #22d3ee; font-variant-numeric: tabular-nums; }
+.asc-default { color: rgba(255, 255, 255, 0.3); }
+.asc-changed {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.asc-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.asc-actions button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 11px;
+  border-radius: 11px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.asc-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.asc-save {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+.asc-save:not(:disabled):hover {
+  background: rgba(34, 197, 94, 0.24);
+  border-color: rgba(34, 197, 94, 0.6);
+}
+
+.asc-reset {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.7);
+}
+.asc-reset:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.24);
+}

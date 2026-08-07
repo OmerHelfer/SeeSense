@@ -7,6 +7,7 @@ import threading
 
 from core.auth import verify_token
 from core.config import MODEL_MODE, TARGET_SIZE, MIN_INPUT_SIZE, MAX_INPUT_SIZE
+from services.stream_config_service import get_stream_config
 from services.vision_service import decode_image, process_image
 from services.logic_service import assess_danger
 from services import db_writer
@@ -106,14 +107,23 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
     from services.presence import mark_active
     mark_active(user_id)
 
-    try:
-        frame_size = int(input_size) if input_size else TARGET_SIZE
-    except (TypeError, ValueError):
-        frame_size = TARGET_SIZE
+    # Server's global config wins over the client's ?input_size= hint, which is
+    # kept only as a fallback for a bundle that predates the admin config page.
+    stream_cfg = get_stream_config()
+    frame_size = stream_cfg.get("input_size")
+    if not frame_size:
+        try:
+            frame_size = int(input_size) if input_size else TARGET_SIZE
+        except (TypeError, ValueError):
+            frame_size = TARGET_SIZE
     frame_size = max(MIN_INPUT_SIZE, min(MAX_INPUT_SIZE, frame_size))
 
-    logger.info(f"WebSocket connected: user={user_id}, input_size={frame_size}")
+    logger.info(
+        f"WebSocket connected: user={user_id}, input_size={frame_size}, "
+        f"compression={stream_cfg['compression_percent']}, depth={stream_cfg['max_inflight']}"
+    )
     tracker.record_input_size(frame_size)
+    tracker.record_stream_config(stream_cfg)
 
     session_id = get_or_create_session(user_id)
 
@@ -124,6 +134,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
         "type": "connected",
         "session_id": session_id,
         "input_size": frame_size,
+        "compression_percent": stream_cfg["compression_percent"],
+        "max_inflight": stream_cfg["max_inflight"],
         "message": "Stream session active"
     })
 

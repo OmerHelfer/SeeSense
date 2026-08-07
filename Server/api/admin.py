@@ -33,6 +33,13 @@ from services.user_service import (
     admin_assign_feedback,
 )
 from services.email_service import send_feedback_response_email
+from services.stream_config_service import (
+    LIMITS as STREAM_LIMITS,
+    DEFAULTS as STREAM_DEFAULTS,
+    get_stream_config,
+    set_stream_config,
+    reset_stream_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +85,13 @@ class AssignFeedbackRequest(BaseModel):
     assignee_id: str
 
 
+class StreamConfigRequest(BaseModel):
+    """Partial update — omitted fields keep their stored value. Ranges are clamped, not rejected."""
+    input_size: Optional[int] = None
+    compression_percent: Optional[int] = None
+    max_inflight: Optional[int] = None
+
+
 
 def _load_target(email: str) -> dict:
     target = get_user_admin_view(email)
@@ -94,6 +108,40 @@ def _require_can_manage(actor: dict, target: dict):
             detail="Level 1 admins can only manage regular users (not admins).",
         )
 
+
+
+@router.get("/stream-config")
+async def stream_config_get(current_user: dict = Depends(verify_admin)):
+    """Current global streaming parameters + UI ranges + defaults. (level 1+, read-only)"""
+    return {
+        "status":   "success",
+        "config":   get_stream_config(),
+        "limits":   STREAM_LIMITS,
+        "defaults": STREAM_DEFAULTS,
+    }
+
+
+@router.put("/stream-config")
+async def stream_config_update(
+    req: StreamConfigRequest,
+    current_user: dict = Depends(verify_super_admin),
+):
+    """Update the global streaming parameters. Takes effect on each client's next scan. (level 2)"""
+    try:
+        config = set_stream_config(req.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    logger.info(f"Stream config changed by {current_user['user_id']}: {config}")
+    return {"status": "success", "config": config}
+
+
+@router.delete("/stream-config")
+async def stream_config_reset(current_user: dict = Depends(verify_super_admin)):
+    """Discard overrides and return to the code defaults. (level 2 only)"""
+    config = reset_stream_config()
+    logger.info(f"Stream config reset by {current_user['user_id']}")
+    return {"status": "success", "config": config}
 
 
 @router.get("/overview")

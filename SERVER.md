@@ -119,11 +119,42 @@ Everything tunable lives here, grouped by concern.
 ### Preprocessing / streaming
 | Constant | Value | Meaning |
 |---|---|---|
-| `TARGET_SIZE` | 640 | Fallback square input size when the client sends none |
-| `MIN_INPUT_SIZE` / `MAX_INPUT_SIZE` | 160 / 640 | Clamp for the client-requested `input_size` |
+| `TARGET_SIZE` | 640 | Fallback square input size when neither the stored config nor the client sends one |
+| `MIN_INPUT_SIZE` / `MAX_INPUT_SIZE` | 320 / 640 | Clamp for `input_size` — reused as the range bound for the admin-editable config (§4a) |
 
 There is **no frame-rate constant**. `TARGET_FPS` / `MAX_FPS` were removed in 2026-08: the send rate
-is governed entirely by the client's `MAX_INFLIGHT`, which self-throttles to roughly `depth / RTT`.
+is governed entirely by the client's `max_inflight`, which self-throttles to roughly `depth / RTT`.
+
+## 4a. Global streaming config (`services/stream_config_service.py`) ⭐ *(added 2026-08)*
+
+`input_size`, `compression_percent` and `max_inflight` moved from client-bundled constants to a
+**server-owned, admin-editable, globally-applied** runtime config:
+
+- Stored in Mongo: `app_config` collection, single document `_id: "stream"`. Loaded into an
+  in-process cache (`_cache`) at startup (`load_stream_config()`, called from the FastAPI
+  `lifespan`, before the model loads) and on every admin write — never read from Mongo on the hot
+  path.
+- `get_stream_config()` — cheap dict copy, called once per WebSocket connect.
+- `set_stream_config(updates)` — partial update. Each field is clamped into `LIMITS` (not
+  rejected); only a genuinely non-numeric value raises `ValueError`. Persists via
+  `update_one(upsert=True)` and only swaps the in-memory cache **after** the write succeeds, so a
+  rejected write can never desync the cache from what's actually stored.
+- `reset_stream_config()` — deletes the Mongo override, reverts the cache to `DEFAULTS`.
+
+| Field | Default | Range (step) |
+|---|---|---|
+| `input_size` | 640 | 320–640 (32) |
+| `compression_percent` | 75 | 0–95 (5) |
+| `max_inflight` | 6 | 1–16 (1) |
+
+**Applied at WebSocket connect only, never mid-stream** — resizing `input_size` under a live
+session would invalidate every tracker's box history, built in the old coordinate space (§6).
+`api/stream.py` reads `get_stream_config()` first; the client's `?input_size=` query param is only
+a fallback for a bundle old enough to predate this feature. The negotiated values are sent back in
+`connected` and recorded via `tracker.record_stream_config()` for the admin performance page.
+
+Admin surface: `GET/PUT/DELETE /admin/stream-config` (§13a) and `pages/AdminStreamConfig.jsx` on
+the client (level 1 read-only, level 2 read/write).
 
 ### Inference
 | Constant | Value |
@@ -282,19 +313,23 @@ ws://host/stream/ws?token=<JWT>&input_size=512
 ```
 
 1. No token → close 4001. Bad/blacklisted token → close 4003.
-2. `input_size` is a *request*: clamped to `[MIN_INPUT_SIZE, MAX_INPUT_SIZE]`. The clamped
-   value is used for both letterboxing and YOLO inference, and is echoed back so client and
-   server agree on the bbox coordinate space.
+2. `input_size`, `compression_percent` and `max_inflight` all come from the **global config**
+   (§4a), not from the query string — `?input_size=` is only a fallback for a bundle old enough
+   to predate that feature. The resolved `input_size` is clamped again to `[MIN_INPUT_SIZE,
+   MAX_INPUT_SIZE]` regardless of source, used for both letterboxing and YOLO inference, and
+   recorded via `tracker.record_input_size()` / `record_stream_config()` for the admin page.
 3. `get_or_create_session(user_id)` — see session resume below.
 4. User settings are fetched **once** and put in the in-memory cache. This is the only DB read
    at connect time and there are **zero settings reads per frame**.
 5. Server sends:
    ```json
    { "type": "connected", "session_id": "...",
-     "input_size": 512, "message": "Stream session active" }
+     "input_size": 640, "compression_percent": 75, "max_inflight": 6,
+     "message": "Stream session active" }
    ```
-   The client uses `input_size` to size its capture canvas and to interpret bbox coordinates.
-   No frame-rate is negotiated — the client's `MAX_INFLIGHT` alone governs the rate.
+   The client applies all three (`applyStreamConfig()`) before capturing its first frame, and uses
+   `input_size` to size its capture canvas and interpret bbox coordinates. No frame-rate is
+   negotiated — `max_inflight` alone governs the client's send rate.
 
 ### Message types
 
@@ -764,6 +799,8 @@ the model.
 | Take / resolve feedback | ✅ (own, or any as L2) | ✅ |
 | Assign feedback to an admin | ❌ | ✅ |
 | Reset performance data | ❌ | ✅ |
+| View global stream config | ✅ | ✅ |
+| Edit / reset global stream config | ❌ | ✅ |
 
 Enforced by `_require_can_manage(actor, target)`: a level-1 admin can never act on a user with
 `admin_level ≥ 1`. Endpoints also return `actor_level` so the UI can hide what the caller can't
@@ -784,6 +821,9 @@ do.
 | POST | `/feedback/{id}/take` | `pending → in_progress` under the caller; fails if already taken |
 | POST | `/feedback/{id}/resolve` | Requires a non-empty response note. Only the handling admin or an L2 may resolve. Sets `response_seen: false` (drives the user's badge) and emails the user |
 | POST | `/feedback/{id}/assign` | L2 only; assigns to a specific admin → `in_progress` under them. Can't reassign a resolved item |
+| GET | `/stream-config` | L1+; returns `{config, limits, defaults}` — see §4a |
+| PUT | `/stream-config` | L2 only; partial update via `StreamConfigRequest`, clamped not rejected |
+| DELETE | `/stream-config` | L2 only; drops the Mongo override, reverts to code defaults |
 
 ### The two-axis feedback lifecycle
 

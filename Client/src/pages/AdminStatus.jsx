@@ -112,6 +112,12 @@ const overStyle = (util) =>
   (util != null && util > 100 ? { color: UTIL_OVER_COLOR, fontWeight: 700 } : undefined);
 const OVER_TITLE = 'מעל 100% — ההערכה של התקרה כבר לא מדויקת (ראה הערה בקוד). המספר אמיתי, אבל אי אפשר לקרוא אותו כאחוז מתקרה ידועה.';
 
+// client_actual counts frames leaving the phone, server_actual counts frames
+// arriving — a gap means frames were lost in transit, so it's flagged, not clamped.
+const FPS_GAP_TOLERANCE = 1.08;   // 8% — below this the gap is measurement noise
+const GAP_COLOR = '#f59e0b';
+const GAP_TITLE = 'הלקוח שולח יותר פריימים ממה שהשרת מקבל — כלומר פריימים אובדים בדרך. זה לא באג בתצוגה אלא סימן לבעיית העלאה.';
+
 const LatencyRow = ({ label, avg, min, max, color, fmt = fmtMs }) => (
   <div className="admin-latency-row">
     <span className="admin-latency-label" style={{ borderRightColor: color }}>{label}</span>
@@ -357,6 +363,16 @@ const AdminStatus = () => {
     return Math.round((act / (1000 / cost)) * 100);
   }, [data, clientOnly]);
 
+  // Frames sent but not received — see FPS_GAP_TOLERANCE above for why this is
+  // surfaced rather than hidden by clamping client FPS to the server's.
+  const fpsGap = useMemo(() => {
+    const cli = data?.fps?.client_actual ?? 0;
+    const srv = data?.fps?.server_actual ?? 0;
+    if (!(cli > 0 && srv > 0)) return null;
+    if (cli <= srv * FPS_GAP_TOLERANCE) return null;
+    return Math.round(((cli - srv) / cli) * 100);
+  }, [data]);
+
   const outcomes = useMemo(() => {
     if (!data) return null;
     const success      = data.success_count ?? 0;
@@ -481,6 +497,14 @@ const AdminStatus = () => {
                       לקוח בפועל: {data.fps?.client_actual ?? 0}
                       {cliUtil != null && <> · ניצולת לקוח: {cliUtil}%</>}
                     </span>
+                    {fpsGap != null && (
+                      <span
+                        style={{ color: GAP_COLOR, fontWeight: 700 }}
+                        title={GAP_TITLE}
+                      >
+                        ⚠ פער לקוח/שרת: {fpsGap}% מהפריימים לא הגיעו
+                      </span>
+                    )}
                   </span>
                 )}
               color="#a78bfa"
@@ -620,6 +644,19 @@ const AdminStatus = () => {
                   {data.frame_bytes?.avg_kb > 0 && (
                     <> · משקל ממוצע לפריים: <strong dir="ltr">{data.frame_bytes.avg_kb}KB</strong></>
                   )}
+                </p>
+              )}
+              {data.stream_config && (
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>
+                  עומק צנרת (MAX INFLIGHT): <strong dir="ltr">{data.stream_config.max_inflight}</strong>
+                  {' '}· דחיסה: <strong dir="ltr">{data.stream_config.compression_percent}%</strong>
+                  <br />
+                  <span style={{ color: 'rgba(255,255,255,0.35)' }}>
+                    עומק הצנרת = כמה פריימים מותר שיהיו בדרך לשרת בו-זמנית.
+                    לפי חוק ליטל: FPS = עומק ÷ זמן הלוך-חזור, והשהיה = עומק × זמן לפריים.
+                    העלאתו מוסיפה FPS רק כל עוד לצוואר הבקבוק נותר מקום (ניצולת מתחת ל-100%);
+                    אחרת היא מוסיפה השהיה בלבד.
+                  </span>
                 </p>
               )}
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>

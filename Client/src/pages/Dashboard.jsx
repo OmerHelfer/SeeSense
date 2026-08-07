@@ -260,7 +260,12 @@ const Dashboard = () => {
       const stream = new VisionStream({
         onResult:    handleResult,
         onConnected: (msg) => {
-          console.info('[SeeSense] WS connected, session:', msg.session_id, '| input_size:', msg.input_size);
+          console.info(
+            '[SeeSense] WS connected, session:', msg.session_id,
+            '| input_size:', msg.input_size,
+            '| compression:', msg.compression_percent,
+            '| depth:', msg.max_inflight,
+          );
           if (msg.input_size) setInputSize(msg.input_size);
           speakStatus('התחבר בהצלחה');
         },

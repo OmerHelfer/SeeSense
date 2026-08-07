@@ -37,6 +37,23 @@ export const deleteUserByEmail = async (email) => {
 };
 
 
+// Global streaming parameters (read: level 1+, write: level 2)
+export const getStreamConfig = async () => {
+  const { data } = await apiClient.get('/admin/stream-config');
+  return data;
+};
+
+export const updateStreamConfig = async (fields) => {
+  const { data } = await apiClient.put('/admin/stream-config', fields);
+  return data.config;
+};
+
+export const resetStreamConfig = async () => {
+  const { data } = await apiClient.delete('/admin/stream-config');
+  return data.config;
+};
+
+
 export const getFeedbackAdmin = async (handling_status) => {
   const params = handling_status ? { handling_status } : {};
   const { data } = await apiClient.get('/admin/feedback', { params });

@@ -53,6 +53,10 @@ async def lifespan(app: FastAPI):
     migrate_admin_levels()
     from services.perf_history import backfill_recording_start
     backfill_recording_start()
+    # Before the model, so the very first WebSocket connect already sees the
+    # stored values rather than falling back to defaults for one session.
+    from services.stream_config_service import load_stream_config
+    load_stream_config()
     app.state.model = load_model(MODEL_PATH, mode=MODEL_MODE)
     app.state.start_time = time.time()
     from services import db_writer
@@ -146,6 +150,7 @@ def get_system_status(
         data["rtt_history"] = live.get("rtt_history", [])
         data["client_stage_latency"] = live.get("client_stage_latency", {})
         data["input_size"] = live.get("input_size")
+        data["stream_config"] = live.get("stream_config")
         data["frame_bytes"] = live.get("frame_bytes", {})
         data["client_rtt"] = {
             **data.get("client_rtt", {}),

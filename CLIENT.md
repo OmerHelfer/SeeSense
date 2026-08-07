@@ -140,6 +140,7 @@ so real-device testing was done through an HTTPS tunnel.
 | `/admin/status` | AdminStatus | protected + admin (server-enforced) |
 | `/admin/users` | AdminUsers | protected + admin (server-enforced) |
 | `/admin/feedback` | AdminFeedback | protected + admin (server-enforced) |
+| `/admin/stream-config` | AdminStreamConfig | protected + admin L1 read / L2 write (server-enforced) |
 
 Admin routes are behind `ProtectedRoute` only — the links are hidden unless `user.is_admin`, and
 the **server** enforces the actual permission (a non-admin hitting the URL gets a 403 which the
@@ -189,40 +190,63 @@ axios.create({ baseURL: import.meta.env.VITE_API_URL, timeout: 8000 })
 
 ## 7. Streaming configuration (`config/streamConfig.js`) ⭐
 
-Four numbers control the whole capture/upload pipeline, each documented in the file.
+**As of 2026-08, these three numbers are no longer build-time constants.** They are owned by the
+SERVER (`Server/services/stream_config_service.py`), stored in Mongo (`app_config` collection,
+doc `_id: "stream"`), editable from a level-2 admin page at `/admin/stream-config`, and delivered
+to every client in the WebSocket `connected` message. This exists because retuning used to mean
+an edit + rebuild + redeploy, and a phone holding a cached bundle would silently keep the old
+values with no way to tell from outside.
 
-### `COMPRESSION_PERCENT = 50` → `JPEG_QUALITY = 1 - pct/100`
-One knob for frame compression. 0 % = sharpest/largest/slowest, 100 % = blockiest/smallest/
-fastest. Mapped to the canvas `toBlob` quality argument.
+`streamConfig.js` now holds only the **pre-connect fallback** and a runtime cache:
 
-### `INPUT_SIZE = 512`
-The square capture and detection size. This is **the biggest performance lever**: the server runs
-YOLO at this size, so smaller means faster inference *and* smaller uploads. 640 gives most
-detail; 512/416/320 get progressively faster but the model sees less (may miss small or distant
-objects). Multiples of 32 are preferred. The server clamps the request and reports back the size
-it actually used, so client and server always agree on the bbox coordinate space.
-
-### `MAX_INFLIGHT = 5`
-Pipeline depth — how many frames may be in flight (sent, awaiting a result) at once. The
-trade-off is documented with the measured model:
-
-```
-per-frame latency ≈ network_RTT + depth × server_processing_time
-throughput        ≈ min(1/server_time, depth / network_RTT)
+```js
+export const getInputSize          = () => _current.inputSize;
+export const getMaxInflight        = () => _current.maxInflight;
+export const getCompressionPercent = () => _current.compressionPercent;
+export const getJpegQuality        = () => 1 - _current.compressionPercent / 100;
+export function applyStreamConfig({ input_size, compression_percent, max_inflight }) { ... }
 ```
 
-With `INPUT_SIZE=512` (~41 ms/frame server-side) and a measured ~131 ms network RTT:
+Consumers **must** call the getters at use time (`getJpegQuality()` inside `toBlob`, `getMaxInflight()`
+inside `canSend`), never destructure a snapshot at module load — the value can change on every
+reconnect. `applyStreamConfig()` is called from `VisionStream`'s `connected` handler, before
+`onConnected` fires, so the very first captured frame already uses the new values.
 
-| depth | throughput | latency | note |
+### The three knobs
+
+| Field | Default | Range | Effect |
 |---|---|---|---|
-| 1 | ~7 FPS | ~131 ms | server sits idle |
-| 2 | ~13 FPS | ~172 ms | |
-| 4 | ~22 FPS | ~216 ms | ~96 % efficiency; hits the ~23.5 FPS ceiling |
+| `input_size` | 640 | 320–640 (step 32) | Square capture/detection size. Smaller = faster inference + smaller uploads, but the model sees less detail (may miss small/distant objects). |
+| `compression_percent` | 75 | 0–95 (step 5) | JPEG compression. Higher = fewer bytes on the wire and higher FPS on a weak link, but past ~85% YOLO's confidence on real detections tends to drop below the `medium` profile's threshold. |
+| `max_inflight` | 6 | 1–16 | Pipeline depth — see below. |
 
-The reasoning recorded in the file: for a blind-pedestrian safety app 22 FPS is plenty smooth,
-and 216 ms of total lag ≈ 3 m of reaction distance at 50 km/h — acceptable for urban use. It is a
-**bounded** queue, not fire-and-forget, so a slow server can never build an unbounded backlog.
-`MAX_INFLIGHT` is the **only** control on the send rate — there is no server-side FPS setting.
+`MAX_INFLIGHT` (pipeline depth): how many frames may be sent-but-unanswered at once. Little's Law:
+
+```
+FPS     ≈ depth ÷ time_per_frame     (time_per_frame = network there + server + network back)
+latency ≈ depth × time_per_frame
+```
+
+Raising depth adds FPS only while the bottleneck stage (server GPU or network) still has spare
+capacity (< ~85% utilisation, shown on `/admin/status`). Past that, extra depth adds pure latency
+with no FPS gain — the bottleneck is already saturated. It is a **bounded** queue, not
+fire-and-forget, so a slow server can never build an unbounded backlog.
+`MAX_INFLIGHT` is the **only** control on the client's send rate — there is no server-side FPS
+setting.
+
+### Admin page (`pages/AdminStreamConfig.jsx`, level 2 only)
+
+Route `/admin/stream-config`, linked from Settings → ניהול (hidden for level < 2). Shows each
+field's live server value, code default, and an editable draft; Save (`PUT /admin/stream-config`)
+is disabled until a value actually differs from the server's, and a value the admin types out of
+range is silently clamped server-side and the draft snaps back to what was actually stored. Reset
+(`DELETE /admin/stream-config`) drops the Mongo override and returns to code defaults. Level 1
+admins can view the same page read-only (`GET /admin/stream-config`, gated by `verify_admin`); the
+write endpoints require `verify_super_admin`.
+
+**Changes are never applied mid-scan** — only at the next WebSocket connect, because resizing
+`input_size` under a live session would invalidate every tracker's box history (built in the old
+coordinate space).
 
 ---
 
@@ -232,8 +256,14 @@ A class wrapping one streaming session, constructed with `{ onResult, onError, o
 
 ### URL derivation
 `VITE_API_URL` is transformed: `https://` → `wss://`, `http://` → `ws://`, then
-`/stream/ws?token=<jwt>&input_size=<INPUT_SIZE>`. `socket.binaryType = 'blob'` (only binary goes
-up; responses are text JSON).
+`/stream/ws?token=<jwt>&input_size=<getInputSize()>`. That query param is only a fallback hint —
+the server's global config (§7) overrides it and echoes the authoritative value back in
+`connected`. `socket.binaryType = 'blob'` (only binary goes up; responses are text JSON).
+
+### Config handshake
+The `connected` message carries `input_size`, `compression_percent` and `max_inflight`.
+`VisionStream` calls `applyStreamConfig(msg)` on receipt, before its own `onConnected` callback
+fires, so capture/encode/backpressure are all on the new values before the first frame is drawn.
 
 ### Bounded-depth backpressure
 `_sendTimes` is a FIFO of `performance.now()` timestamps for sent-but-unanswered frames.
@@ -241,7 +271,7 @@ up; responses are text JSON).
 ```js
 get canSend() {
   // prune entries older than MAX_INFLIGHT_MS (3000) — a lost result must not wedge the pipe
-  return this._sendTimes.length < Math.max(1, MAX_INFLIGHT);
+  return this._sendTimes.length < Math.max(1, getMaxInflight());
 }
 ```
 
@@ -303,7 +333,7 @@ fallback. `touchAction: 'none'` stops the browser's own scroll/zoom from interfe
 3. **Zoom-aware crop**: a higher zoom samples a smaller central region of the raw video, so the
    captured frame matches what the user actually sees.
 4. `ctx.drawImage(...)` → timed as the **`capture`** stage.
-5. `canvas.toBlob(cb, 'image/jpeg', JPEG_QUALITY)` → timed as the **`encode`** stage. `toBlob` is
+5. `canvas.toBlob(cb, 'image/jpeg', getJpegQuality())` → timed as the **`encode`** stage. `toBlob` is
    used rather than `toDataURL` because it is async (doesn't block the main thread) and hands back
    a Blob that goes straight onto the WebSocket with no base64 → bytes copy.
 
@@ -312,7 +342,7 @@ fallback. `touchAction: 'none'` stops the browser's own scroll/zoom from interfe
 const CAPTURE_POLL_HZ = 120;
 setInterval(captureFrame, 1000 / CAPTURE_POLL_HZ);
 ```
-This timer does **not** set the frame rate — `MAX_INFLIGHT` does. It only asks, often, whether a
+This timer does **not** set the frame rate — the server's `max_inflight` does. It only asks, often, whether a
 frame may be sent. An in-flight slot frees the instant a *result* arrives, which never aligns with
 a fixed timer; polling slowly means a freed slot idles until the next tick, and that dead time is
 lost throughput. At 120 Hz the wait is at most ~8ms, and ticks that can't send are near-free
@@ -444,6 +474,7 @@ alignment or the in-flight count may have changed during the async encode.
 | **AdminStatus** | The performance dashboard. Auto-refreshes every 3 s. Eleven range presets (חי / מההתחלה / 30 דק׳ / שעה / יום / שבוע / חודש / 3 ח׳ / 6 ח׳ / שנה / מותאם) plus a custom `datetime-local` picker converted to epoch seconds. Stat cards (uptime or measured span, FPS, frames, throughput), an FPS comparison table (client actual vs server actual/capacity/overall), a latency comparison (**שרת בלבד** / **לקוח בלבד** / **End-to-End** + an estimated network figure), per-stage breakdowns for both server and client, and a **hand-drawn canvas RTT chart** with grid, gradient fill, threshold lines at 100/150/200 ms, and a span label computed from real timestamps. The reset-everything button is gated to level 2. |
 | **AdminUsers** | Stat cards (total / online / offline / **admins online**, the last being a clickable modal). Email lookup → a full user card: presence + level badges, data counts (detections / feedback / sessions / contacts / SOS), editable details, full emergency-contact list, password reset, admin-level chips (L2 only), permanent delete (L2 only, not self). The admins modal sorts online-first by level, then offline by most-recently-seen, and clicking an admin opens their full detail. Level-1 admins see an explanatory hint instead of management controls when viewing another admin. |
 | **AdminFeedback** | Triage queue. Stat cards double as filters (הכל / ממתין / בטיפול / טופל). Each card shows the submitting user (clickable → a details modal), type, date, detection snapshot, notes, who is handling it, and the resolution note. Actions by permission: **קח לטיפול** (L1+), **סמן כטופל** (handler or L2, requires a response note), **הקצה לאדמין** (L2 only). A level-1 admin looking at someone else's in-progress item sees a lock explaining only level 2 can override. After an action the single item is patched **in place** and stats recomputed locally, so filter and scroll position survive. |
+| **AdminStreamConfig** | The global `input_size` / `compression_percent` / `max_inflight` editor (§7). L1 can view, L2 can save/reset. Each field shows the live server value, the code default, and a "changed — not yet saved" flag on the draft; save is disabled until something actually differs from the server. A banner states plainly that these are global and take effect on each client's next scan, not immediately. |
 
 ---
 
@@ -711,8 +742,6 @@ Observations from reading the current code:
   user from the JWT. Harmless, but misleading (the file's header comment claims it's required).
 - **Stale comment** in `userService.emergencyAlert`: "No auth required (intentionally open)". The
   endpoint *does* require a JWT.
-- **`streamConfig` prose vs value** — the comment block describes depth 4 as "current", but
-  `MAX_INFLIGHT` is 5.
 - **`VITE_WS_URL` is defined in both `.env` files but never read** — the WS URL is derived from
   `VITE_API_URL`.
 - **Heavy inline styles.** History, PendingFeedback, SentFeedback and GeneralFeedback style large

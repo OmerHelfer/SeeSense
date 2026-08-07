@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { JPEG_QUALITY } from '../config/streamConfig';
+import { getJpegQuality } from '../config/streamConfig';
 import { recordClientStage } from '../services/clientMetrics';
 
 const MIN_ZOOM = 1;
@@ -111,7 +111,7 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
         if (blob) onFrameCapture?.(blob);
       },
       'image/jpeg',
-      JPEG_QUALITY,
+      getJpegQuality(),
     );
   }, [onFrameCapture]);
 

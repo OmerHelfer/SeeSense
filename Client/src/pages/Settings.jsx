@@ -574,6 +574,16 @@ const Settings = () => {
               <span>ביצועי מערכת</span>
               <ArrowRight size={16} className="nav-row-arrow" />
             </button>
+            {(user?.admin_level ?? 0) >= 2 && (
+              <button
+                className="nav-row-btn"
+                onClick={() => navigate('/admin/stream-config')}
+              >
+                <Sliders size={16} />
+                <span>הגדרות שידור</span>
+                <ArrowRight size={16} className="nav-row-arrow" />
+              </button>
+            )}
           </>
         )}
 

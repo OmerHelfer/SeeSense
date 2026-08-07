@@ -1,5 +1,5 @@
 
-import { INPUT_SIZE, MAX_INFLIGHT } from '../config/streamConfig';
+import { getInputSize, getMaxInflight, applyStreamConfig } from '../config/streamConfig';
 import { getClientStageReport } from './clientMetrics';
 import { getLastPingRtt } from './healthService';
 
@@ -109,7 +109,7 @@ export class VisionStream {
       this._sendTimes.shift();
       this._lostCount += 1;
     }
-    return this._sendTimes.length < Math.max(1, MAX_INFLIGHT);
+    return this._sendTimes.length < Math.max(1, getMaxInflight());
   }
 
   sendFrame(blob) {
@@ -127,7 +127,8 @@ export class VisionStream {
   _open() {
     if (!this._active) return;
 
-    const url    = `${WS_BASE}/stream/ws?token=${encodeURIComponent(this._token)}&input_size=${INPUT_SIZE}`;
+    // input_size is only a hint — the server's global config overrides it.
+    const url    = `${WS_BASE}/stream/ws?token=${encodeURIComponent(this._token)}&input_size=${getInputSize()}`;
     const socket = new WebSocket(url);
     socket.binaryType = 'blob';
     this._socket = socket;
@@ -141,6 +142,7 @@ export class VisionStream {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'connected') {
+          applyStreamConfig(msg);
           this._onConnected(msg);
         } else if (msg.type === 'result') {
           this._recordRtt();

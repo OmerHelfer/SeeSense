@@ -43,6 +43,7 @@ class PerformanceTracker:
 
         self.client_stages = {}
         self.last_input_size = None
+        self.last_stream_config = None
 
     def reset(self):
         """
@@ -119,6 +120,10 @@ class PerformanceTracker:
             self.last_input_size = int(size)
         except (TypeError, ValueError):
             pass
+
+    def record_stream_config(self, cfg: dict):
+        if isinstance(cfg, dict):
+            self.last_stream_config = dict(cfg)
 
     def record_client_fps(self, fps: float):
         """Record the actual capture rate reported by the client."""
@@ -335,6 +340,7 @@ class PerformanceTracker:
             "stage_latency": self.get_stage_breakdown(),
             "client_stage_latency": self.client_stages,
             "input_size": self.last_input_size,
+            "stream_config": self.last_stream_config,
             "frame_bytes": self.get_frame_bytes(),
             "throughput": self.get_throughput(),
             "fps": {
