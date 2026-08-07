@@ -10,6 +10,7 @@ import {
   getFeedbackRecordIds,
 } from '../services/userService';
 import { HEBREW_NAMES } from '../services/feedbackService';
+import { parseServerDate } from '../utils/serverDate';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -45,7 +46,10 @@ function hebrewName(className) {
 }
 
 function formatTime(ts) {
-  return new Date(ts).toLocaleTimeString('he-IL', {
+  const d = parseServerDate(ts);
+  if (!d) return '';
+  return d.toLocaleTimeString('he-IL', {
+    timeZone: 'Asia/Jerusalem',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -53,14 +57,17 @@ function formatTime(ts) {
 }
 
 function formatDate(ts) {
-  const d = new Date(ts);
-  const datePart = d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
-  const timePart = d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  const d = parseServerDate(ts);
+  if (!d) return '';
+  const opts = { timeZone: 'Asia/Jerusalem' };
+  const datePart = d.toLocaleDateString('he-IL', { ...opts, day: 'numeric', month: 'long' });
+  const timePart = d.toLocaleTimeString('he-IL', { ...opts, hour: '2-digit', minute: '2-digit' });
   return `${datePart} ${timePart}`;
 }
 
 function isToday(ts) {
-  const d = new Date(ts);
+  const d = parseServerDate(ts);
+  if (!d) return false;
   const now = new Date();
   return (
     d.getFullYear() === now.getFullYear() &&

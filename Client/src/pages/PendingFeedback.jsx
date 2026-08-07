@@ -4,6 +4,7 @@ import { ArrowRight, Flag, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPendingFeedback, submitFeedback } from '../services/userService';
 import { HEBREW_NAMES } from '../services/feedbackService';
+import { formatServerDateTime } from '../utils/serverDate';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -24,9 +25,7 @@ const FEEDBACK_TYPES = [
 ];
 
 function formatDate(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  return `${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+  return formatServerDateTime(ts);
 }
 
 function hebrewName(cls) { return HEBREW_NAMES[cls] || cls || '?'; }

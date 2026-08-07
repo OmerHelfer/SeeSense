@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, AlertTriangle, MapPin, Users, Clock, ExternalLink, Phone, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEmergencyAlerts } from '../services/userService';
+import { parseServerDate } from '../utils/serverDate';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -11,15 +12,13 @@ const pageVariants = {
 };
 
 const formatDate = (iso) => {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('he-IL', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  } catch (e) {
-    return iso || '—';
-  }
+  const d = parseServerDate(iso);
+  if (!d || Number.isNaN(d.getTime())) return iso || '—';
+  return d.toLocaleDateString('he-IL', {
+    timeZone: 'Asia/Jerusalem',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 };
 
 const formatCoord = (val) => {

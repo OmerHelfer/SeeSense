@@ -734,10 +734,11 @@ Observations from reading the current code:
   `PendingFeedback` and `SentFeedback` had their own hand-copied `HEBREW_NAMES` (stale — still
   listing `bus`/`truck`, which were never real classes). All four now import the single
   `feedbackService.HEBREW_NAMES`. `Settings.CLASS_META` now covers all 17 real classes.
-- **Timezone fix not applied everywhere.** `History.jsx`, `PendingFeedback.jsx` and
-  `SOSHistory.jsx` still call `new Date(ts)` directly instead of `parseServerDate`, so their
-  displayed times are skewed by the viewer's UTC offset — exactly the bug `serverDate.js` was
-  written to fix.
+- ~~**Timezone fix not applied everywhere.**~~ **Fixed 2026-08-07.** `History.jsx`,
+  `PendingFeedback.jsx` and `SOSHistory.jsx` called `new Date(ts)` directly instead of
+  `parseServerDate`, so their times displayed 3 hours early in Israel (summer) — the server host
+  is UTC and writes marker-less ISO strings, which browsers parse as *local*. All three now go
+  through `serverDate.js`, and every page that renders a server timestamp uses those helpers.
 - ~~**`healthService` thresholds contradict its own documentation.**~~ **Fixed 2026-08-06** — the
   header and every inline comment now name the constants (`THRESHOLD_RED` etc.) rather than
   restating numbers that drift. **The underlying observation still stands, though:** 100/150/200 ms
