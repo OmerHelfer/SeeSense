@@ -120,7 +120,7 @@ Everything tunable lives here, grouped by concern.
 | Constant | Value | Meaning |
 |---|---|---|
 | `TARGET_SIZE` | 640 | Fallback square input size when neither the stored config nor the client sends one |
-| `MIN_INPUT_SIZE` / `MAX_INPUT_SIZE` | 320 / 640 | Clamp for `input_size` — reused as the range bound for the admin-editable config (§4a) |
+| `MIN_INPUT_SIZE` / `MAX_INPUT_SIZE` | 160 / 640 | Clamp for `input_size` — reused as the range bound for the admin-editable config (§4a) |
 
 There is **no frame-rate constant**. `TARGET_FPS` / `MAX_FPS` were removed in 2026-08: the send rate
 is governed entirely by the client's `max_inflight`, which self-throttles to roughly `depth / RTT`.
@@ -143,7 +143,7 @@ is governed entirely by the client's `max_inflight`, which self-throttles to rou
 
 | Field | Default | Range (step) |
 |---|---|---|
-| `input_size` | 640 | 320–640 (32) |
+| `input_size` | 640 | 160–640 (32) |
 | `compression_percent` | 75 | 0–95 (5) |
 | `max_inflight` | 6 | 1–16 (1) |
 

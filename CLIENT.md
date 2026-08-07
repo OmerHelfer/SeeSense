@@ -216,7 +216,7 @@ reconnect. `applyStreamConfig()` is called from `VisionStream`'s `connected` han
 
 | Field | Default | Range | Effect |
 |---|---|---|---|
-| `input_size` | 640 | 320–640 (step 32) | Square capture/detection size. Smaller = faster inference + smaller uploads, but the model sees less detail (may miss small/distant objects). |
+| `input_size` | 640 | 160–640 (step 32) | Square capture/detection size. Smaller = faster inference + smaller uploads, but the model sees less detail (may miss small/distant objects). |
 | `compression_percent` | 75 | 0–95 (step 5) | JPEG compression. Higher = fewer bytes on the wire and higher FPS on a weak link, but past ~85% YOLO's confidence on real detections tends to drop below the `medium` profile's threshold. |
 | `max_inflight` | 6 | 1–16 | Pipeline depth — see below. |
 
