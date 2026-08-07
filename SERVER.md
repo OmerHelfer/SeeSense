@@ -153,7 +153,7 @@ session would invalidate every tracker's box history, built in the old coordinat
 a fallback for a bundle old enough to predate this feature. The negotiated values are sent back in
 `connected` and recorded via `tracker.record_stream_config()` for the admin performance page.
 
-Admin surface: `GET/PUT/DELETE /admin/stream-config` (§13a) and `pages/AdminStreamConfig.jsx` on
+Admin surface: `GET/PUT/DELETE /admin/api/stream-config` (§13a) and `pages/AdminStreamConfig.jsx` on
 the client (level 1 read-only, level 2 read/write).
 
 ### Inference
@@ -1018,17 +1018,27 @@ per-object detail including track ID, approach flag and speed, and a stats table
 | GET | `/users/contacts` | JWT |
 | POST | `/users/emergency_alert` | JWT |
 | GET | `/users/emergency_alerts` | JWT |
-| GET | `/admin/overview` | admin L1+ |
-| GET | `/admin/admins` | admin L1+ |
-| GET | `/admin/user?email=` | admin L1+ |
-| POST | `/admin/user/set_password` | admin L1+ (gated) |
-| POST | `/admin/user/update` | admin L1+ (gated) |
-| POST | `/admin/user/set_level` | admin L2 |
-| DELETE | `/admin/user` | admin L2 |
-| GET | `/admin/feedback` | admin L1+ |
-| POST | `/admin/feedback/{id}/take` | admin L1+ |
-| POST | `/admin/feedback/{id}/resolve` | admin L1+ (gated) |
-| POST | `/admin/feedback/{id}/assign` | admin L2 |
+| GET | `/admin/api/overview` | admin L1+ |
+| GET | `/admin/api/admins` | admin L1+ |
+| GET | `/admin/api/user?email=` | admin L1+ |
+| POST | `/admin/api/user/set_password` | admin L1+ (gated) |
+| POST | `/admin/api/user/update` | admin L1+ (gated) |
+| POST | `/admin/api/user/set_level` | admin L2 |
+| DELETE | `/admin/api/user` | admin L2 |
+| GET | `/admin/api/feedback` | admin L1+ |
+| POST | `/admin/api/feedback/{id}/take` | admin L1+ |
+| POST | `/admin/api/feedback/{id}/resolve` | admin L1+ (gated) |
+| POST | `/admin/api/feedback/{id}/assign` | admin L2 |
+| GET | `/admin/api/stream-config` | admin L1+ |
+| PUT | `/admin/api/stream-config` | admin L2 |
+| DELETE | `/admin/api/stream-config` | admin L2 |
+
+⚠️ **The admin router is mounted at `/admin/api`, not `/admin`** (changed 2026-08-07). The SPA owns
+`/admin/*` as *browser* routes (`/admin/status`, `/admin/feedback`, `/admin/stream-config`), and
+because API routers are registered before the SPA catch-all in `main.py`, any API path that shadows
+a UI path makes a **page refresh on that route return `{"detail":"Not authenticated"}` JSON instead
+of the app** — the browser sends no `Authorization` header on a plain navigation. `/admin/feedback`
+had this bug silently; do not move the router back.
 
 ---
 

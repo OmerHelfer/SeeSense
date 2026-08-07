@@ -43,7 +43,9 @@ from services.stream_config_service import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+# /admin/api, not /admin: the SPA owns /admin/* as browser routes, and an API path
+# that shadows one makes a refresh on that page return 401 JSON instead of the app.
+router = APIRouter(prefix="/admin/api", tags=["Admin"])
 
 
 def _send_email_background(func, *args):

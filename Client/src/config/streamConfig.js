@@ -4,7 +4,7 @@
 
 const DEFAULTS = {
   inputSize:          640,
-  compressionPercent: 60,
+  compressionPercent: 75,
   maxInflight:        6,
 };
 
