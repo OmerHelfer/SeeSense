@@ -31,6 +31,13 @@ const CLASS_META = {
   stairs:        { label: 'מדרגות',     emoji: '🪜' },
   pole:          { label: 'עמוד',       emoji: '🏛️' },
   dog:           { label: 'כלב',        emoji: '🐕' },
+  bollard:       { label: 'עמוד חסימה', emoji: '🚧' },
+  crosswalk:     { label: 'מעבר חצייה', emoji: '🚸' },
+  scooter:       { label: 'קורקינט',    emoji: '🛴' },
+  curb:          { label: 'אבן שפה',    emoji: '🟫' },
+  trash_can:     { label: 'פח אשפה',    emoji: '🗑️' },
+  manhole:       { label: 'מכסה ביוב',  emoji: '🕳️' },
+  construction:  { label: 'אתר בנייה',  emoji: '🚜' },
 };
 
 const pageVariants = {
@@ -547,7 +554,7 @@ const Settings = () => {
           <ArrowRight size={16} className="nav-row-arrow" />
         </button>
 
-        {user?.is_admin && (
+        {(user?.admin_level ?? 0) >= 1 && (
           <>
             <p className="settings-category-header">ניהול</p>
             <button

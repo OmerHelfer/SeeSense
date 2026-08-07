@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Flag, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPendingFeedback, submitFeedback } from '../services/userService';
+import { HEBREW_NAMES } from '../services/feedbackService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -21,12 +22,6 @@ const FEEDBACK_TYPES = [
   { key: 'missed_obstacle', label: 'פספוס מכשול' },
   { key: 'general',         label: 'כללי'         },
 ];
-
-const HEBREW_NAMES = {
-  person: 'אדם', car: 'מכונית', bicycle: 'אופניים', motorcycle: 'אופנוע',
-  bench: 'ספסל', fire_hydrant: 'ברז כיבוי', traffic_light: 'רמזור',
-  stairs: 'מדרגות', pole: 'עמוד', dog: 'כלב', bus: 'אוטובוס', truck: 'משאית',
-};
 
 function formatDate(ts) {
   if (!ts) return '';

@@ -4,6 +4,7 @@ import { ArrowRight, CheckCircle, Trash2, Edit3, ChevronLeft, AlertTriangle, Sav
 import { motion, AnimatePresence } from 'framer-motion';
 import { getSubmittedFeedback, deleteFeedback, updateFeedback, markResponsesSeen } from '../services/userService';
 import { formatServerDateTime } from '../utils/serverDate';
+import { HEBREW_NAMES } from '../services/feedbackService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -27,12 +28,6 @@ const HANDLING_META = {
   pending:     { label: 'ממתין לטיפול', color: '#94a3b8' },
   in_progress: { label: 'בטיפול',       color: '#f59e0b' },
   resolved:    { label: 'טופל',          color: '#22c55e' },
-};
-
-const HEBREW_NAMES = {
-  person: 'אדם', car: 'מכונית', bicycle: 'אופניים', motorcycle: 'אופנוע',
-  bench: 'ספסל', fire_hydrant: 'ברז כיבוי', traffic_light: 'רמזור',
-  stairs: 'מדרגות', pole: 'עמוד', dog: 'כלב', bus: 'אוטובוס', truck: 'משאית',
 };
 
 function formatDate(ts) {

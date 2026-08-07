@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { getFeedbackAdmin, takeFeedback, resolveFeedback, assignFeedback, getAdmins, getUserByEmail } from '../services/adminService';
 import { formatServerDateTime } from '../utils/serverDate';
+import { HEBREW_NAMES } from '../services/feedbackService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -22,11 +23,6 @@ const FEEDBACK_TYPE_LABELS = {
   general:         'כללי',
 };
 
-const HEBREW_NAMES = {
-  person: 'אדם', car: 'מכונית', bicycle: 'אופניים', motorcycle: 'אופנוע',
-  bench: 'ספסל', fire_hydrant: 'ברז כיבוי', traffic_light: 'רמזור',
-  stairs: 'מדרגות', pole: 'עמוד', dog: 'כלב', bus: 'אוטובוס', truck: 'משאית',
-};
 const hebrewName = (c) => HEBREW_NAMES[c] || c || '?';
 
 const STATUS_META = {

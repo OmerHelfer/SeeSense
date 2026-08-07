@@ -730,12 +730,10 @@ Observations from reading the current code:
   contact renders as "מאומת" and the local object is mutated — pending contacts lose their
   "אמת עכשיו" button. This is a genuine bug and the highest-value one-character fix in the
   client.
-- **Hebrew class-name maps are out of sync.** `feedbackService.HEBREW_NAMES` has all 14 classes,
-  but `Settings.CLASS_META` has only 10 (the four newer classes — `bollard`, `crosswalk`,
-  `pothole`, `scooter` — fall back to the raw English name with a `●` bullet), and the local
-  `HEBREW_NAMES` copies in `History`, `AdminFeedback`, `PendingFeedback` and `SentFeedback` still
-  list `bus`/`truck` (not in the model) while missing the four new ones. Worth extracting one
-  shared map.
+- ~~Hebrew class-name maps are out of sync~~ **Fixed 2026-08-07 (§10w).** `History`, `AdminFeedback`,
+  `PendingFeedback` and `SentFeedback` had their own hand-copied `HEBREW_NAMES` (stale — still
+  listing `bus`/`truck`, which were never real classes). All four now import the single
+  `feedbackService.HEBREW_NAMES`. `Settings.CLASS_META` now covers all 17 real classes.
 - **Timezone fix not applied everywhere.** `History.jsx`, `PendingFeedback.jsx` and
   `SOSHistory.jsx` still call `new Date(ts)` directly instead of `parseServerDate`, so their
   displayed times are skewed by the viewer's UTC offset — exactly the bug `serverDate.js` was

@@ -34,6 +34,10 @@ SENSITIVITY_PROFILES = {
     }
 }
 
+# Must match ml_engine/seesense_model.pt's own embedded names exactly (verify via
+# torch.load(...)['model'].names) — this dict is only used as an allow-list filter
+# in model_loader.parse_ultralytics_results, so any class trained into the model
+# but missing here is silently detected and then discarded before the client sees it.
 CLASS_NAMES = {
     0: "person",
     1: "car",
@@ -45,15 +49,21 @@ CLASS_NAMES = {
     7: "stairs",
     8: "pole",
     9: "dog",
-    10: "bollard",
+    10: "curb",
     11: "crosswalk",
-    12: "pothole",
-    13: "scooter"
+    12: "scooter",
+    13: "bollard",
+    14: "trash_can",
+    15: "manhole",
+    16: "construction",
 }
 
 ALL_CLASSES = set(CLASS_NAMES.values())
 
-HIGH_RISK_CLASSES = {"car", "motorcycle", "bicycle", "person", "stairs", "dog", "bollard", "pothole", "scooter"}
+HIGH_RISK_CLASSES = {
+    "car", "motorcycle", "bicycle", "person", "stairs", "dog", "bollard", "scooter",
+    "curb", "manhole",
+}
 
 DARK_IMAGE_THRESHOLD = 25
 MIN_IMAGE_BYTES = 1000

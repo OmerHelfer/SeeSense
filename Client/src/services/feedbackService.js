@@ -115,8 +115,11 @@ export const HEBREW_NAMES = {
   dog:           'כלב',
   bollard:       'עמוד חסימה',
   crosswalk:     'מעבר חצייה',
-  pothole:       'בור בכביש',
   scooter:       'קורקינט',
+  curb:          'אבן שפה',
+  trash_can:     'פח אשפה',
+  manhole:       'מכסה ביוב',
+  construction:  'אתר בנייה',
 };
 
 let _voices = [];

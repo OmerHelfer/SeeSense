@@ -9,6 +9,7 @@ import {
   feedbackFromHistory,
   getFeedbackRecordIds,
 } from '../services/userService';
+import { HEBREW_NAMES } from '../services/feedbackService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -38,21 +39,6 @@ const FEEDBACK_TYPES = [
   { key: 'missed_obstacle', label: 'פספוס מכשול'   },
   { key: 'general',         label: 'כללי'           },
 ];
-
-const HEBREW_NAMES = {
-  person:        'אדם',
-  car:           'מכונית',
-  bicycle:       'אופניים',
-  motorcycle:    'אופנוע',
-  bench:         'ספסל',
-  fire_hydrant:  'ברז כיבוי אש',
-  traffic_light: 'רמזור',
-  stairs:        'מדרגות',
-  pole:          'עמוד',
-  dog:           'כלב',
-  bus:           'אוטובוס',
-  truck:         'משאית',
-};
 
 function hebrewName(className) {
   return HEBREW_NAMES[className] || className || '?';

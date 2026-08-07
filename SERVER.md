@@ -172,13 +172,26 @@ ratios used to classify distance:
 | `medium` (default) | 0.50 | 0.15 | 0.05 |
 | `high` | 0.35 | 0.08 | 0.03 |
 
-### Classes (14)
+### Classes (17) *(corrected 2026-08-07 — see §10w)*
 `person, car, bicycle, motorcycle, bench, fire_hydrant, traffic_light, stairs, pole, dog,
-bollard, crosswalk, pothole, scooter`
+curb, crosswalk, scooter, bollard, trash_can, manhole, construction`
 
-`HIGH_RISK_CLASSES` default (9) = `car, motorcycle, bicycle, person, stairs, dog, bollard,
-pothole, scooter` — i.e. everything except `bench`, `fire_hydrant`, `traffic_light`, `pole` and
-`crosswalk`. Users can override this list per account.
+⚠️ **`CLASS_NAMES` must exactly match the ids/names embedded in `ml_engine/seesense_model.pt`.**
+It is not derived from the model file — it's an independent hand-maintained dict used purely as
+an allow-list filter in `model_loader.parse_ultralytics_results`. A class trained into the model
+but missing here is detected correctly and then **silently discarded before the response leaves
+the server** — this happened for real (curb/trash_can/manhole/construction, four classes,
+undetected for an unknown period until caught by manually inspecting the checkpoint). If the
+model is ever retrained with a different class list, this dict must be updated by hand; there is
+no automated check that they still agree. Verify with:
+```python
+import torch
+torch.load("ml_engine/seesense_model.pt", map_location="cpu", weights_only=False)["model"].names
+```
+
+`HIGH_RISK_CLASSES` default (11) = `car, motorcycle, bicycle, person, stairs, dog, bollard,
+scooter, curb, manhole` — i.e. everything except `bench`, `fire_hydrant`, `traffic_light`,
+`pole`, `crosswalk`, `trash_can` and `construction`. Users can override this list per account.
 
 ### Frame quality gates
 `DARK_IMAGE_THRESHOLD = 25`, `MIN_IMAGE_BYTES = 1000` (plus the thresholds inside
