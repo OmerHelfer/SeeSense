@@ -105,9 +105,16 @@ Client/
 
 ## 4. Environment and configuration
 
-`.env` / `.env.production` define `VITE_API_URL` (and `VITE_WS_URL`, currently unused — the
-WebSocket URL is *derived* from `VITE_API_URL`). Reading env vars only through
-`import.meta.env` keeps the same code working locally, over an ngrok tunnel, and on Railway.
+`.env` / `.env.production` / `.env.gcp` define `VITE_API_URL` (`.env` also carries `VITE_WS_URL`,
+which is unused — the WebSocket URL is *derived* from `VITE_API_URL`). Reading env vars only
+through `import.meta.env` keeps the same code working locally, over an ngrok tunnel, and on the
+deployed server.
+
+Both `.env.production` and `.env.gcp` set `VITE_API_URL=` (**empty on purpose**): the deployed
+server serves this bundle from its own origin, so no host is baked in and the same build works
+over any IP or hostname. `.env.gcp` is what `deploy/update.sh` uses
+(`npm run build -- --mode gcp`); `.env.production` matches it so a plain `npm run build` can't
+produce a bundle pointing somewhere wrong.
 
 `vite.config.js` adds an ngrok hostname to `server.allowedHosts` — needed because a phone can't
 reach a laptop's `localhost`, and camera + gyroscope APIs require a **secure context (HTTPS)**,
@@ -631,7 +638,7 @@ JSON body requires the `data` key in the config object, which is why `removeCont
 ## 17. Timezone handling (`utils/serverDate.js`)
 
 A real bug, fixed properly. The server writes timestamps with `datetime.now().isoformat()`,
-which on the UTC Railway host produces a UTC value **with no timezone marker**
+which on the UTC-configured server host produces a UTC value **with no timezone marker**
 (`"2026-07-25T11:30:00.123456"`). Browsers parse a marker-less ISO string as **local** time, so
 every relative time was off by the viewer's UTC offset — a just-now event displayed as "3h ago"
 in Israel (UTC+3 in summer).
@@ -687,8 +694,9 @@ npm run preview  # serve the built bundle
 npm run lint     # ESLint
 ```
 
-Deployed on Railway alongside the server. `.env.production` points `VITE_API_URL` at the
-deployed backend; the WebSocket URL is derived from it, so `https` automatically becomes `wss`.
+The built bundle is served by the FastAPI server itself (single origin, single port). Both
+production env files leave `VITE_API_URL` empty so the client uses its own origin; the WebSocket
+URL is derived from it, so `https` automatically becomes `wss`. See §4.
 
 **Device testing needs HTTPS** — `getUserMedia`, `DeviceOrientationEvent` and `geolocation` all
 require a secure context, so local phone testing went through an ngrok tunnel (hence the

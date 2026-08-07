@@ -1,24 +1,15 @@
 # SeeSense — Deployment & Session State
 
-Last updated: 2026-08-05. Context: final-year CS project, submission Sunday
-2026-08-09, defense Friday 2026-08-07 (few hours). Goal of today's work: get a
-GPU-backed deployment in/near Israel to measure real GPU vs. CPU inference
-latency for the thesis, without touching the already-working submitted app.
+Last updated: 2026-08-07. Context: final-year CS project, submission Sunday
+2026-08-09. The deployment target is a GPU-backed VM in/near Israel, chosen to
+measure real GPU vs. CPU inference latency for the thesis.
 
-## Live deployments — there are TWO, independent, both currently working
+There is **one** live deployment — the GCP VM below. It is the single source of
+truth: the app it serves is the app that gets submitted.
 
-### 1. Railway (stable, submitted baseline — do not touch casually)
-- Backend: `https://eloquent-hope-production-3221.up.railway.app`
-- CPU only (its `Dockerfile` is `python:3.11-slim`, no CUDA) — `DEVICE` resolves
-  to `"cpu"` there regardless of Railway's host hardware.
-- Auto-deploys on every push to `main` (its Docker build context is `Server/`
-  only, so it never sees `Client/dist` — the new static-serving code in
-  `main.py` stays dormant there, confirmed by `/` still returning the old JSON
-  message, not HTML).
-- This is the safety net. If the GCP VM has problems before Sunday, this is
-  what you'd actually submit.
+## Live deployment
 
-### 2. GCP Compute Engine VM (new today — for GPU latency measurements)
+### GCP Compute Engine VM (GPU-backed, single service)
 - **Region: `europe-central2-c` (Warsaw), NOT Tel Aviv.** `me-west1` (Tel Aviv)
   was the goal but had zero T4 GPU capacity all day, in every zone, on both
   GCP and (untested but likely similarly constrained) AWS `il-central-1`.
@@ -124,17 +115,17 @@ automatically — no manual redeploy needed, **as long as the IP is static**
    "externally-managed-environment") — needs `--break-system-packages`.
    Safe here since the VM exists only to run this app.
 4. **`opencv-python` needs `libgl1` + `libglib2.0-0`** system packages to
-   import (`ImportError: libGL.so.1`) — same packages `Server/Dockerfile`
-   already installs for Railway; were missing from the VM setup script until
-   fixed.
+   import (`ImportError: libGL.so.1`) — the same packages `Server/Dockerfile`
+   already installs; were missing from the VM setup script until fixed.
 5. **GCP "reservation affinity" error** ("Specified reservations [] do not
    exist") — a stuck form field unrelated to real capacity; fixed by
    `--reservation-affinity=none` when creating via `gcloud` CLI (Cloud Shell),
    or hunting for the "Reservations" dropdown in the web UI's advanced
    settings.
 6. **`Server/.env` is gitignored** and does not arrive with `git clone` —
-   must be recreated on every fresh VM (values retrieved from Railway's
-   Variables tab, since that's the other place they're stored).
+   must be recreated by hand on every fresh VM (`SECRET_KEY`, `MONGODB_URI`,
+   `EMAIL_ADDRESS`, `EMAIL_PASSWORD`). Keep a copy somewhere safe; it exists
+   nowhere in the repo.
 
 ## GPU capacity — what was actually tried today, for context
 
@@ -183,11 +174,10 @@ credit.
   max latency outlier, almost certainly a one-time CUDA JIT warmup on a
   fresh process start, not a real ongoing issue — avg was a healthy 28ms).
 
-## Files changed today (all pushed to `main`, all live on both deployments
-per the guard logic above)
+## Files changed today (all pushed to `main`)
 
-- `Server/main.py` — static frontend serving (dormant on Railway, active on
-  GCP) with SPA fallback routing and a path-traversal guard.
+- `Server/main.py` — static frontend serving with SPA fallback routing and a
+  path-traversal guard.
 - `Client/src/services/visionService.js` — WebSocket URL falls back to the
   page's own origin when no API URL is baked in.
 - `Client/.env.gcp` (new) — build mode for the single-service deploy.

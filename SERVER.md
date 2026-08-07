@@ -24,8 +24,8 @@ The backend is a **FastAPI** application that:
   settings, detection history, a two-axis feedback/ticketing system, emergency contacts with
   email verification, an SOS alert flow, and a full performance-metrics subsystem with
   persistent per-minute history.
-- Persists everything in **MongoDB Atlas**, sends mail through **Gmail SMTP**, and deploys as a
-  **Docker** image on **Railway**.
+- Persists everything in **MongoDB Atlas**, sends mail through **Gmail SMTP**, and runs on a
+  **GCP Compute Engine VM** (systemd + uvicorn, GPU-backed) — see `DEPLOYMENT.md`.
 
 ---
 
@@ -45,8 +45,8 @@ The backend is a **FastAPI** application that:
 | Country validation | pycountry |
 | Email | `smtplib` + Gmail app password |
 | Config | python-dotenv |
-| Container | `python:3.11-slim` + `libgl1`, `libglib2.0-0` for OpenCV |
-| Hosting | Railway (binds injected `$PORT`) |
+| Container | `python:3.11-slim` + `libgl1`, `libglib2.0-0` for OpenCV (`Dockerfile`, kept for container hosts) |
+| Hosting | GCP Compute Engine VM — systemd unit `seesense`, uvicorn on 443 |
 
 `requirements.txt` also carries `motor`, `websockets` and `requests`; `websockets`/`requests`
 are used by the interactive test client, `motor` is a leftover from an evaluated async-Mongo
@@ -200,9 +200,9 @@ pothole, scooter` — i.e. everything except `bench`, `fire_hydrant`, `traffic_l
 ### Other
 - `VALID_PERIODS` — history filters: `all, today, week, month, three_months, half_year, older`
 - `VALID_FEEDBACK_TYPES` — `wrong_detection, missed_obstacle, general`
-- `CORS_ORIGINS` — localhost:3000/5173/8080, `seesense.app`, the Railway client URL, plus
-  anything added via the comma-separated `CORS_ORIGINS` env var (so production origins need no
-  code change)
+- `CORS_ORIGINS` — localhost:3000/5173/8080 and `seesense.app`, plus anything added via the
+  comma-separated `CORS_ORIGINS` env var (so production origins need no code change). The
+  single-service deploy serves the SPA from the API's own origin, so it needs no CORS entry.
 - JWT: `HS256`, `JWT_EXPIRATION_HOURS = 24`, secret from `SECRET_KEY`
 - Mongo: URI from `MONGODB_URI`, database name `seesense`
 
@@ -217,9 +217,9 @@ The order of operations in `main.py` matters and is deliberate:
    process.
 2. **Maths thread pools are capped before torch/NumPy/OpenCV are imported** (`OMP_NUM_THREADS`,
    `MKL_NUM_THREADS`, default 8, disable with `TORCH_NUM_THREADS=0`). Reason: a container's
-   cgroup limits how much CPU it may *use* without changing the core count it *sees*. Railway
-   reported `os.cpu_count() == 48` while the replica limit was 8 vCPU, so torch spawned 48
-   threads for 8 vCPU of work — 6× oversubscribed, burning time on context switches. A
+   cgroup limits how much CPU it may *use* without changing the core count it *sees*. The
+   container host reported `os.cpu_count() == 48` while the replica limit was 8 vCPU, so torch
+   spawned 48 threads for 8 vCPU of work — 6× oversubscribed, burning time on context switches. A
    controlled sweep measured 16 threads running **4× slower** than 8 on a 16-core machine.
    `model_loader.py` additionally calls `torch.set_num_threads()` as a belt-and-braces measure
    for entry points that import torch first (tests, scripts, a different ASGI runner).
@@ -906,7 +906,7 @@ so an injected `$PORT` is expanded at runtime.
 | `MONGODB_URI` | MongoDB Atlas connection string |
 | `EMAIL_ADDRESS` / `EMAIL_PASSWORD` | Gmail account + app password |
 | `CORS_ORIGINS` | Optional comma-separated extra origins |
-| `PORT` | Injected by Railway |
+| `PORT` | Optional; used if the host injects one, else 8000 |
 | `TORCH_NUM_THREADS` | Thread cap, default 8; `0` disables the cap |
 
 ### `.gitignore` note
@@ -941,7 +941,7 @@ Optimisations, in the order they mattered, with the reasoning preserved:
    oversubscribed 6×. Capping at 8 fixed it. A sweep showed 16 threads running 4× slower than 8
    on a 16-core box.
 9. **The ONNX experiment.** ONNX Runtime benchmarked ~1.5× faster locally, so inference was
-   ported to it — and it was **75× slower on Railway** (2323 ms/frame), because of exactly the
+   ported to it — and it was **75× slower on the deployed server** (2323 ms/frame), because of exactly the
    thread-oversubscription problem above. Capping ONNX threads at 8 helped but never beat
    PyTorch on the real server, so ONNX was **removed entirely**. The lesson (measure on the
    deployment target, not the dev box) is now recorded in the code comments.

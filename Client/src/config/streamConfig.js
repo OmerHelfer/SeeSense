@@ -1,15 +1,9 @@
-// Runtime streaming config, owned by the server and applied via the WS "connected"
-// message (see applyStreamConfig). Values below are only the pre-connect fallback —
-// read them through the getters, never by destructuring a snapshot at module load.
-
 const DEFAULTS = {
   inputSize:          640,
   compressionPercent: 75,
   maxInflight:        6,
 };
 
-// Mirrors Server/services/stream_config_service.py — the server clamps on write
-// and is the authority; this only keeps the fallback sane before first connect.
 const LIMITS = {
   inputSize:          { min: 160, max: 640 },
   compressionPercent: { min: 0,   max: 95  },

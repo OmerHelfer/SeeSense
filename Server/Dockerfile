@@ -18,7 +18,7 @@ COPY . .
 
 EXPOSE 8000
 
-# Bind to Railway's injected $PORT (falls back to 8000 for local runs).
+# Bind to an injected $PORT if the host provides one (falls back to 8000).
 # Shell form so ${PORT} is expanded at runtime.
 # --timeout-keep-alive 75: uvicorn's default is 5s, which is EXACTLY the client's
 # health-ping interval. Every ping then raced the server's idle timeout, and the
