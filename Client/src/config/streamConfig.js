@@ -11,7 +11,7 @@ const DEFAULTS = {
 // Mirrors Server/services/stream_config_service.py — the server clamps on write
 // and is the authority; this only keeps the fallback sane before first connect.
 const LIMITS = {
-  inputSize:          { min: 320, max: 640 },
+  inputSize:          { min: 160, max: 640 },
   compressionPercent: { min: 0,   max: 95  },
   maxInflight:        { min: 1,   max: 16  },
 };
