@@ -304,7 +304,7 @@ pings the server, and ensures indexes.
 | `emergency_alerts` | SOS history | `alert_id`, `user_id`, `user_name`, `gps{lat,lon}`, `google_maps_link`, `timestamp`, `notified_contacts[]` |
 | `blacklisted_tokens` | Revoked JWTs | `token`, `created_at` — **TTL 24 h** |
 | `reset_codes` | Password-reset codes | `email`, `code`, `created_at` — **TTL 15 min** |
-| `perf_history` | Per-minute performance rollups | `minute_ts` (indexed), `created_at` — **TTL ~400 days**, `lat`, `rtt`, `frames`, `success`, `fail`, `stages{}` |
+| `perf_history` | Per-minute performance rollups | `minute_ts` (indexed), `created_at` — **TTL ~400 days**, `lat`, `rtt`, `e2e`, `frames`, `success`, `fail`, `stages{}` |
 
 TTL indexes mean expiry is enforced by MongoDB, not application code — reset codes and
 revoked tokens disappear on their own.
@@ -349,7 +349,15 @@ ws://host/stream/ws?token=<JWT>&input_size=512
 **Client → server**
 - **binary** — a JPEG frame to analyse.
 - **text JSON**:
-  - `{"type":"rtt_report","rtt_ms":48.5}` — client-measured end-to-end round trip (validated `0 < rtt < 30000`).
+  - `{"type":"rtt_report","rtt_ms":48.5}` — client-measured **wire round trip**: `socket.send` →
+    result received (validated `0 < rtt < 30000`). This is network + server only; the on-device
+    work either side of it is not included. May also carry `base_rtt_ms`, the tiny-payload
+    `/health` ping used as the propagation floor.
+  - `{"type":"e2e_report","e2e_ms":132.4,"e2e_min_ms":98,"e2e_max_ms":210}` — client-measured
+    **end-to-end latency**: camera capture → JPEG encode → upload → server → download → render →
+    speech/haptics issued (validated `0 < x < 60000`). This is the figure the user actually
+    perceives, and it strictly contains the RTT. `e2e_ms` is the client's rolling average;
+    the min/max are that window's true per-frame extremes.
   - `{"type":"fps_report","fps":21.4}` — actual client capture rate (validated `0 < fps < 100`).
   - `{"type":"client_stage_report","stages":{...}}` — client-side per-stage timings
     (capture/encode/render/feedback), already aggregated to avg/min/max.
@@ -639,7 +647,19 @@ Two layers, because the requirements are different.
 ### Live: `utils/metrics.py` — `PerformanceTracker`
 A single global instance with sliding windows (`deque(maxlen=100)`):
 - Server-side per-frame latency (avg/min/max)
-- Client-reported end-to-end RTT (avg/min/max) + a 60-point timestamped history for the live chart
+- Client-reported **RTT** (avg/min/max) + a 60-point timestamped history for the live chart
+- Client-reported **E2E latency** (avg + true per-frame min/max)
+
+  > ⚠️ RTT and E2E are different spans and must not be confused. **RTT** is the wire round trip
+  > only — `socket.send` → result received — so camera capture, JPEG encode, rendering and
+  > speech/haptics all fall outside it. **E2E** is the full user-facing pipeline and therefore
+  > strictly contains the RTT. Neither is the sum of the per-stage tables: the "network"
+  > figure the admin page shows is not measured at all but derived as `RTT − server_latency`,
+  > so `network + server ≈ RTT` holds by construction rather than as a finding.
+  >
+  > E2E's avg is a mean of the client's rolling averages, but its min/max are folded in as
+  > running true extremes, so they describe real frames rather than the spread of averages
+  > (which is all RTT's min/max can offer).
 - Frame arrival timestamps → real server FPS
 - Client-reported capture FPS
 - **Throughput** — completion timestamps of *successful* frames over a rolling 10-second
@@ -668,8 +688,13 @@ into a **minute-aligned bucket**; when the minute rolls over, the completed buck
 double counting). `flush_now()` persists the in-progress partial minute before a range query so
 the newest data is included.
 
-Bucket shape: `{minute_ts, created_at, lat{sum,min,max,n}, rtt{...}, frames, success, fail,
-stages{name: {...}}}`.
+Bucket shape: `{minute_ts, created_at, lat{sum,min,max,n}, rtt{...}, e2e{...}, frames, success,
+fail, stages{name: {...}}}`. Buckets written before `e2e` existed simply lack the key and
+aggregate as empty, so old history stays readable.
+
+Unlike the live tracker, the historical `e2e` min/max are extremes **of the reported averages**
+(one sample per report), the same approximation `rtt` has always used — a minute bucket holds one
+accumulator per metric, not a frame-level window.
 
 `query_range(start, end)` aggregates buckets into a payload shaped like the live status (minus
 the live-only RTT chart), computing span-based overall FPS and throughput. Retention is ~400

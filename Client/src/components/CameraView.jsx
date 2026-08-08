@@ -100,6 +100,10 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
     const startX   = (video.videoWidth  - cropSize) / 2;
     const startY   = (video.videoHeight - cropSize) / 2;
 
+    // tCap also opens the end-to-end latency clock: it is the earliest moment this
+    // frame exists as data, so it is the honest start of the pipeline the user
+    // experiences. It is handed downstream and closed only after the alert is
+    // spoken/vibrated (see VisionStream.completeE2E).
     const tCap = performance.now();
     ctx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, size, size);
     recordClientStage('capture', performance.now() - tCap);
@@ -108,7 +112,7 @@ const CameraView = ({ isActive, onFrameCapture, shouldCapture, inputSize = DEFAU
     canvas.toBlob(
       (blob) => {
         recordClientStage('encode', performance.now() - tEnc);
-        if (blob) onFrameCapture?.(blob);
+        if (blob) onFrameCapture?.(blob, tCap);
       },
       'image/jpeg',
       getJpegQuality(),

@@ -9,10 +9,16 @@ class PerformanceTracker:
     """
     Tracks server performance metrics:
     - Request latency (per frame — server-side processing only)
-    - Client RTT (end-to-end round trip reported by the client)
+    - Client RTT (wire round trip reported by the client: send → result received)
+    - Client E2E latency (the full user-facing pipeline, reported by the client:
+      camera capture → JPEG encode → RTT → render → speech/haptic feedback)
     - FPS (frames processed per second)
     - Total frames processed
     - Success/failure counts
+
+    RTT and E2E are distinct on purpose: RTT covers only what happens between
+    `socket.send` and the result arriving, so it excludes the on-device work before
+    and after the round trip. E2E is the number the user actually perceives.
 
     Uses a sliding window (last 100 requests) for averages.
     """
@@ -33,6 +39,14 @@ class PerformanceTracker:
         self.client_base_rtts = deque(maxlen=window_size)
         self.frame_bytes = deque(maxlen=window_size)
         self.rtt_history = deque(maxlen=60)
+
+        # Client-reported end-to-end latency. The deque holds the rolling averages
+        # the client reports; min/max are tracked separately as running extremes so
+        # they stay TRUE per-frame extremes rather than min/max of averages (which
+        # is all client_rtts above can offer).
+        self.client_e2es = deque(maxlen=window_size)
+        self.client_e2e_min = None
+        self.client_e2e_max = None
 
         self.frame_arrival_times = deque(maxlen=window_size)
         self.client_fps_reports = deque(maxlen=window_size)
@@ -63,6 +77,9 @@ class PerformanceTracker:
         self._start_time = time.time()
         self.client_rtts.clear()
         self.client_base_rtts.clear()
+        self.client_e2es.clear()
+        self.client_e2e_min = None
+        self.client_e2e_max = None
         self.frame_bytes.clear()
         self.rtt_history.clear()
         self.frame_arrival_times.clear()
@@ -160,6 +177,23 @@ class PerformanceTracker:
         """Record the client's tiny-payload /health ping RTT (the propagation floor)."""
         self.client_base_rtts.append(rtt_ms)
 
+    def record_client_e2e(self, avg_ms: float, min_ms: float | None = None,
+                          max_ms: float | None = None):
+        """Record a client-reported end-to-end latency snapshot.
+
+        `avg_ms` is the client's rolling average and goes into the sliding window.
+        `min_ms`/`max_ms` are that window's true per-frame extremes and are folded
+        into running extremes, so the displayed min/max describe real frames rather
+        than the spread of the averages.
+        """
+        self.client_e2es.append(avg_ms)
+        if min_ms is not None:
+            self.client_e2e_min = (min_ms if self.client_e2e_min is None
+                                   else min(self.client_e2e_min, min_ms))
+        if max_ms is not None:
+            self.client_e2e_max = (max_ms if self.client_e2e_max is None
+                                   else max(self.client_e2e_max, max_ms))
+
     def record_lost(self, n: int):
         """Frames the client sent that never came back, as a delta since its last
         report. Untrusted client input, so clamp it: a bad or hostile client must
@@ -186,7 +220,12 @@ class PerformanceTracker:
         }
 
     def get_client_rtt_stats(self) -> dict:
-        """Avg/min/max of client-reported RTT, plus the small-payload base RTT."""
+        """Avg/min/max of client-reported RTT, plus the small-payload base RTT.
+
+        RTT is the wire round trip only: client `socket.send` → result received.
+        Camera capture, JPEG encode, rendering and speech/haptics all sit outside
+        it — see get_client_e2e_stats for the full user-facing figure.
+        """
         base = (round(sum(self.client_base_rtts) / len(self.client_base_rtts), 2)
                 if self.client_base_rtts else 0.0)
         if not self.client_rtts:
@@ -196,6 +235,22 @@ class PerformanceTracker:
             "min_ms": round(min(self.client_rtts), 2),
             "max_ms": round(max(self.client_rtts), 2),
             "base_ms": base,
+        }
+
+    def get_client_e2e_stats(self) -> dict:
+        """Avg/min/max of client-reported end-to-end latency (ms).
+
+        Measured on the device across the whole pipeline the user experiences:
+        camera capture → JPEG encode → upload → server → download → render →
+        speech/haptic feedback. Strictly larger than both server latency and RTT,
+        because it contains the RTT plus the on-device work either side of it.
+        """
+        if not self.client_e2es:
+            return {"avg_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0}
+        return {
+            "avg_ms": round(sum(self.client_e2es) / len(self.client_e2es), 2),
+            "min_ms": round(self.client_e2e_min, 2) if self.client_e2e_min is not None else 0.0,
+            "max_ms": round(self.client_e2e_max, 2) if self.client_e2e_max is not None else 0.0,
         }
 
 
@@ -336,6 +391,7 @@ class PerformanceTracker:
                 "max_ms": self.get_max_latency()
             },
             "client_rtt": self.get_client_rtt_stats(),
+            "client_e2e": self.get_client_e2e_stats(),
             "rtt_history": list(self.rtt_history),
             "stage_latency": self.get_stage_breakdown(),
             "client_stage_latency": self.client_stages,

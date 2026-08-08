@@ -47,11 +47,23 @@ export class VisionStream {
     this._reconnectTimer    = null;
 
     this._sendTimes         = [];
+    // Parallel to _sendTimes, holding each in-flight frame's capture timestamp.
+    // Kept in lockstep with it (same pushes, same shifts, same pruning) so that
+    // when a result arrives, _captureTimes[0] belongs to the same frame as
+    // _sendTimes[0]. Used for the end-to-end clock, which starts earlier than RTT.
+    this._captureTimes      = [];
 
     this._rttBuffer         = [];
     this._rttReportTimer    = null;
     this._lastRtt           = null;
     this._rttStats          = { avg: 0, min: 0, max: 0 };
+
+    // End-to-end latency: capture → encode → upload → server → download → render
+    // → speech/haptics. _pendingE2EStart carries the matched frame's capture time
+    // from the result arriving until the UI finishes reacting to it.
+    this._e2eBuffer         = [];
+    this._pendingE2EStart   = null;
+    this._e2eStats          = { avg: 0, min: 0, max: 0 };
 
     this._frameSendTimes    = [];
     this._resultTimes       = [];
@@ -69,6 +81,8 @@ export class VisionStream {
     this._active            = true;
     this._reconnectAttempts = 0;
     this._rttBuffer         = [];
+    this._e2eBuffer         = [];
+    this._pendingE2EStart   = null;
     this._resultTimes       = [];
     this._open();
   }
@@ -95,6 +109,10 @@ export class VisionStream {
     return { ...this._rttStats };
   }
 
+  get e2eStats() {
+    return { ...this._e2eStats };
+  }
+
   get clientFps() {
     return _rateWithin(this._frameSendTimes);
   }
@@ -107,16 +125,23 @@ export class VisionStream {
     const now = performance.now();
     while (this._sendTimes.length && now - this._sendTimes[0] > MAX_INFLIGHT_MS) {
       this._sendTimes.shift();
+      this._captureTimes.shift();
       this._lostCount += 1;
     }
     return this._sendTimes.length < Math.max(1, getMaxInflight());
   }
 
-  sendFrame(blob) {
+  sendFrame(blob, captureT0 = null) {
     if (this.isOpen) {
       const now = performance.now();
       this._sendTimes.push(now);
-      if (this._sendTimes.length > MAX_PENDING_RTT) this._sendTimes.shift();
+      // Fall back to `now` when the caller has no capture stamp: the E2E figure
+      // then simply misses the capture+encode prefix rather than going unmeasured.
+      this._captureTimes.push(captureT0 ?? now);
+      if (this._sendTimes.length > MAX_PENDING_RTT) {
+        this._sendTimes.shift();
+        this._captureTimes.shift();
+      }
       this._frameSendTimes.push(now);
       if (this._frameSendTimes.length > 30) this._frameSendTimes.shift();
       this._socket.send(blob);
@@ -165,6 +190,8 @@ export class VisionStream {
 
       if (event.code !== 1000) this._lostCount += this._sendTimes.length;
       this._sendTimes = [];
+      this._captureTimes = [];
+      this._pendingE2EStart = null;
 
       if (event.code === 4001 || event.code === 4003) {
         this._active = false;
@@ -193,6 +220,9 @@ export class VisionStream {
     this._resultTimes.push(now);
     if (this._resultTimes.length > MAX_RESULT_TIMES) this._resultTimes.shift();
 
+    const captured = this._captureTimes.shift();
+    this._pendingE2EStart = captured ?? null;
+
     const sent = this._sendTimes.shift();
     if (sent === undefined) return;
     const rtt = now - sent;
@@ -200,6 +230,33 @@ export class VisionStream {
     this._rttBuffer.push(this._lastRtt);
     if (this._rttBuffer.length > 50) this._rttBuffer.shift();
     this._updateRttStats();
+  }
+
+  /**
+   * Close the end-to-end clock for the result currently being handled.
+   *
+   * Call this once the UI has fully reacted — after the boxes are drawn and after
+   * the speech/haptic feedback has been issued — because that, not the arrival of
+   * the WebSocket message, is the moment the user actually perceives the alert.
+   * Safe to call when nothing is pending; it just no-ops.
+   */
+  completeE2E() {
+    const started = this._pendingE2EStart;
+    this._pendingE2EStart = null;
+    if (started == null) return;
+
+    const e2e = performance.now() - started;
+    if (!(e2e >= 0) || e2e > 60000) return;
+
+    this._e2eBuffer.push(Math.round(e2e * 10) / 10);
+    if (this._e2eBuffer.length > 50) this._e2eBuffer.shift();
+
+    const sum = this._e2eBuffer.reduce((a, b) => a + b, 0);
+    this._e2eStats = {
+      avg: Math.round(sum / this._e2eBuffer.length),
+      min: Math.round(Math.min(...this._e2eBuffer)),
+      max: Math.round(Math.max(...this._e2eBuffer)),
+    };
   }
 
   _updateRttStats() {
@@ -225,6 +282,18 @@ export class VisionStream {
             type: 'rtt_report',
             rtt_ms: Math.round(avg * 10) / 10,
             ...(base != null ? { base_rtt_ms: base } : {}),
+          }));
+        } catch {  }
+      }
+
+      if (this._e2eBuffer.length > 0) {
+        const sum = this._e2eBuffer.reduce((a, b) => a + b, 0);
+        try {
+          this._socket.send(JSON.stringify({
+            type: 'e2e_report',
+            e2e_ms:     Math.round((sum / this._e2eBuffer.length) * 10) / 10,
+            e2e_min_ms: Math.round(Math.min(...this._e2eBuffer) * 10) / 10,
+            e2e_max_ms: Math.round(Math.max(...this._e2eBuffer) * 10) / 10,
           }));
         } catch {  }
       }
@@ -270,3 +339,4 @@ export const disconnectStream = () => {
 };
 
 export const getActiveStreamRtt = () => _activeStream?.rttStats ?? null;
+export const getActiveStreamE2E = () => _activeStream?.e2eStats ?? null;

@@ -20,7 +20,9 @@ Each bucket doc:
   user_id: <str | None>,                         # who produced these frames
   created_at: <datetime, for TTL expiry>,
   lat:   {sum, min, max, n},                     # server-side per-frame latency (ms)
-  rtt:   {sum, min, max, n},                     # client-reported end-to-end RTT (ms)
+  rtt:   {sum, min, max, n},                     # client-reported wire RTT (ms)
+  e2e:   {sum, min, max, n},                     # client-reported end-to-end latency
+                                                  # (capture → feedback) (ms)
   frames, success, fail,                          # counts
   stages: { <stage>: {sum, min, max, n}, ... },   # per-pipeline-stage latency (ms)
   first_frame_ts, last_frame_ts,                  # epoch secs of this minute's first
@@ -138,6 +140,7 @@ def _new_bucket(minute_ts: int, user_id: str | None = None) -> dict:
         "created_at": datetime.utcnow(),
         "lat": _new_metric(),
         "rtt": _new_metric(),
+        "e2e": _new_metric(),
         "frames": 0,
         "success": 0,
         "fail": 0,
@@ -207,10 +210,23 @@ def record_frame(latency_ms: float, success: bool, stages: dict | None = None,
 
 
 def record_rtt(rtt_ms: float, user_id: str | None = None):
-    """Record one client-reported end-to-end RTT sample."""
+    """Record one client-reported wire RTT sample (send → result received)."""
     with _lock:
         _rollover_locked()
         _acc(_bucket_for_locked(user_id)["rtt"], rtt_ms)
+
+
+def record_e2e(e2e_ms: float, user_id: str | None = None):
+    """Record one client-reported end-to-end latency sample (capture → feedback).
+
+    Like rtt above, the sample is the client's rolling average rather than a single
+    frame, so the historical min/max are extremes of averages. The live view in
+    metrics.py keeps true per-frame extremes; history trades that for one number
+    per report, which is what the minute buckets are shaped for.
+    """
+    with _lock:
+        _rollover_locked()
+        _acc(_bucket_for_locked(user_id)["e2e"], e2e_ms)
 
 
 def record_lost(n: int, user_id: str | None = None):
@@ -234,7 +250,8 @@ def _flush_async(bucket: dict):
 
 
 def _flush(bucket: dict):
-    if bucket["frames"] == 0 and bucket["rtt"]["n"] == 0 and bucket.get("lost", 0) == 0:
+    if (bucket["frames"] == 0 and bucket["rtt"]["n"] == 0
+            and bucket["e2e"]["n"] == 0 and bucket.get("lost", 0) == 0):
         return
     if not _recording_start_known:
         note_recording_start(bucket["minute_ts"])
@@ -266,7 +283,7 @@ def flush_now(force: bool = False):
             return
         _last_flush_at = now
         pending = [copy.deepcopy(b) for b in _buckets.values()
-                   if b["frames"] > 0 or b["rtt"]["n"] > 0]
+                   if b["frames"] > 0 or b["rtt"]["n"] > 0 or b["e2e"]["n"] > 0]
     for b in pending:
         _flush(b)
 
@@ -351,6 +368,7 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
 
     lat = _new_metric()
     rtt = _new_metric()
+    e2e = _new_metric()
     stages: dict[str, dict] = {}
     total = success = fail = 0
     reject = error = lost = 0
@@ -361,6 +379,8 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
     for b in buckets:
         _agg_metric(lat, b.get("lat", {}))
         _agg_metric(rtt, b.get("rtt", {}))
+        # Buckets written before E2E was tracked simply have no "e2e" key.
+        _agg_metric(e2e, b.get("e2e", {}))
         total += b.get("frames", 0)
         success += b.get("success", 0)
         fail += b.get("fail", 0)
@@ -420,6 +440,7 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
             "min_ms": _finalize(rtt)["min_ms"],
             "max_ms": _finalize(rtt)["max_ms"],
         },
+        "client_e2e": _finalize(e2e),
         "stage_latency": {name: _finalize(s) for name, s in stages.items()},
         "throughput": {
             "active_per_second": active_throughput,

@@ -577,12 +577,21 @@ const AdminStatus = () => {
               />
             )}
             <LatencyRow
-              label="End-to-End"
+              label="RTT (רשת + שרת)"
               avg={data.client_rtt?.avg_ms}
               min={data.client_rtt?.min_ms}
               max={data.client_rtt?.max_ms}
               color="#22d3ee"
             />
+            {data.client_e2e?.avg_ms > 0 && (
+              <LatencyRow
+                label="E2E Latency"
+                avg={data.client_e2e.avg_ms}
+                min={data.client_e2e.min_ms}
+                max={data.client_e2e.max_ms}
+                color="#4ade80"
+              />
+            )}
             {data.client_rtt?.avg_ms > 0 && data.server_latency?.avg_ms > 0 && (
               <div className="admin-network-calc">
                 <Wifi size={14} />

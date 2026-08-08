@@ -188,66 +188,75 @@ const Dashboard = () => {
     if (!isScanningRef.current) return;
     if (result.status === 'paused') return;
 
-    const tRender = performance.now();
+    // try/finally so the end-to-end clock closes on EVERY path out of this handler,
+    // including the early returns below. E2E therefore always ends at the same
+    // point — result rendered and any speech/haptics issued — whether or not this
+    // particular frame raised an alert. Note "issued", not "heard": speech is queued
+    // by the Web Speech API, exactly as the 'feedback' client stage already measures.
+    try {
+      const tRender = performance.now();
 
-    const level   = result.alert_level ?? 'none';
-    const objects = result.objects ?? [];
+      const level   = result.alert_level ?? 'none';
+      const objects = result.objects ?? [];
 
-    if (result.record_id) lastRecordIdRef.current = result.record_id;
+      if (result.record_id) lastRecordIdRef.current = result.record_id;
 
-    setDetections(objects);
+      setDetections(objects);
 
-    setAlertLevel(level);
+      setAlertLevel(level);
 
-    const dir = objects[0]?.position ?? null;
-    const cls = objects[0]?.class_name ?? null;
-    setDetectionDir(level !== 'none' ? dir : null);
-    setDetectedClass(level !== 'none' && cls ? (HEBREW_NAMES[cls] ?? cls) : null);
+      const dir = objects[0]?.position ?? null;
+      const cls = objects[0]?.class_name ?? null;
+      setDetectionDir(level !== 'none' ? dir : null);
+      setDetectedClass(level !== 'none' && cls ? (HEBREW_NAMES[cls] ?? cls) : null);
 
-    recordClientStage('render', performance.now() - tRender);
+      recordClientStage('render', performance.now() - tRender);
 
-    if (result.danger_cleared) {
+      if (result.danger_cleared) {
+        const tFb = performance.now();
+        speakMessage('נתיב פנוי', { priority: true });
+        recordClientStage('feedback', performance.now() - tFb);
+        setDetectionDir(null);
+        setDetectedClass(null);
+        return;
+      }
+
+      if (result.static_notice) {
+        const tFb = performance.now();
+        speakStatus(staticPhrase(result.static_notice.class_name, result.static_notice.position));
+        recordClientStage('feedback', performance.now() - tFb);
+      }
+
+      const stillClosingIn =
+        result.danger && (objects[0]?.motion?.approaching ?? false);
+      const now = performance.now();
+      if (stillClosingIn && now - lastDangerRepeatRef.current >= DANGER_REPEAT_MS) {
+        lastDangerRepeatRef.current = now;
+        const tRep = performance.now();
+        haptic('danger');
+        speakMessage(dangerPhrase(objects), { priority: true });
+        showFeedbackBriefly();
+        recordClientStage('feedback', performance.now() - tRep);
+        return;
+      }
+      if (!result.danger) lastDangerRepeatRef.current = 0;
+
+      if (!result.alert_is_new) return;
+
       const tFb = performance.now();
-      speakMessage('נתיב פנוי', { priority: true });
+      if (result.danger) {
+        haptic('danger');
+        announceDetections(objects, true);
+        showFeedbackBriefly();
+      } else if (level === 'low') {
+        haptic('detection');
+        announceDetections(objects, false);
+        showFeedbackBriefly();
+      }
       recordClientStage('feedback', performance.now() - tFb);
-      setDetectionDir(null);
-      setDetectedClass(null);
-      return;
+    } finally {
+      visionStreamRef.current?.completeE2E();
     }
-
-    if (result.static_notice) {
-      const tFb = performance.now();
-      speakStatus(staticPhrase(result.static_notice.class_name, result.static_notice.position));
-      recordClientStage('feedback', performance.now() - tFb);
-    }
-
-    const stillClosingIn =
-      result.danger && (objects[0]?.motion?.approaching ?? false);
-    const now = performance.now();
-    if (stillClosingIn && now - lastDangerRepeatRef.current >= DANGER_REPEAT_MS) {
-      lastDangerRepeatRef.current = now;
-      const tRep = performance.now();
-      haptic('danger');
-      speakMessage(dangerPhrase(objects), { priority: true });
-      showFeedbackBriefly();
-      recordClientStage('feedback', performance.now() - tRep);
-      return;
-    }
-    if (!result.danger) lastDangerRepeatRef.current = 0;
-
-    if (!result.alert_is_new) return;
-
-    const tFb = performance.now();
-    if (result.danger) {
-      haptic('danger');
-      announceDetections(objects, true);
-      showFeedbackBriefly();
-    } else if (level === 'low') {
-      haptic('detection');
-      announceDetections(objects, false);
-      showFeedbackBriefly();
-    }
-    recordClientStage('feedback', performance.now() - tFb);
   }, [showFeedbackBriefly]);
 
   const toggleScan = async () => {
@@ -314,11 +323,11 @@ const Dashboard = () => {
     return !!s && s.isOpen && s.canSend;
   }, []);
 
-  const handleFrameCapture = useCallback((blob) => {
+  const handleFrameCapture = useCallback((blob, captureT0) => {
     if (!isScanningRef.current || !isAlignedRef.current) return;
     const s = visionStreamRef.current;
     if (!s?.isOpen || !s.canSend) return;
-    s.sendFrame(blob);
+    s.sendFrame(blob, captureT0);
   }, []);
 
   const handleSOSClick = (e) => {

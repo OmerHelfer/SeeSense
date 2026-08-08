@@ -159,9 +159,12 @@ credit.
 - `decode_quality` / `tracking` / `danger_logic` / `db_write` are all
   CPU-bound, unaffected by the GPU — their speed depends on CPU clock speed,
   not GPU choice.
-- End-to-End latency average ~130ms; ~90-100ms of that is network distance
+- RTT average ~130ms; ~90-100ms of that is network distance
   (Warsaw↔Tel Aviv), not compute — this is the cost of not being in
-  `me-west1` yet.
+  `me-west1` yet. Note this is the *wire* round trip (`socket.send` → result
+  received); the dashboard's separate **E2E Latency** row is the larger,
+  user-facing number that also includes capture, encode, render and the
+  spoken alert.
 - `MAX_INFLIGHT` (in `Client/src/config/streamConfig.js`) trades FPS/
   throughput against per-frame latency — raising it (currently `6`, was `4`
   originally) closed the gap between server capacity FPS and actual client

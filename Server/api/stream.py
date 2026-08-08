@@ -162,6 +162,19 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                             base = float(base)
                             if 0 < base < 30000:
                                 tracker.record_client_base_rtt(base)
+                    elif data.get("type") == "e2e_report" and "e2e_ms" in data:
+                        e2e = float(data["e2e_ms"])
+                        if 0 < e2e < 60000:
+                            e_min = data.get("e2e_min_ms")
+                            e_max = data.get("e2e_max_ms")
+                            e_min = float(e_min) if e_min is not None else None
+                            e_max = float(e_max) if e_max is not None else None
+                            if e_min is not None and not (0 < e_min < 60000):
+                                e_min = None
+                            if e_max is not None and not (0 < e_max < 60000):
+                                e_max = None
+                            tracker.record_client_e2e(e2e, e_min, e_max)
+                            perf_history.record_e2e(e2e, user_id=user_id)
                     elif data.get("type") == "fps_report" and "fps" in data:
                         fps = float(data["fps"])
                         if 0 < fps < 100:

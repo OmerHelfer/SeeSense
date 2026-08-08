@@ -293,13 +293,43 @@ the incoming result. Both `result` **and** `error` messages record an RTT — an
 that frame is done, and its FIFO entry must be cleared. A rolling 50-sample buffer feeds
 `{avg, min, max}` stats exposed via `rttStats`.
 
+RTT is deliberately the **wire round trip only**: the clock starts at `socket.send` and stops when
+the result arrives, so it excludes the on-device work either side of it. That is a legitimate
+number, but it is *not* what the user experiences — see below.
+
+### End-to-End (E2E) latency measurement ⭐
+The figure the user actually perceives: **camera capture → JPEG encode → upload → server →
+download → render → speech/haptics issued.** It strictly contains the RTT.
+
+Measured with a second FIFO, `_captureTimes`, held in lockstep with `_sendTimes` (same pushes,
+same shifts, same 3-second stale prune), so a result can be paired back to the moment its frame
+was grabbed rather than the moment it was sent:
+
+1. `CameraView.captureFrame()` stamps `tCap` before `drawImage` — the earliest instant the frame
+   exists as data — and passes it out through `onFrameCapture(blob, tCap)`.
+2. `sendFrame(blob, captureT0)` pushes it onto `_captureTimes`. A caller that supplies no stamp
+   falls back to "now", which merely omits the capture+encode prefix instead of losing the sample.
+3. `_recordRtt()` shifts the matching entry into `_pendingE2EStart`.
+4. `Dashboard.handleResult()` calls `completeE2E()` in a **`finally`**, so the clock closes on
+   every path out of the handler — including the early returns for "path clear", "still closing
+   in" and "no new alert". A frame that raised no alert is therefore measured to the same
+   endpoint as one that did.
+
+A rolling 50-sample buffer feeds `{avg, min, max}` via `e2eStats`.
+
+> ⚠️ "Feedback issued", not "feedback heard": speech is queued by the Web Speech API and returns
+> immediately. This is the same boundary the existing `feedback` client stage already measures,
+> so the two are consistent — but neither includes the utterance's own duration.
+
 ### Periodic reporting (every 5 s)
-Three small text messages, none of them on the frame hot path:
-- `rtt_report` — average RTT
+Four small text messages, none of them on the frame hot path:
+- `rtt_report` — average RTT (plus `base_rtt_ms`, the `/health` ping floor, when available)
+- `e2e_report` — average E2E **plus the window's true min/max**, so the server can keep real
+  per-frame extremes rather than extremes of averages
 - `fps_report` — actual capture FPS, from the last 30 send timestamps
 - `client_stage_report` — the aggregated client stage breakdown from `clientMetrics`
 
-All three are wrapped in `try/catch` in case the socket closed mid-send.
+All four are wrapped in `try/catch` in case the socket closed mid-send.
 
 ### Reconnection policy
 - Close code **1000** (clean/intentional) → no reconnect.
@@ -310,15 +340,18 @@ All three are wrapped in `try/catch` in case the socket closed mid-send.
   `MAX_RECONNECT_ATTEMPTS = 5`, then give up and report an error.
 
 ### Module-level active-stream reference
-`setActiveStream()` / `disconnectStream()` / `getActiveStreamRtt()` let AuthContext tear the
-socket down on logout or session expiry without holding a React ref.
+`setActiveStream()` / `disconnectStream()` / `getActiveStreamRtt()` / `getActiveStreamE2E()` let
+AuthContext tear the socket down on logout or session expiry without holding a React ref.
 
 ---
 
 ## 9. Camera and capture (`components/CameraView.jsx`) ⭐
 
 ### Props
-`isActive`, `onFrameCapture(blob)`, `shouldCapture()`, `inputSize`, `detections`.
+`isActive`, `onFrameCapture(blob, captureT0)`, `shouldCapture()`, `inputSize`, `detections`.
+
+`captureT0` is the `performance.now()` stamp taken before `drawImage` — it opens the end-to-end
+latency clock (§8), so it must be forwarded to `sendFrame`, not dropped.
 
 ### Lifecycle
 `getUserMedia({ video: { facingMode: 'environment', width: {ideal:1280}, height: {ideal:720} }, audio: false })`.
@@ -429,6 +462,11 @@ it never causes a re-subscribe:
    `low` → `haptic('detection')` + `announceDetections(objects, false)`. Both briefly show the
    "wrong detection?" button. Timed as the **`feedback`** stage.
 
+Steps 2–6 run inside a `try`, with `stream.completeE2E()` in the matching **`finally`** — that
+call is what closes the end-to-end latency clock opened at capture (§8). It must stay in the
+`finally`: steps 4, 5 and 6 each return early, and without it every quiet frame would go
+unmeasured, biasing E2E toward only the frames that raised an alert.
+
 ### Capture gate (`canCaptureFrame`)
 `isScanning && isAligned && stream.isOpen && stream.canSend`. Handed to CameraView and checked
 before the encode. `handleFrameCapture` **re-checks the same conditions at send time**, because
@@ -478,7 +516,7 @@ alignment or the in-flight count may have changed during the async encode.
 | **GeneralFeedback** | Type chips + free-text description, not linked to any detection. |
 | **PendingFeedback** | Quick reports awaiting notes. List → form view showing the **detection snapshot** ("what was detected in this frame"), editable type, notes, then submit. |
 | **SentFeedback** | Submitted reports with their admin handling status (ממתין / בטיפול / טופל). Shows the **team's response** when resolved, with a "תשובה חדשה" pill for unseen ones and a modal for the full text; calls `markResponsesSeen()` on load to clear the badge. Editing is **locked** once an admin takes the report (shows a lock icon instead of the edit button, mirroring the server's 409). |
-| **AdminStatus** | The performance dashboard. Auto-refreshes every 3 s. Eleven range presets (חי / מההתחלה / 30 דק׳ / שעה / יום / שבוע / חודש / 3 ח׳ / 6 ח׳ / שנה / מותאם) plus a custom `datetime-local` picker converted to epoch seconds. Stat cards (uptime or measured span, FPS, frames, throughput), an FPS comparison table (client actual vs server actual/capacity/overall), a latency comparison (**שרת בלבד** / **לקוח בלבד** / **End-to-End** + an estimated network figure), per-stage breakdowns for both server and client, and a **hand-drawn canvas RTT chart** with grid, gradient fill, threshold lines at 100/150/200 ms, and a span label computed from real timestamps. The reset-everything button is gated to level 2. |
+| **AdminStatus** | The performance dashboard. Auto-refreshes every 3 s. Eleven range presets (חי / מההתחלה / 30 דק׳ / שעה / יום / שבוע / חודש / 3 ח׳ / 6 ח׳ / שנה / מותאם) plus a custom `datetime-local` picker converted to epoch seconds. Stat cards (uptime or measured span, FPS, frames, throughput), an FPS comparison table (client actual vs server actual/capacity/overall), a latency comparison (**שרת בלבד** / **לקוח בלבד** / **RTT (רשת + שרת)** / **E2E Latency** + an estimated network figure). Note these are four different spans, not four addends: **RTT** is the wire round trip (`send` → result), the **network** figure is not measured but derived as `RTT − server`, **לקוח בלבד** is the pre-send capture+encode cost that sits *outside* the RTT, and **E2E Latency** is the only number that spans the whole user-facing pipeline (capture → feedback) — it contains the RTT rather than sitting beside it, per-stage breakdowns for both server and client, and a **hand-drawn canvas RTT chart** with grid, gradient fill, threshold lines at 100/150/200 ms, and a span label computed from real timestamps. The reset-everything button is gated to level 2. |
 | **AdminUsers** | Stat cards (total / online / offline / **admins online**, the last being a clickable modal). Email lookup → a full user card: presence + level badges, data counts (detections / feedback / sessions / contacts / SOS), editable details, full emergency-contact list, password reset, admin-level chips (L2 only), permanent delete (L2 only, not self). The admins modal sorts online-first by level, then offline by most-recently-seen, and clicking an admin opens their full detail. Level-1 admins see an explanatory hint instead of management controls when viewing another admin. |
 | **AdminFeedback** | Triage queue. Stat cards double as filters (הכל / ממתין / בטיפול / טופל). Each card shows the submitting user (clickable → a details modal), type, date, detection snapshot, notes, who is handling it, and the resolution note. Actions by permission: **קח לטיפול** (L1+), **סמן כטופל** (handler or L2, requires a response note), **הקצה לאדמין** (L2 only). A level-1 admin looking at someone else's in-progress item sees a lock explaining only level 2 can override. After an action the single item is patched **in place** and stats recomputed locally, so filter and scroll position survive. |
 | **AdminStreamConfig** | The global `input_size` / `compression_percent` / `max_inflight` editor (§7). L1 can view, L2 can save/reset. Each field shows the live server value, the code default, and a "changed — not yet saved" flag on the draft; save is disabled until something actually differs from the server. A banner states plainly that these are global and take effect on each client's next scan, not immediately. |
@@ -605,11 +643,14 @@ Mirrors the server's per-stage breakdown for the **on-device** half of the pipel
 | `render` | applying a returned result: overlay boxes + HUD state |
 | `feedback` | dispatching TTS + haptics for a new alert (only when one fires) |
 
-(The network round trip between `encode` and `render` is RTT, measured separately.)
+The network round trip sitting between `encode` and `render` is the RTT, measured separately.
+The four stages above plus that RTT are exactly what the E2E latency metric spans end to end —
+`capture` and `encode` fall *before* the RTT window, `render` and `feedback` *after* it, which is
+why "לקוח בלבד" (capture+encode) must never be added to RTT as if it were a parallel leg.
 
 Zero-overhead by design: each record is one array push on a bounded 100-sample rolling buffer,
 no timers, nothing allocated on the hot path. `getClientStageReport()` aggregates to avg/min/max
-per stage; VisionStream ships it once every ~5 s piggy-backed on the existing RTT report, and it
+per stage; VisionStream ships it once every ~5 s alongside the RTT and E2E reports, and it
 surfaces on the admin dashboard as "פירוט זמן עיבוד בלקוח".
 
 ---
