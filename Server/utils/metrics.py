@@ -48,6 +48,13 @@ class PerformanceTracker:
         self.client_e2e_min = None
         self.client_e2e_max = None
 
+        # Wire transmission times, measured by probe markers (see record_upload_wire).
+        # These are REAL measurements of the size-dependent half of each network leg,
+        # unlike the propagation half, which no single-clock method can measure.
+        self.upload_wire_ms = deque(maxlen=window_size)
+        self.upload_wire_kb = deque(maxlen=window_size)
+        self.download_wire_ms = deque(maxlen=window_size)
+
         self.frame_arrival_times = deque(maxlen=window_size)
         self.client_fps_reports = deque(maxlen=window_size)
 
@@ -80,6 +87,9 @@ class PerformanceTracker:
         self.client_e2es.clear()
         self.client_e2e_min = None
         self.client_e2e_max = None
+        self.upload_wire_ms.clear()
+        self.upload_wire_kb.clear()
+        self.download_wire_ms.clear()
         self.frame_bytes.clear()
         self.rtt_history.clear()
         self.frame_arrival_times.clear()
@@ -193,6 +203,74 @@ class PerformanceTracker:
         if max_ms is not None:
             self.client_e2e_max = (max_ms if self.client_e2e_max is None
                                    else max(self.client_e2e_max, max_ms))
+
+    def record_upload_wire(self, ms: float, nbytes: int):
+        """Record how long one frame's bytes took to cross the uplink.
+
+        Measured as the gap between the arrival of a tiny `upload_probe` marker and
+        the arrival of the frame that followed it on the same connection. Both
+        timestamps come from THIS machine's clock, so there is no clock-skew problem
+        and this is a true measurement, not an estimate.
+
+        What it captures is the **transmission** term of the upload — bytes divided
+        by the bottleneck bandwidth. It deliberately does not include propagation
+        (the distance term), which is size-independent and cannot be separated from
+        its return leg by any single-clock method. That split is exactly what makes
+        this the right number to watch when changing JPEG compression or input size:
+        those knobs move transmission and leave propagation alone.
+
+        One honest caveat: both timestamps are taken when the event loop resumes to
+        hand us a completed message, so a loop busy serving other connections can
+        inflate the gap. It is a measurement of "how long until we could see the
+        frame", which under light load is transmission and under heavy load is
+        transmission plus scheduling delay. Compare readings at similar load.
+        """
+        self.upload_wire_ms.append(ms)
+        self.upload_wire_kb.append(nbytes / 1024)
+
+    def record_download_wire(self, ms: float):
+        """Record the client-measured transmission time of one result message.
+
+        The downlink mirror of record_upload_wire: the server sends a tiny `dl_probe`
+        immediately before the result, and the client times the gap between the two
+        arrivals on its own clock. Small in practice — the result JSON is a fraction
+        of a frame — but measuring it means the propagation residual below is a
+        genuine leftover rather than a leftover plus an unknown.
+        """
+        self.download_wire_ms.append(ms)
+
+    def get_wire_stats(self) -> dict:
+        """Measured transmission times per direction, plus the derived uplink rate.
+
+        `uplink_kb_per_sec` is effective goodput as seen by the application. It should
+        stay roughly CONSTANT when compression changes while `up.avg_ms` moves — if
+        both move together, the bottleneck is not bandwidth and the reading needs a
+        second look.
+        """
+        def _agg(values):
+            if not values:
+                return {"avg_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "n": 0}
+            return {
+                "avg_ms": round(sum(values) / len(values), 2),
+                "min_ms": round(min(values), 2),
+                "max_ms": round(max(values), 2),
+                "n": len(values),
+            }
+
+        up = _agg(self.upload_wire_ms)
+        kbps = 0.0
+        if self.upload_wire_ms and self.upload_wire_kb:
+            total_kb = sum(self.upload_wire_kb)
+            total_s = sum(self.upload_wire_ms) / 1000
+            if total_s > 0:
+                kbps = round(total_kb / total_s, 1)
+        return {
+            "up": up,
+            "down": _agg(self.download_wire_ms),
+            "uplink_kb_per_sec": kbps,
+            "probe_kb": (round(sum(self.upload_wire_kb) / len(self.upload_wire_kb), 1)
+                         if self.upload_wire_kb else 0.0),
+        }
 
     def record_lost(self, n: int):
         """Frames the client sent that never came back, as a delta since its last
@@ -392,6 +470,7 @@ class PerformanceTracker:
             },
             "client_rtt": self.get_client_rtt_stats(),
             "client_e2e": self.get_client_e2e_stats(),
+            "wire": self.get_wire_stats(),
             "rtt_history": list(self.rtt_history),
             "stage_latency": self.get_stage_breakdown(),
             "client_stage_latency": self.client_stages,
