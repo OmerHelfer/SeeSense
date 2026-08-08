@@ -13,20 +13,6 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def log_runtime_config():
-    """
-    Report device + CPU thread-pool settings.
-
-    Called from load_model() rather than at import time on purpose: this module is
-    imported by main.py BEFORE logging.basicConfig() runs, and until then the root
-    logger sits at WARNING, so any INFO logged here would be silently discarded.
-
-    Why the thread counts matter: a container's cgroup caps how much CPU it may USE
-    but does not change the core count the process SEES, so a library can size its
-    pool from the host's cores and oversubscribe badly — that is exactly what made
-    ONNX Runtime take 2323ms/frame here. Reported, not enforced: torch thread caps
-    were tried in this project before and reverted after causing a regression, so
-    this exists to reveal the numbers before anyone changes them again.
-    """
     logger.info(f"Inference device: {DEVICE}")
     logger.info(
         f"CPU threads — torch intra-op: {torch.get_num_threads()}, "
@@ -38,7 +24,6 @@ def log_runtime_config():
 
 
 class MockModel:
-    """Dummy model for testing without weight files"""
     def __init__(self):
         logger.info("Mock Model initialized — testing mode active")
 
@@ -48,14 +33,6 @@ class MockModel:
 
 
 def load_model(model_path: str, mode: str = "mock"):
-    """
-    Load model based on selected mode.
-
-    mode:
-        "mock"       — Dummy model, for testing without weight files
-        "pretrained" — Pretrained YOLO from ultralytics (e.g. yolov8n.pt)
-        "custom"     — Your own model trained with pure PyTorch
-    """
     log_runtime_config()
 
     if mode == "mock":
@@ -83,21 +60,6 @@ def load_model(model_path: str, mode: str = "mock"):
 
 
 def run_inference(model, img_input, imgsz: int = TARGET_SIZE) -> list[dict]:
-    """
-    Run model and return list of detections.
-    Automatically detects model type and uses correct pipeline.
-
-    For mock: returns empty list
-    For ultralytics: passes raw image, ultralytics handles preprocessing
-    For custom PyTorch: expects an already-preprocessed tensor. Note that
-        load_model("custom") still returns a YOLO instance, so in the deployed
-        configuration this branch is unreachable and the ultralytics path above
-        always wins.
-
-    imgsz is the square inference size — the main inference-speed lever.
-    Detections are always returned in the input image's coordinate space, so the
-    caller's overlay stays correct regardless of imgsz.
-    """
     if isinstance(model, MockModel):
         model(img_input)
         return []
@@ -130,10 +92,6 @@ def run_inference(model, img_input, imgsz: int = TARGET_SIZE) -> list[dict]:
 
 
 def parse_ultralytics_results(results) -> list[dict]:
-    """
-    Convert ultralytics Results object to standardized detection dicts.
-    Used for pretrained YOLO mode.
-    """
     detections = []
 
     if not results or len(results) == 0:
@@ -169,11 +127,6 @@ def parse_ultralytics_results(results) -> list[dict]:
 
 
 def parse_raw_detections(raw_output) -> list[dict]:
-    """
-    Parse raw PyTorch model output — matrix of shape [N, 6].
-    Each row: [x1, y1, x2, y2, confidence, class_id]
-    Used for custom trained model mode.
-    """
     import torch
 
     detections = []

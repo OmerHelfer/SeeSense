@@ -1,4 +1,3 @@
-"""Global, runtime-tunable streaming parameters (input_size, compression, pipeline depth)."""
 
 import logging
 from typing import Any
@@ -22,7 +21,7 @@ DEFAULTS = {
     "max_inflight":        6,
 }
 
-# Cache read on every WebSocket connect; written through on every admin change.
+
 _cache: dict[str, int] = dict(DEFAULTS)
 
 
@@ -36,7 +35,6 @@ def _clamp(field: str, value: Any) -> int:
 
 
 def load_stream_config() -> dict[str, int]:
-    """Read the stored config into the cache. Called once at startup."""
     global _cache
     try:
         doc = _collection().find_one({"_id": _DOC_ID})
@@ -66,7 +64,6 @@ def get_stream_config() -> dict[str, int]:
 
 
 def set_stream_config(updates: dict[str, Any]) -> dict[str, int]:
-    """Apply a partial update, clamped, and persist it."""
     global _cache
 
     changes: dict[str, int] = {}

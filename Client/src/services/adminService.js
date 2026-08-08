@@ -37,7 +37,7 @@ export const deleteUserByEmail = async (email) => {
 };
 
 
-// Global streaming parameters (read: level 1+, write: level 2)
+
 export const getStreamConfig = async () => {
   const { data } = await apiClient.get('/admin/api/stream-config');
   return data;

@@ -188,11 +188,7 @@ const Dashboard = () => {
     if (!isScanningRef.current) return;
     if (result.status === 'paused') return;
 
-    // try/finally so the end-to-end clock closes on EVERY path out of this handler,
-    // including the early returns below. E2E therefore always ends at the same
-    // point — result rendered and any speech/haptics issued — whether or not this
-    // particular frame raised an alert. Note "issued", not "heard": speech is queued
-    // by the Web Speech API, exactly as the 'feedback' client stage already measures.
+
     try {
       const tRender = performance.now();
 

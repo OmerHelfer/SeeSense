@@ -9,16 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 def assess_danger(detections: list[dict], high_risk_classes: set = None, sensitivity: str = "medium", image_width: int = 640, image_height: int = 640) -> dict:
-    """
-    Takes standardized detections and returns danger assessment.
-    
-    Args:
-        detections: list of detection dicts
-        high_risk_classes: custom set of classes the user considers dangerous.
-        sensitivity: "low" | "medium" | "high" — adjusts thresholds.
-        image_width: width of the input image (for area and position calculations).
-        image_height: height of the input image (for area calculations).
-    """
     if high_risk_classes is None:
         high_risk_classes = HIGH_RISK_CLASSES
 
@@ -114,10 +104,6 @@ def _classify_distance(area_ratio: float, close_ratio: float, medium_ratio: floa
 
 
 def _classify_position(bbox: list, image_width: int = 640) -> str:
-    """
-    Determine where the object is in the frame based on bbox center.
-    Splits the frame into three zones: left, center, right.
-    """
     x1, y1, x2, y2 = bbox
     center_x = (x1 + x2) / 2
     third = image_width / 3
@@ -130,10 +116,6 @@ def _classify_position(bbox: list, image_width: int = 640) -> str:
 
 
 def _build_alert_message(class_name: str, distance: str, position: str, motion: dict = None) -> str:
-    """
-    Build a human-readable alert message for text-to-speech.
-    Example: "Car approaching from the right" or "Person nearby on your left"
-    """
     approaching = motion.get("approaching", False) if motion else False
     speed = motion.get("speed", "unknown") if motion else "unknown"
 
@@ -156,15 +138,6 @@ def _build_alert_message(class_name: str, distance: str, position: str, motion: 
 
 
 def _classify_alert(class_name: str, distance: str, high_risk_classes: set, motion: dict = None) -> str:
-    """
-    Motion-first alerting: a RED "high" danger is reserved for objects that are
-    actively APPROACHING (a developing threat) — a person/car closing distance, or
-    the user walking toward something (which grows its bbox → approaching). Once an
-    object stops moving relative to the user, its alert decays so the red screen
-    clears; it only re-fires when a genuine new approach starts. This is what makes
-    a static scene (parked cars, shelves, a standing person, the user sitting still)
-    go quiet instead of screaming "danger" on every frame.
-    """
     is_high_risk = class_name in high_risk_classes
     approaching = motion.get("approaching", False) if motion else False
     speed = motion.get("speed", "unknown") if motion else "unknown"

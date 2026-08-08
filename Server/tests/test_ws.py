@@ -1,25 +1,3 @@
-"""
-WebSocket Streaming Test — SeeSense
-
-Interactive test client for the WebSocket streaming endpoint.
-Connects to the server, stays open, and lets you send frames + control detection.
-
-Usage:
-    1. Start the server: python main.py
-    2. Get a JWT token via POST /users/login in Postman
-    3. Paste your token below
-    4. Place test images in tests/test_images/ and/or videos in tests/test_videos/
-    5. Run: python tests/test_ws.py
-
-Commands (while connected):
-    Enter / number  — Send next image (or image by number)
-    'all'           — Send all images in sequence (for motion testing)
-    'video'         — Extract frames from a video and send them (motion testing)
-    'pause'         — Pause detection
-    'resume'        — Resume detection
-    'status'        — Show session info
-    'quit'          — Disconnect and exit
-"""
 
 import asyncio
 import websockets
@@ -33,7 +11,6 @@ import numpy as np
 
 
 class LatencyTracker:
-    """Collects latency samples and prints stats."""
 
     def __init__(self):
         self.samples = []
@@ -78,11 +55,6 @@ CLIENT_JPEG_QUALITY = 80
 
 
 def client_resize(image_bytes):
-    """
-    Simulate what the client does before sending:
-    Resize longest side to 640 and compress to JPEG.
-    This is NOT counted in timing — happens on the phone.
-    """
     if not CLIENT_RESIZE:
         return image_bytes
     img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
@@ -96,7 +68,6 @@ def client_resize(image_bytes):
 
 
 def load_image_list():
-    """Find all images in the test_images directory."""
     extensions = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.webp")
     images = []
     for ext in extensions:
@@ -106,7 +77,6 @@ def load_image_list():
 
 
 def load_video_list():
-    """Find all videos in the test_videos directory."""
     extensions = ("*.mp4", "*.avi", "*.mov", "*.mkv")
     videos = []
     for ext in extensions:
@@ -116,7 +86,6 @@ def load_video_list():
 
 
 def extract_frames_as_jpeg(video_path, skip=VIDEO_FRAME_SKIP, quality=80):
-    """Extract frames from video and return as list of JPEG bytes."""
     cap = cv2.VideoCapture(video_path)
     frames = []
     i = 0
@@ -133,7 +102,6 @@ def extract_frames_as_jpeg(video_path, skip=VIDEO_FRAME_SKIP, quality=80):
 
 
 def print_result(result, round_trip_ms=None):
-    """Pretty-print a detection result with timing."""
     result_type = result.get("type", "unknown")
 
     if result_type == "error":
@@ -169,7 +137,6 @@ def print_result(result, round_trip_ms=None):
 
 
 async def send_and_measure(ws, image_bytes):
-    """Send image bytes and measure round-trip time."""
     start = time.time()
     await ws.send(image_bytes)
     result = json.loads(await ws.recv())

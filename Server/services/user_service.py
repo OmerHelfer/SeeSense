@@ -23,10 +23,6 @@ def _detection_history():
 
 
 def _norm_email(email):
-    """Canonical form of an email for storage + lookup.
-    Emails are case-insensitive, so we lower-case (and trim) everywhere
-    a user registers, logs in, or is searched for by an admin. This makes
-    'OmErHelFER@GmAil.com' and 'omerhelfer@gmail.com' equivalent."""
     return email.strip().lower() if isinstance(email, str) else email
 
 
@@ -37,9 +33,6 @@ MAX_CODE_ATTEMPTS = 3
 
 
 def migrate_admin_levels():
-    """One-time backfill: give every user an admin_level field (0/1/2).
-    Existing is_admin=True users become level 2 (super) so there's a bootstrap
-    super admin; everyone else becomes level 0."""
     _users().update_many(
         {"is_admin": True, "admin_level": {"$exists": False}},
         {"$set": {"admin_level": 2}},
@@ -52,7 +45,6 @@ def migrate_admin_levels():
 
 
 def create_user(data: dict) -> dict:
-    """Register a new user. Returns the created profile."""
     user_id = str(uuid.uuid4())[:8]
 
     email = _norm_email(data["email"])
@@ -81,7 +73,6 @@ def create_user(data: dict) -> dict:
 
 
 def get_user(user_id: str) -> Optional[dict]:
-    """Fetch user profile by ID."""
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return None
@@ -89,7 +80,6 @@ def get_user(user_id: str) -> Optional[dict]:
 
 
 def update_user(user_id: str, updates: dict) -> Optional[dict]:
-    """Update user profile fields."""
     allowed_fields = {"name", "phone", "country", "date_of_birth", "height_cm", "weight_kg"}
     filtered = {k: v for k, v in updates.items() if k in allowed_fields}
 
@@ -105,7 +95,6 @@ def update_user(user_id: str, updates: dict) -> Optional[dict]:
 
 
 def authenticate_user(email: str, password: str) -> Optional[dict]:
-    """Find user by email and verify password with bcrypt."""
     profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         return None
@@ -117,7 +106,6 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
 
 
 def get_user_by_email(email: str) -> Optional[dict]:
-    """Fetch user profile by email."""
     profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         return None
@@ -125,10 +113,6 @@ def get_user_by_email(email: str) -> Optional[dict]:
 
 
 def change_password(user_id: str, old_password: str, new_password: str, force: bool = False) -> bool:
-    """
-    Change user password.
-    If force=True, skip old password check (for password reset).
-    """
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return False
@@ -145,12 +129,6 @@ def change_password(user_id: str, old_password: str, new_password: str, force: b
 
 
 def build_detection_entry(user_id: str, record: dict, session_id: str = None):
-    """Build a detection-history document with a pre-generated _id (no DB write).
-
-    Returns (record_id_str, entry_dict). The caller can return record_id to the
-    client immediately and persist `entry` asynchronously via insert_detection_entry,
-    keeping the DB write off the hot path.
-    """
     raw_objects = record.get("objects", [])
     objects_summary = []
     for obj in raw_objects:
@@ -175,13 +153,11 @@ def build_detection_entry(user_id: str, record: dict, session_id: str = None):
 
 
 def insert_detection_entry(entry: dict) -> None:
-    """Persist a pre-built detection-history document (safe to call in a thread)."""
     try:
         _detection_history().insert_one(entry)
     except Exception as e:
         logger.warning(f"Deferred detection insert failed: {e}")
 def get_user_history(user_id: str, limit: int = 50, period: str = "all", session_id: str = None) -> list[dict]:
-    """Retrieve detection history filtered by time period and/or session."""
     query = {"user_id": user_id}
 
     if session_id:
@@ -217,13 +193,11 @@ def get_user_history(user_id: str, limit: int = 50, period: str = "all", session
 
 
 def delete_detection_record(user_id: str, record_id: str) -> bool:
-    """Delete a single detection record by ID."""
     result = _detection_history().delete_one({"_id": ObjectId(record_id), "user_id": user_id})
     return result.deleted_count > 0
 
 
 def clear_user_history(user_id: str) -> int:
-    """Delete all detection history for a user. Returns count deleted."""
     result = _detection_history().delete_many({"user_id": user_id})
     logger.info(f"Cleared {result.deleted_count} history records for user: {user_id}")
     return result.deleted_count
@@ -231,7 +205,6 @@ def clear_user_history(user_id: str) -> int:
 
 
 def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = None) -> str:
-    """Quick feedback from user during walk — no notes, status is pending."""
     detection_snapshot = None
 
     if record_id:
@@ -277,7 +250,6 @@ def create_quick_feedback(user_id: str, feedback_type: str, record_id: str = Non
 
 
 def create_feedback_from_history(user_id: str, record_id: str, feedback_type: str, notes: str = None) -> str:
-    """Companion creates feedback from a specific history record."""
     try:
         record = _detection_history().find_one({"_id": ObjectId(record_id), "user_id": user_id})
     except Exception:
@@ -315,7 +287,6 @@ def create_feedback_from_history(user_id: str, record_id: str, feedback_type: st
 
 
 def create_standalone_feedback(user_id: str, feedback_type: str, notes: str = None) -> str:
-    """Standalone feedback — not linked to any specific detection."""
     entry = {
         "user_id": user_id,
         "feedback_type": feedback_type,
@@ -331,7 +302,6 @@ def create_standalone_feedback(user_id: str, feedback_type: str, notes: str = No
 
 
 def get_pending_feedback(user_id: str) -> list[dict]:
-    """Get all pending feedback for a user."""
     cursor = _feedback().find(
         {"user_id": user_id, "status": "pending"}
     ).sort("created_at", -1)
@@ -346,8 +316,6 @@ def get_pending_feedback(user_id: str) -> list[dict]:
 
 
 def get_all_feedback(user_id: str) -> list[dict]:
-    """Get all feedback for a user (incl. the admin-handling status + response so the
-    user can see how their feedback was handled)."""
     cursor = _feedback().find(
         {"user_id": user_id}
     ).sort("created_at", -1)
@@ -363,9 +331,6 @@ def get_all_feedback(user_id: str) -> list[dict]:
 
 
 def update_feedback(user_id: str, feedback_id: str, notes: str = None, feedback_type: str = None) -> dict:
-    """Companion updates a feedback — adds notes and/or changes type. Marks as submitted.
-    Locked once an admin starts handling it: editing is only allowed while the feedback
-    is still 'pending' (nobody has taken/resolved it)."""
     existing = _feedback().find_one({"_id": ObjectId(feedback_id), "user_id": user_id})
     if not existing:
         return None
@@ -394,7 +359,6 @@ def update_feedback(user_id: str, feedback_id: str, notes: str = None, feedback_
 
 
 def submit_feedback(user_id: str, feedback_id: str) -> bool:
-    """Submit a pending feedback as-is (without adding notes)."""
     result = _feedback().update_one(
         {"_id": ObjectId(feedback_id), "user_id": user_id, "status": "pending"},
         {"$set": {"status": "submitted", "updated_at": datetime.now().isoformat()}}
@@ -403,14 +367,11 @@ def submit_feedback(user_id: str, feedback_id: str) -> bool:
 
 
 def delete_feedback(user_id: str, feedback_id: str) -> bool:
-    """Delete a feedback entry."""
     result = _feedback().delete_one({"_id": ObjectId(feedback_id), "user_id": user_id})
     return result.deleted_count > 0
 
 
 def count_unseen_responses(user_id: str) -> int:
-    """Number of resolved feedbacks whose admin response the user hasn't seen yet.
-    Drives the 'new response' badge. Legacy docs (no response_seen field) don't count."""
     return _feedback().count_documents({
         "user_id": user_id,
         "handling_status": "resolved",
@@ -419,8 +380,6 @@ def count_unseen_responses(user_id: str) -> int:
 
 
 def mark_responses_seen(user_id: str) -> int:
-    """Mark all of the user's resolved-feedback responses as seen (clears the badge).
-    Returns how many were updated."""
     result = _feedback().update_many(
         {"user_id": user_id, "handling_status": "resolved", "response_seen": False},
         {"$set": {"response_seen": True}},
@@ -445,9 +404,6 @@ def _try_oid(feedback_id: str) -> ObjectId:
 
 
 def _feedback_admin_view(doc: dict, user_map: dict = None) -> dict:
-    """Shape one feedback doc for the admin management view: the submitting user's
-    name/email + normalized handling fields. `user_map` (user_id → user doc) lets the
-    list path avoid an extra query per row; omit it for a single doc."""
     uid = doc.get("user_id")
     if user_map is not None:
         u = user_map.get(uid, {})
@@ -475,8 +431,6 @@ def _feedback_admin_view(doc: dict, user_map: dict = None) -> dict:
 
 
 def get_all_feedback_admin(handling_status: str = None) -> list:
-    """All *submitted* feedbacks from ALL users (admin management view), newest first.
-    Optional filter by handling_status (pending/in_progress/resolved)."""
     docs = list(_feedback().find({"status": "submitted"}).sort("created_at", -1))
     uids = list({d.get("user_id") for d in docs if d.get("user_id")})
     user_map = {
@@ -490,7 +444,6 @@ def get_all_feedback_admin(handling_status: str = None) -> list:
 
 
 def get_feedback_admin_stats() -> dict:
-    """Counts of submitted feedbacks by handling status (+ total)."""
     counts = {"pending": 0, "in_progress": 0, "resolved": 0}
     for d in _feedback().find({"status": "submitted"}, {"handling_status": 1}):
         counts[_norm_handling(d)] += 1
@@ -504,8 +457,6 @@ def _admin_name(admin_id: str) -> str:
 
 
 def admin_take_feedback(feedback_id: str, admin_id: str) -> dict:
-    """An admin takes a pending feedback for themselves → in_progress. Only allowed
-    while it's still pending (nobody else is handling it)."""
     oid = _try_oid(feedback_id)
     doc = _feedback().find_one({"_id": oid})
     if not doc:
@@ -523,9 +474,6 @@ def admin_take_feedback(feedback_id: str, admin_id: str) -> dict:
 
 
 def admin_resolve_feedback(feedback_id: str, admin_id: str, admin_level: int, response: str) -> dict:
-    """Mark a feedback resolved with a required response note describing what the admin
-    did. Only the handling admin, or a super admin (level 2), may resolve. If resolved
-    straight from pending, the resolver is recorded as the handling admin."""
     if not response or not response.strip():
         raise ValueError("A resolution note is required")
     oid = _try_oid(feedback_id)
@@ -553,8 +501,6 @@ def admin_resolve_feedback(feedback_id: str, admin_id: str, admin_level: int, re
 
 
 def admin_assign_feedback(feedback_id: str, assignee_id: str) -> dict:
-    """Super admin assigns a feedback to a specific admin → in_progress under them,
-    without that admin having to pick it. Cannot reassign an already-resolved one."""
     oid = _try_oid(feedback_id)
     assignee = _users().find_one({"user_id": assignee_id})
     if not assignee or _admin_level_of(assignee) < 1:
@@ -577,10 +523,6 @@ def admin_assign_feedback(feedback_id: str, assignee_id: str) -> dict:
 
 
 def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> dict:
-    """
-    Add a new emergency contact to user's embedded array.
-    Sends verification code to their email. Contact stays pending until verified.
-    """
     expired = _cleanup_expired_contacts(user_id)
     if expired:
         from services.email_service import send_contact_expired_notification
@@ -640,7 +582,6 @@ def add_emergency_contact(user_id: str, name: str, phone: str, email: str) -> di
 
 
 def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
-    """Verify emergency contact using the code they received."""
     _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
@@ -685,7 +626,6 @@ def verify_emergency_contact(user_id: str, email: str, code: str) -> dict:
 
 
 def resend_contact_code(user_id: str, email: str) -> str:
-    """Resend verification code to a pending contact. Returns new code."""
     _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
@@ -716,7 +656,6 @@ def resend_contact_code(user_id: str, email: str) -> str:
 
 
 def remove_emergency_contact(user_id: str, email: str) -> bool:
-    """Remove an emergency contact from user's array."""
     result = _users().update_one(
         {"user_id": user_id},
         {"$pull": {"emergency_contacts": {"email": email}}}
@@ -728,7 +667,6 @@ def remove_emergency_contact(user_id: str, email: str) -> bool:
 
 
 def get_emergency_contacts(user_id: str) -> list[dict]:
-    """Get all emergency contacts for a user (without internal fields)."""
     _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
@@ -746,7 +684,6 @@ def get_emergency_contacts(user_id: str) -> list[dict]:
 
 
 def get_verified_contacts(user_id: str) -> list[dict]:
-    """Get only verified emergency contacts (for sending alerts)."""
     _cleanup_expired_contacts(user_id)
     profile = _users().find_one({"user_id": user_id})
     if not profile:
@@ -760,17 +697,14 @@ def get_verified_contacts(user_id: str) -> list[dict]:
 
 
 def _hash_password(password: str) -> bytes:
-    """Hash password using bcrypt."""
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
 
 
 def _verify_password(password: str, hashed: bytes) -> bool:
-    """Verify password against bcrypt hash."""
     return bcrypt.checkpw(password.encode("utf-8"), hashed)
 
 
 def _safe_profile(profile: dict) -> dict:
-    """Return profile without password hash, MongoDB _id, and internal contact fields."""
     safe = {k: v for k, v in profile.items() if k not in ("password_hash", "_id")}
 
     if "emergency_contacts" in safe:
@@ -786,7 +720,6 @@ def _safe_profile(profile: dict) -> dict:
     return safe
 
 def _cleanup_expired_contacts(user_id: str) -> list[str]:
-    """Remove pending contacts whose verification code has expired. Returns removed names."""
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return []
@@ -861,7 +794,6 @@ def trigger_emergency(user_id: str, gps_lat: float | None, gps_lon: float | None
 
 
 def get_emergency_alert_history(user_id: str, limit: int = 50) -> list:
-    """Return emergency alerts for a user, newest first."""
     alerts = list(
         _emergency_alerts()
         .find({"user_id": user_id}, {"_id": 0})
@@ -872,12 +804,10 @@ def get_emergency_alert_history(user_id: str, limit: int = 50) -> list:
 
 
 def touch_last_seen(user_id: str):
-    """Update last_seen (called on login and WS disconnect)."""
     _users().update_one({"user_id": user_id}, {"$set": {"last_seen": datetime.now().isoformat()}})
 
 
 def is_last_super_admin(user_id: str) -> bool:
-    """True if this user is a super admin (level 2) and the only one left."""
     profile = _users().find_one({"user_id": user_id})
     if not profile or _admin_level_of(profile) != 2:
         return False
@@ -885,8 +815,6 @@ def is_last_super_admin(user_id: str) -> bool:
 
 
 def get_users_overview() -> dict:
-    """Aggregate counts for the admin dashboard: total / online / offline / admins /
-    admins_online."""
     from services.presence import get_online_user_ids
     online_ids = get_online_user_ids()
     total = _users().count_documents({})
@@ -902,9 +830,6 @@ def get_users_overview() -> dict:
 
 
 def list_admins() -> list:
-    """All admin accounts (level 1+) with presence + last_seen, for the admin-status
-    modal. Returned unsorted — the client sorts (online first by level, then offline
-    by last_seen). Any admin (level 1+) may view this."""
     from services.presence import is_online
     admins = []
     for p in _users().find({"admin_level": {"$gte": 1}}):
@@ -927,8 +852,6 @@ def _admin_level_of(profile: dict) -> int:
 
 
 def get_user_admin_view(email: str) -> Optional[dict]:
-    """Full admin-facing view of a user: profile + admin level + online status +
-    last_seen + counts of their data."""
     profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         return None
@@ -961,7 +884,6 @@ def get_user_admin_view(email: str) -> Optional[dict]:
 
 
 def admin_set_password(email: str, new_password: str) -> bool:
-    """Admin sets a user's password directly (by email)."""
     email = _norm_email(email)
     profile = _users().find_one({"email": email})
     if not profile:
@@ -972,7 +894,6 @@ def admin_set_password(email: str, new_password: str) -> bool:
 
 
 def admin_update_user(email: str, updates: dict) -> Optional[dict]:
-    """Admin edits a user's profile fields (by email)."""
     profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         raise ValueError("User not found")
@@ -980,8 +901,6 @@ def admin_update_user(email: str, updates: dict) -> Optional[dict]:
 
 
 def admin_set_admin_level(email: str, level: int) -> int:
-    """Grant/revoke admin. level: 0 regular, 1 admin, 2 super admin.
-    Guards against demoting the last remaining super admin (lockout)."""
     if level not in (0, 1, 2):
         raise ValueError("Invalid admin level (must be 0, 1 or 2)")
     email = _norm_email(email)
@@ -997,7 +916,6 @@ def admin_set_admin_level(email: str, level: int) -> int:
 
 
 def admin_delete_user_by_email(email: str) -> bool:
-    """Admin deletes a user by email. Guards against deleting the last super admin."""
     profile = _users().find_one({"email": _norm_email(email)})
     if not profile:
         raise ValueError("User not found")
@@ -1007,10 +925,6 @@ def admin_delete_user_by_email(email: str) -> bool:
 
 
 def delete_user_account(user_id: str) -> bool:
-    """
-    Delete user account and ALL associated data.
-    Removes: profile, detection history, feedback, sessions.
-    """
     profile = _users().find_one({"user_id": user_id})
     if not profile:
         return False

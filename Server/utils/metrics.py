@@ -4,24 +4,7 @@ from collections import deque, defaultdict
 
 logger = logging.getLogger(__name__)
 
-
 class PerformanceTracker:
-    """
-    Tracks server performance metrics:
-    - Request latency (per frame — server-side processing only)
-    - Client RTT (round trip reported by the client: send → result received)
-    - Client E2E latency (the full user-facing pipeline, reported by the client:
-      camera capture → JPEG encode → RTT → render → speech/haptic feedback)
-    - FPS (frames processed per second)
-    - Total frames processed
-    - Success/failure counts
-
-    RTT and E2E are distinct on purpose: RTT covers only what happens between
-    `socket.send` and the result arriving, so it excludes the on-device work before
-    and after the round trip. E2E is the number the user actually perceives.
-
-    Uses a sliding window (last 100 requests) for averages.
-    """
 
     def __init__(self, window_size: int = 100):
         self.window_size = window_size
@@ -40,10 +23,6 @@ class PerformanceTracker:
         self.frame_bytes = deque(maxlen=window_size)
         self.rtt_history = deque(maxlen=60)
 
-        # Client-reported end-to-end latency. The deque holds the rolling averages
-        # the client reports; min/max are tracked separately as running extremes so
-        # they stay TRUE per-frame extremes rather than min/max of averages (which
-        # is all client_rtts above can offer).
         self.client_e2es = deque(maxlen=window_size)
         self.client_e2e_min = None
         self.client_e2e_max = None
@@ -60,12 +39,6 @@ class PerformanceTracker:
         self.last_stream_config = None
 
     def reset(self):
-        """
-        Wipe ALL live metrics and restart timing from now. Backs the admin 'reset'
-        button — clears the in-memory sliding windows so the live view reflects only
-        what happens after the reset. (Persisted history is dropped separately via
-        perf_history.reset_history.)
-        """
         self.latencies.clear()
         self.success_latencies.clear()
         self.total_frames = 0
@@ -90,28 +63,11 @@ class PerformanceTracker:
         logger.info("PerformanceTracker reset — all live metrics cleared")
 
     def start_timer(self) -> float:
-        """
-        Call at the beginning of a request. Returns a timestamp.
-
-        perf_counter, not time(): the wall clock can be stepped by NTP mid-frame,
-        which would poison a latency sample (and it has coarser resolution on
-        Windows). Only differences are ever taken from these values —
-        frame_arrival_times is used purely for a rate — so a monotonic clock with
-        an arbitrary origin is the right one. throughput_events below is the one
-        exception and stays on the wall clock, because it is compared against
-        time.time() when the recent-window throughput is computed.
-        """
         now = time.perf_counter()
         self.frame_arrival_times.append(now)
         return now
 
     def end_timer(self, start: float, success: bool = True, outcome: str | None = None):
-        """Call at the end of a request. Records latency and status.
-
-        `outcome` refines a failure into "reject" (failed a quality check) or
-        "error" (raised). Omitted, it is derived from `success`, so existing
-        callers keep working and only lose the finer classification.
-        """
         latency_ms = (time.perf_counter() - start) * 1000
         self.latencies.append(latency_ms)
         self.total_frames += 1
@@ -130,9 +86,7 @@ class PerformanceTracker:
         logger.debug(f"Frame processed in {latency_ms:.1f}ms")
         return latency_ms
 
-
     def record_input_size(self, size: int):
-        """Note the input size a connection negotiated (called on WS connect)."""
         try:
             self.last_input_size = int(size)
         except (TypeError, ValueError):
@@ -143,11 +97,9 @@ class PerformanceTracker:
             self.last_stream_config = dict(cfg)
 
     def record_client_fps(self, fps: float):
-        """Record the actual capture rate reported by the client."""
         self.client_fps_reports.append(fps)
 
     def get_client_fps(self) -> dict:
-        """Average client capture FPS (sliding window)."""
         if not self.client_fps_reports:
             return {"avg": 0.0, "current": 0.0}
         return {
@@ -156,7 +108,6 @@ class PerformanceTracker:
         }
 
     def get_actual_server_fps(self) -> float:
-        """Real server processing rate based on frame arrival timestamps in window."""
         if len(self.frame_arrival_times) < 2:
             return 0.0
         time_span = self.frame_arrival_times[-1] - self.frame_arrival_times[0]
@@ -164,9 +115,7 @@ class PerformanceTracker:
             return 0.0
         return round((len(self.frame_arrival_times) - 1) / time_span, 2)
 
-
     def record_client_rtt(self, rtt_ms: float):
-        """Record a client-reported round-trip time measurement."""
         self.client_rtts.append(rtt_ms)
         self.rtt_history.append({
             "ts": round(time.time() * 1000),
@@ -174,18 +123,10 @@ class PerformanceTracker:
         })
 
     def record_client_base_rtt(self, rtt_ms: float):
-        """Record the client's tiny-payload /health ping RTT (the propagation floor)."""
         self.client_base_rtts.append(rtt_ms)
 
     def record_client_e2e(self, avg_ms: float, min_ms: float | None = None,
                           max_ms: float | None = None):
-        """Record a client-reported end-to-end latency snapshot.
-
-        `avg_ms` is the client's rolling average and goes into the sliding window.
-        `min_ms`/`max_ms` are that window's true per-frame extremes and are folded
-        into running extremes, so the displayed min/max describe real frames rather
-        than the spread of the averages.
-        """
         self.client_e2es.append(avg_ms)
         if min_ms is not None:
             self.client_e2e_min = (min_ms if self.client_e2e_min is None
@@ -195,9 +136,6 @@ class PerformanceTracker:
                                    else max(self.client_e2e_max, max_ms))
 
     def record_lost(self, n: int):
-        """Frames the client sent that never came back, as a delta since its last
-        report. Untrusted client input, so clamp it: a bad or hostile client must
-        not be able to poison the counter with a single huge number."""
         try:
             n = int(n)
         except (TypeError, ValueError):
@@ -206,11 +144,9 @@ class PerformanceTracker:
             self.lost_count += n
 
     def record_frame_bytes(self, n: int):
-        """Record the compressed size of one arriving frame."""
         self.frame_bytes.append(int(n))
 
     def get_frame_bytes(self) -> dict:
-        """Avg/min/max compressed frame size, in KB."""
         if not self.frame_bytes:
             return {"avg_kb": 0.0, "min_kb": 0.0, "max_kb": 0.0}
         return {
@@ -220,12 +156,6 @@ class PerformanceTracker:
         }
 
     def get_client_rtt_stats(self) -> dict:
-        """Avg/min/max of client-reported RTT, plus the small-payload base RTT.
-
-        RTT is the wire round trip only: client `socket.send` → result received.
-        Camera capture, JPEG encode, rendering and speech/haptics all sit outside
-        it — see get_client_e2e_stats for the full user-facing figure.
-        """
         base = (round(sum(self.client_base_rtts) / len(self.client_base_rtts), 2)
                 if self.client_base_rtts else 0.0)
         if not self.client_rtts:
@@ -238,13 +168,6 @@ class PerformanceTracker:
         }
 
     def get_client_e2e_stats(self) -> dict:
-        """Avg/min/max of client-reported end-to-end latency (ms).
-
-        Measured on the device across the whole pipeline the user experiences:
-        camera capture → JPEG encode → upload → server → download → render →
-        speech/haptic feedback. Strictly larger than both server latency and RTT,
-        because it contains the RTT plus the on-device work either side of it.
-        """
         if not self.client_e2es:
             return {"avg_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0}
         return {
@@ -253,14 +176,10 @@ class PerformanceTracker:
             "max_ms": round(self.client_e2e_max, 2) if self.client_e2e_max is not None else 0.0,
         }
 
-
     def record_stage(self, stage: str, ms: float):
-        """Record how long one pipeline stage took for this frame (ms)."""
         self.stage_latencies[stage].append(ms)
 
     def get_stage_breakdown(self) -> dict:
-        """Avg/min/max per pipeline stage — only successful-frame stages are recorded,
-        so this reflects real processing cost, not diluted by instantly-rejected frames."""
         breakdown = {}
         for stage, values in self.stage_latencies.items():
             if not values:
@@ -272,13 +191,7 @@ class PerformanceTracker:
             }
         return breakdown
 
-
     def record_client_stages(self, stages: dict):
-        """Store the latest client-side stage breakdown (capture/encode/render/feedback).
-        The client sends already-aggregated avg/min/max per stage over its own rolling
-        window every few seconds; we keep the most recent snapshot. Defensive: this is
-        untrusted client input, so validate/clamp and ignore anything malformed. Never
-        runs on the frame hot path (only on the periodic report message)."""
         if not isinstance(stages, dict):
             return
         cleaned = {}
@@ -301,9 +214,7 @@ class PerformanceTracker:
         if cleaned:
             self.client_stages = cleaned
 
-
     def get_avg_latency(self) -> float:
-        """Average latency over sliding window (ms)."""
         if not self.latencies:
             return 0.0
         return round(sum(self.latencies) / len(self.latencies), 2)
@@ -319,24 +230,12 @@ class PerformanceTracker:
         return round(max(self.latencies), 2)
 
     def get_fps(self) -> float:
-        """Average FPS based on total uptime."""
         uptime = time.time() - self._start_time
         if uptime == 0:
             return 0.0
         return round(self.total_frames / uptime, 2)
 
     def get_recent_fps(self) -> float:
-        """
-        Server CAPACITY: how many full frames per second this machine could do.
-
-        Deliberately measured over SUCCESSFUL frames only. A frame that fails a
-        quality check is abandoned a couple of ms after decode — it never runs
-        inference — so mixing those samples in dragged the average latency toward
-        zero and the reciprocal exploded: a burst of rejects reported ~351 FPS
-        (1000 / 2.85ms) from a server that actually does ~40. The number is meant
-        to answer "how fast can it process a frame", and a frame it refused to
-        process is not evidence about that.
-        """
         if len(self.success_latencies) < 2:
             return 0.0
         avg_latency_sec = (sum(self.success_latencies) / len(self.success_latencies)) / 1000
@@ -345,22 +244,9 @@ class PerformanceTracker:
         return round(1.0 / avg_latency_sec, 2)
 
     def get_uptime(self) -> float:
-        """Server uptime in seconds."""
         return round(time.time() - self._start_time, 2)
 
     def get_throughput(self, window_seconds: float = 10.0) -> dict:
-        """
-        Real throughput: SUCCESSFULLY processed frames per second, measured from the
-        completion timestamps within the last `window_seconds` of wall-clock time.
-        This is the "useful output rate flowing right now": because only recent events
-        count, it decays to 0 when idle — so (unlike server_actual / overall FPS) it is
-        NOT distorted by long idle gaps between test bursts.
-
-        Rate is derived from the actual span between the recent events
-        ((n-1)/(t_last - t_first)), the same jitter-free method get_actual_server_fps
-        uses, so it reads correctly immediately during steady scanning without a
-        warm-up ramp. Needs ≥2 events in the window to report a rate.
-        """
         now = time.time()
         cutoff = now - window_seconds
         recent = [t for t in self.throughput_events if t >= cutoff]
@@ -376,7 +262,6 @@ class PerformanceTracker:
         }
 
     def get_status(self) -> dict:
-        """Full system status report for /get_system_status endpoint."""
         return {
             "uptime_seconds": self.get_uptime(),
             "total_frames": self.total_frames,
@@ -406,6 +291,5 @@ class PerformanceTracker:
                 "overall":         self.get_fps()
             }
         }
-
 
 tracker = PerformanceTracker()

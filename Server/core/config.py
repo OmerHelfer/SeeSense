@@ -34,10 +34,7 @@ SENSITIVITY_PROFILES = {
     }
 }
 
-# Must match ml_engine/seesense_model.pt's own embedded names exactly (verify via
-# torch.load(...)['model'].names) — this dict is only used as an allow-list filter
-# in model_loader.parse_ultralytics_results, so any class trained into the model
-# but missing here is silently detected and then discarded before the client sees it.
+
 CLASS_NAMES = {
     0: "person",
     1: "car",

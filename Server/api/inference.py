@@ -6,23 +6,19 @@ from core.auth import verify_token
 from core.database import get_db
 from services.session_service import update_cache
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/inference", tags=["Inference"])
 
 @router.get("/get_supported_objects")
 def get_supported_objects():
-    """Lists all object classes the system can detect."""
     return {
         "status": "success",
         "classes": sorted(list(ALL_CLASSES))
     }
 
-
 @router.post("/pause_detection")
 def pause_detection(current_user: dict = Depends(verify_token)):
-    """Temporarily halt detection."""
     user_id = current_user["user_id"]
     sessions = get_db()["sessions"]
     result = sessions.update_one(
@@ -34,10 +30,8 @@ def pause_detection(current_user: dict = Depends(verify_token)):
     update_cache(user_id, paused=True)
     return {"status": "success", "detection": "paused"}
 
-
 @router.post("/resume_detection")
 def resume_detection(current_user: dict = Depends(verify_token)):
-    """Resume paused detection."""
     user_id = current_user["user_id"]
     sessions = get_db()["sessions"]
     result = sessions.update_one(

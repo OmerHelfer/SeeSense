@@ -113,9 +113,8 @@ const overStyle = (util) =>
   (util != null && util > 100 ? { color: UTIL_OVER_COLOR, fontWeight: 700 } : undefined);
 const OVER_TITLE = 'מעל 100% — ההערכה של התקרה כבר לא מדויקת (ראה הערה בקוד). המספר אמיתי, אבל אי אפשר לקרוא אותו כאחוז מתקרה ידועה.';
 
-// client_actual counts frames leaving the phone, server_actual counts frames
-// arriving — a gap means frames were lost in transit, so it's flagged, not clamped.
-const FPS_GAP_TOLERANCE = 1.08;   // 8% — below this the gap is measurement noise
+
+const FPS_GAP_TOLERANCE = 1.08;
 const GAP_COLOR = '#f59e0b';
 const GAP_TITLE = 'הלקוח שולח יותר פריימים ממה שהשרת מקבל — כלומר פריימים אובדים בדרך. זה לא באג בתצוגה אלא סימן לבעיית העלאה.';
 
@@ -364,8 +363,7 @@ const AdminStatus = () => {
     return Math.round((act / (1000 / cost)) * 100);
   }, [data, clientOnly]);
 
-  // Frames sent but not received — see FPS_GAP_TOLERANCE above for why this is
-  // surfaced rather than hidden by clamping client FPS to the server's.
+
   const fpsGap = useMemo(() => {
     const cli = data?.fps?.client_actual ?? 0;
     const srv = data?.fps?.server_actual ?? 0;

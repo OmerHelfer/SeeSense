@@ -1,8 +1,3 @@
-"""
-Email service for SeeSense.
-Sends notifications for registration, password changes, and password reset.
-Uses Gmail SMTP with app password.
-"""
 
 import smtplib
 import logging
@@ -17,10 +12,6 @@ SMTP_PORT = 587
 
 
 def send_email(to_email: str, subject: str, html_body: str) -> bool:
-    """
-    Send an email via Gmail SMTP.
-    Returns True if sent successfully, False otherwise.
-    """
     if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
         logger.warning("Email credentials not configured — skipping email")
         return False
@@ -46,7 +37,6 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
 
 
 def send_welcome_email(to_email: str, name: str):
-    """Send welcome email after registration."""
     subject = "Welcome to SeeSense"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -63,7 +53,6 @@ def send_welcome_email(to_email: str, name: str):
 
 
 def send_password_changed_email(to_email: str, name: str):
-    """Send notification after password change."""
     subject = "SeeSense — Password Changed"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -79,7 +68,6 @@ def send_password_changed_email(to_email: str, name: str):
 
 
 def send_password_reset_email(to_email: str, name: str, reset_code: str):
-    """Send password reset code via email."""
     subject = "SeeSense — Password Reset Code"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -101,7 +89,6 @@ def send_password_reset_email(to_email: str, name: str, reset_code: str):
 
 
 def send_profile_updated_email(to_email: str, name: str):
-    """Send notification after profile update."""
     subject = "SeeSense — Profile Updated"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -117,7 +104,6 @@ def send_profile_updated_email(to_email: str, name: str):
 
 
 def send_feedback_response_email(to_email: str, name: str):
-    """Notify a user that the team responded to their feedback."""
     subject = "SeeSense — Your feedback was handled"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -134,7 +120,6 @@ def send_feedback_response_email(to_email: str, name: str):
 
 
 def send_emergency_contact_verification_email(to_email: str, contact_name: str, user_name: str, code: str):
-    """Send verification code to emergency contact."""
     subject = "SeeSense — Emergency Contact Verification"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -159,7 +144,6 @@ def send_emergency_contact_verification_email(to_email: str, contact_name: str, 
 
 
 def send_emergency_contact_confirmed_email(to_email: str, contact_name: str, user_name: str):
-    """Notify emergency contact that they have been confirmed."""
     subject = "SeeSense — You Are Now an Emergency Contact"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -175,7 +159,6 @@ def send_emergency_contact_confirmed_email(to_email: str, contact_name: str, use
 
 
 def send_emergency_contact_removed_email(to_email: str, contact_name: str, user_name: str):
-    """Notify emergency contact that they have been removed."""
     subject = "SeeSense — Emergency Contact Removed"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -191,7 +174,6 @@ def send_emergency_contact_removed_email(to_email: str, contact_name: str, user_
 
 
 def send_contact_verified_notification(to_email: str, user_name: str, contact_name: str):
-    """Notify the user that their emergency contact has been verified."""
     subject = "SeeSense — Emergency Contact Verified"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -207,7 +189,6 @@ def send_contact_verified_notification(to_email: str, user_name: str, contact_na
 
 
 def send_contact_expired_notification(to_email: str, user_name: str, contact_name: str):
-    """Notify the user that their emergency contact didn't verify in time."""
     subject = "SeeSense — Emergency Contact Expired"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -223,13 +204,6 @@ def send_contact_expired_notification(to_email: str, user_name: str, contact_nam
 
 def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str,
                                maps_link: str | None):
-    """
-    Send emergency alert email to a verified contact.
-
-    maps_link is None when the device could not get a location fix. Say so plainly
-    rather than linking anywhere: the alert itself is still urgent and must go out,
-    but a contact must never be sent to a location the app does not actually know.
-    """
     subject = "URGENT — SeeSense Emergency Alert"
 
     if maps_link:
@@ -261,7 +235,6 @@ def send_emergency_alert_email(to_email: str, contact_name: str, user_name: str,
     send_email(to_email, subject, html)
 
 def send_account_deleted_email(to_email: str, name: str):
-    """Notify user that their account has been deleted."""
     subject = "SeeSense — Account Deleted"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -277,7 +250,6 @@ def send_account_deleted_email(to_email: str, name: str):
 
 
 def send_account_deleted_to_contact(to_email: str, contact_name: str, user_name: str):
-    """Notify emergency contact that the user deleted their account."""
     subject = "SeeSense — Account Closed"
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

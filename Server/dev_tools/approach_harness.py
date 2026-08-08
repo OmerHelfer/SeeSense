@@ -1,16 +1,3 @@
-"""
-Simulation harness for SeeSense approach detection.
-
-Generates physically realistic detection sequences (pinhole camera: apparent size
-= f * real_size / distance) and runs them through the real ByteTracker +
-assess_danger, so tuning is done against evidence instead of by eye.
-
-Every scenario is run at several frame rates, because the deployed FPS ranges from
-~40 indoors to ~9 on a congested cellular link — a detector tuned in frames would
-behave completely differently at each.
-
-Usage:  python approach_harness.py
-"""
 import importlib
 import random
 import sys
@@ -28,7 +15,6 @@ HIGH_RISK = {"car", "person", "dog", "stairs", "pole", "bicycle", "motorcycle"}
 
 
 def bbox_at(distance_m, real_size_m, center_frac=0.5, jitter=0.0, rng=None):
-    """Bounding box for an object of a given real size at a given distance."""
     px = FOCAL_PX * real_size_m / max(distance_m, 0.05)
     if jitter and rng:
         px *= rng.uniform(1 - jitter, 1 + jitter)
@@ -39,7 +25,6 @@ def bbox_at(distance_m, real_size_m, center_frac=0.5, jitter=0.0, rng=None):
 
 
 class Scenario:
-    """A scripted motion path plus what the system is expected to do about it."""
 
     def __init__(self, name, cls, real_size_m, path, expect_alert, note="",
                  jitter=0.02, center=lambda t: 0.5, dropout=()):
@@ -54,7 +39,6 @@ class Scenario:
         self.dropout = dropout
 
     def run(self, fps, duration_s, seed=1):
-        """Feed the scenario through the real tracker + danger logic."""
         from services.motion_tracker import ByteTracker
         from services.logic_service import assess_danger
 

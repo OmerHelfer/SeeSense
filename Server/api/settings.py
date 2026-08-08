@@ -12,32 +12,25 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
-
 def _settings_collection():
     return get_db()["settings"]
 
-
 def get_user_settings(user_id: str) -> dict:
-    """Get settings for a user. Returns defaults if not found."""
     doc = _settings_collection().find_one({"user_id": user_id}, {"_id": 0})
     if not doc:
         return DEFAULT_SETTINGS.copy()
     settings = {k: v for k, v in doc.items() if k != "user_id"}
     return settings
 
-
 @router.get("/get_settings")
 def get_settings(current_user: dict = Depends(verify_token)):
-    """Retrieve user preferences."""
     user_id = current_user["user_id"]
     settings = get_user_settings(user_id)
     logger.info(f"Fetched settings for user: {user_id}")
     return {"status": "success", "user_id": user_id, "settings": settings}
 
-
 @router.post("/update_settings")
 def update_settings(settings: dict = {}, current_user: dict = Depends(verify_token)):
-    """Update user preferences."""
     user_id = current_user["user_id"]
     valid_keys = DEFAULT_SETTINGS.keys()
 
@@ -79,19 +72,15 @@ def update_settings(settings: dict = {}, current_user: dict = Depends(verify_tok
     logger.info(f"Updated settings for user: {user_id} → {settings}")
     return {"status": "success", "user_id": user_id, "settings": updated}
 
-
 @router.get("/available_classes")
 def get_available_classes(current_user: dict = Depends(verify_token)):
-    """Returns all classes the user can choose from."""
     return {
         "status": "success",
         "classes": sorted(list(ALL_CLASSES))
     }
 
-
 @router.post("/reset_settings")
 def reset_settings(current_user: dict = Depends(verify_token)):
-    """Restore all settings to default."""
     user_id = current_user["user_id"]
     _settings_collection().update_one(
         {"user_id": user_id},

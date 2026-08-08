@@ -1,41 +1,3 @@
-"""
-Persistent performance history — per-minute rollups in MongoDB.
-
-The live PerformanceTracker (utils/metrics.py) only keeps an in-memory sliding
-window that resets on restart. To support time-range analytics on the admin page
-(last 30m / 1h / day / week / month / ... / year / custom), we accumulate metrics
-into a per-minute bucket and flush completed buckets to the `perf_history`
-collection. Range queries then aggregate the buckets between two timestamps.
-
-NOTE: history only exists going forward from when this module started recording —
-there is no retroactive data. A reset (reset_history) drops everything.
-
-The moment recording began is stored separately, as a single doc in `perf_meta`,
-so the measured span the admin page shows is a clock rather than a property of
-whichever buckets happen to still exist. See "Recording-start marker" below.
-
-Each bucket doc:
-{
-  minute_ts: <epoch seconds, minute-aligned>,   # key, together with user_id
-  user_id: <str | None>,                         # who produced these frames
-  created_at: <datetime, for TTL expiry>,
-  lat:   {sum, min, max, n},                     # server-side per-frame latency (ms)
-  rtt:   {sum, min, max, n},                     # client-reported wire RTT (ms)
-  e2e:   {sum, min, max, n},                     # client-reported end-to-end latency
-                                                  # (capture → feedback) (ms)
-  frames, success, fail,                          # counts
-  stages: { <stage>: {sum, min, max, n}, ... },   # per-pipeline-stage latency (ms)
-  first_frame_ts, last_frame_ts,                  # epoch secs of this minute's first
-                                                  # and last frame — the ACTIVE span
-                                                  # inside the minute (see below)
-}
-
-first_frame_ts / last_frame_ts exist so a rate can be measured against time actually
-spent streaming rather than against the calendar. A bucket is a whole minute, but a
-user may have streamed for eight seconds of it; dividing by the minute reports an FPS
-six times lower than the one the user experienced. Buckets written before these
-fields existed have neither, and fall back to assuming the whole minute.
-"""
 
 import copy
 import time
@@ -69,11 +31,6 @@ _recording_start_known = False
 
 
 def note_recording_start(ts: int):
-    """Record `ts` as the moment recording began, unless a marker already exists.
-
-    $setOnInsert, so the earliest writer wins and repeat calls are harmless —
-    concurrent bucket flushes all racing to create it is fine.
-    """
     global _recording_start_known
     try:
         _meta_col().update_one(
@@ -87,7 +44,6 @@ def note_recording_start(ts: int):
 
 
 def get_recording_start() -> int | None:
-    """Epoch second recording began, or None if nothing has been recorded yet."""
     try:
         doc = _meta_col().find_one({"_id": _META_ID})
         return doc.get("started_at") if doc else None
@@ -97,10 +53,6 @@ def get_recording_start() -> int | None:
 
 
 def backfill_recording_start():
-    """Adopt the oldest existing bucket as the origin, for history recorded before
-    the marker existed. Called at startup so the marker is always in place before
-    any reset can delete the bucket it would have been derived from.
-    """
     global _recording_start_known
     try:
         if _meta_col().find_one({"_id": _META_ID}):
@@ -154,8 +106,6 @@ def _new_bucket(minute_ts: int, user_id: str | None = None) -> dict:
 
 
 def _rollover_locked():
-    """Ensure _buckets holds the current minute; flush the previous minute's buckets
-    if it rolled over. Caller must hold _lock."""
     global _buckets, _bucket_minute
     minute = _current_minute()
     if _bucket_minute is None:
@@ -169,7 +119,6 @@ def _rollover_locked():
 
 
 def _bucket_for_locked(user_id: str | None) -> dict:
-    """Get (or create) this minute's bucket for a user. Caller must hold _lock."""
     key = user_id or _UNATTRIBUTED
     bucket = _buckets.get(key)
     if bucket is None:
@@ -180,15 +129,6 @@ def _bucket_for_locked(user_id: str | None) -> dict:
 
 def record_frame(latency_ms: float, success: bool, stages: dict | None = None,
                  user_id: str | None = None, outcome: str | None = None):
-    """
-    Record one processed frame (latency + success + optional per-stage times).
-
-    user_id attributes the sample to a user so the admin page can show one user's
-    history. Omitting it still counts toward the global totals — attribution is
-    additive, never a filter on the aggregate.
-
-    outcome refines a failure into "reject" (quality check) or "error" (raised).
-    """
     now = time.time()
     with _lock:
         _rollover_locked()
@@ -210,32 +150,18 @@ def record_frame(latency_ms: float, success: bool, stages: dict | None = None,
 
 
 def record_rtt(rtt_ms: float, user_id: str | None = None):
-    """Record one client-reported wire RTT sample (send → result received)."""
     with _lock:
         _rollover_locked()
         _acc(_bucket_for_locked(user_id)["rtt"], rtt_ms)
 
 
 def record_e2e(e2e_ms: float, user_id: str | None = None):
-    """Record one client-reported end-to-end latency sample (capture → feedback).
-
-    Like rtt above, the sample is the client's rolling average rather than a single
-    frame, so the historical min/max are extremes of averages. The live view in
-    metrics.py keeps true per-frame extremes; history trades that for one number
-    per report, which is what the minute buckets are shaped for.
-    """
     with _lock:
         _rollover_locked()
         _acc(_bucket_for_locked(user_id)["e2e"], e2e_ms)
 
 
 def record_lost(n: int, user_id: str | None = None):
-    """Record frames the client reports it sent but never got an answer for.
-
-    Deliberately does NOT touch first/last_frame_ts: those define the streaming
-    span that FPS is divided by, and a lost frame is not evidence this server did
-    any work in this minute.
-    """
     if n <= 0:
         return
     with _lock:
@@ -270,12 +196,6 @@ _last_flush_at = 0.0
 
 
 def flush_now(force: bool = False):
-    """Persist the current in-progress buckets so queries include the most recent
-    (sub-minute) data. Upsert keyed by (minute_ts, user_id) → no double counting.
-
-    Throttled: repeat calls within _FLUSH_MIN_INTERVAL_S are no-ops. Pass force=True
-    when completeness matters more than cost (before a reset, on shutdown).
-    """
     global _last_flush_at
     now = time.time()
     with _lock:
@@ -299,25 +219,6 @@ def _agg_metric(dst: dict, src: dict):
 
 
 def _active_span(bucket: dict) -> tuple[float, int, int]:
-    """How long this bucket was actually streaming, and the frames to credit to it.
-
-    Returns (seconds, frames, successes) to be summed across buckets; dividing the
-    summed frames by the summed seconds gives FPS over time spent streaming.
-
-    n frames spanning (last - first) seconds cover n-1 intervals, so the real
-    duration is one average interval longer than the timestamps suggest:
-    span * n / (n - 1). That makes frames / duration reduce to the jitter-free
-    (n - 1) / span rate metrics.py uses, while still yielding a duration that can
-    be summed and displayed.
-
-    A single frame is skipped entirely: one sample cannot establish a rate, and
-    charging it a whole minute of "streaming time" would drag the average down
-    with an interval nobody measured.
-
-    Buckets written before the timestamps existed fall back to the whole minute —
-    the old behaviour, which is the best that can be said about data that was
-    never recorded.
-    """
     frames = bucket.get("frames", 0)
     if frames <= 0:
         return 0.0, 0, 0
@@ -344,16 +245,6 @@ def _finalize(metric: dict) -> dict:
 
 def query_range(start_ts: int | None, end_ts: int | None = None,
                 user_id: str | None = None) -> dict:
-    """
-    Aggregate all minute buckets in [start_ts, end_ts] into a status report shaped
-    like PerformanceTracker.get_status() (minus the live-only rtt_history chart).
-    start_ts=None means "since the beginning of recording".
-
-    user_id restricts the aggregate to one user's frames. Note that only data
-    recorded AFTER per-user attribution was added carries a user_id — older buckets
-    are unattributed and are correctly excluded from a per-user view (we don't know
-    whose they were) while still counting toward the global totals.
-    """
     flush_now()
 
     query = {}
@@ -379,7 +270,7 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
     for b in buckets:
         _agg_metric(lat, b.get("lat", {}))
         _agg_metric(rtt, b.get("rtt", {}))
-        # Buckets written before E2E was tracked simply have no "e2e" key.
+
         _agg_metric(e2e, b.get("e2e", {}))
         total += b.get("frames", 0)
         success += b.get("success", 0)
@@ -462,20 +353,6 @@ def query_range(start_ts: int | None, end_ts: int | None = None,
 
 
 def reset_history(user_id: str | None = None):
-    """
-    Drop persisted performance history (part of the admin 'reset' button).
-
-    user_id=None wipes everything. Passing a user_id deletes only that user's
-    buckets and leaves every other user's history untouched.
-
-    The in-progress in-memory bucket is discarded FIRST in both cases: it is
-    already-counted data that has not been written yet, so leaving it would let
-    the next flush immediately re-create rows for a user who was just reset.
-
-    Only the global case clears the recording-start marker. A scoped reset must
-    leave it alone — the all-users clock is not that user's to restart, and
-    resetting it was exactly the bug this marker exists to prevent.
-    """
     global _buckets, _bucket_minute, _recording_start_known
     with _lock:
         if user_id is None:

@@ -17,7 +17,6 @@ def _blacklisted_col():
 
 
 def blacklist_token(token: str):
-    """Add a token to the blacklist in MongoDB."""
     _blacklisted_col().insert_one({
         "token": token,
         "created_at": datetime.utcnow()
@@ -25,7 +24,6 @@ def blacklist_token(token: str):
 
 
 def is_blacklisted(token: str) -> bool:
-    """Check if a token has been blacklisted (logged out)."""
     return _blacklisted_col().find_one({"token": token}) is not None
 
 
@@ -63,10 +61,6 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
         raise HTTPException(status_code=401, detail="Invalid token")
 
 def get_admin_level(user_id: str) -> int:
-    """
-    Return a user's admin level: 0 = regular, 1 = admin, 2 = super admin.
-    Falls back to is_admin for any user not yet migrated (is_admin True → 2).
-    """
     from core.database import get_db
     profile = get_db()["users"].find_one({"user_id": user_id})
     if not profile:
@@ -77,7 +71,6 @@ def get_admin_level(user_id: str) -> int:
 
 
 def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """Verify token AND require admin (level >= 1). Adds admin_level to the user dict."""
     user = verify_token(credentials)
     level = get_admin_level(user["user_id"])
     if level < 1:
@@ -87,7 +80,6 @@ def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) 
 
 
 def verify_super_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """Verify token AND require super admin (level 2). Adds admin_level to the user dict."""
     user = verify_admin(credentials)
     if user["admin_level"] < 2:
         raise HTTPException(status_code=403, detail="Level 2 (super) admin access required")

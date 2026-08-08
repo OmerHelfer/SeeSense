@@ -1,26 +1,3 @@
-"""
-ByteTrack-inspired Multi-Object Tracker for SeeSense.
-
-Assigns persistent IDs to detected objects and tracks them across frames.
-Uses IoU (Intersection over Union) matching with Hungarian algorithm for
-optimal assignment, and two-stage association (high + low confidence).
-
-Each track maintains a history of positions for motion analysis:
-approaching, moving away, lateral direction, speed estimation.
-
-Motion analysis is deliberately conservative, because a false "approaching" turns
-straight into a red danger alert with voice + haptics. Every knob here errs
-towards silence:
-  - timings are in SECONDS, not frames (frame counts were tuned at ~4 FPS and
-    silently became 10x tighter once the pipeline reached ~40; the frame rate is
-    set by the client's MAX_INFLIGHT and swings with the network, so nothing here
-    may ever be expressed in frames);
-  - both ends of the motion window are median-filtered, so one noisy box can't
-    decide the verdict;
-  - `approaching` is latched with hysteresis + a confirmation streak, so it can't
-    chatter on/off around a single threshold;
-  - an unconfirmed or under-sampled track reports no motion at all.
-"""
 
 import logging
 import time
@@ -67,7 +44,6 @@ _user_trackers = {}
 
 
 def _median(values):
-    """Median of a short list (cheaper than a numpy round-trip for 3 elements)."""
     s = sorted(values)
     n = len(s)
     if n == 0:
@@ -77,24 +53,6 @@ def _median(values):
 
 
 def _size_trend(window):
-    """
-    Least-squares trend of apparent SIZE over a window of history samples.
-
-    Returns (growth, snr, rate):
-      growth — fitted change across the window, relative to the mean size.
-               Positive = getting closer.
-      snr    — that change divided by the residual scatter around the fit. Jitter
-               is large but uncorrelated, so it raises the residual without
-               tilting the line; a genuine approach tilts the line consistently.
-               This is what lets a slow approach be detected even when each
-               single frame moves less than the noise.
-      rate   — fitted growth per second, for grading approach speed.
-
-    Works on sqrt(area) rather than area because apparent size is proportional to
-    1/distance, which makes the trend close to linear for constant closing speed —
-    area would curve, and a curved signal fits a line badly (low snr) exactly when
-    the object is nearest and the alert matters most.
-    """
     n = len(window)
     ts = [h["t"] for h in window]
     ys = [h["area"] ** 0.5 for h in window]
@@ -123,9 +81,6 @@ def _size_trend(window):
 
 
 class Track:
-    """
-    Single tracked object with persistent ID and motion history.
-    """
     _next_id = 1
 
     def __init__(self, detection: dict):
@@ -149,8 +104,6 @@ class Track:
         self._push_history()
 
     def _push_history(self):
-        """Record the current (smoothed) box with a wall-clock stamp, so the motion
-        window can be a real duration instead of a frame count."""
         self.history.append({
             "t": time.monotonic(),
             "bbox": list(self.bbox),
@@ -159,7 +112,6 @@ class Track:
         })
 
     def update(self, detection: dict):
-        """Update track with new matched detection."""
         a = BBOX_SMOOTHING
         self.bbox = [a * r + (1 - a) * p for r, p in zip(detection["bbox"], self.bbox)]
         self.confidence = detection["confidence"]
@@ -169,29 +121,15 @@ class Track:
         self._push_history()
 
     def mark_missed(self):
-        """Called when track is not matched in current frame."""
         self.time_since_update += 1
 
     def is_confirmed(self) -> bool:
-        """Track has enough hits to be considered real."""
         return self.hits >= MIN_HITS
 
     def is_dead(self) -> bool:
-        """Track has been lost for too long (wall-clock, so it doesn't shrink to a
-        quarter of a second when the frame rate rises)."""
         return (time.monotonic() - self.last_seen) > MAX_AGE_SECONDS
 
     def get_motion(self) -> dict:
-        """
-        Analyze motion from position history.
-
-        Uses a fixed-DURATION look-back rather than a fixed number of frames, and
-        median-filters both ends of the window. YOLO bounding boxes jitter a few
-        pixels every frame even on a perfectly static object; comparing two single
-        frames a short distance apart measures that jitter, not motion, and a
-        false `approaching` is a red danger alert. The verdict is then latched
-        with hysteresis so it cannot flicker across the threshold.
-        """
         if not self.is_confirmed() or len(self.history) < 2:
             return {**_NO_MOTION, "track_id": self.track_id}
 
@@ -250,30 +188,11 @@ class Track:
 
 
 class ByteTracker:
-    """
-    ByteTrack-inspired multi-object tracker.
-
-    Two-stage association:
-    1. Match high-confidence detections to existing tracks using IoU
-    2. Match remaining low-confidence detections to unmatched tracks
-    This prevents losing tracks when objects are temporarily occluded.
-
-    Track ownership is recorded DURING association, so every matched detection
-    carries its real track_id. (A previous second-pass IoU search used a stricter
-    threshold than association itself, so detections in between silently fell
-    through to track_id -1 — and every one of those then collided on a single
-    dedup key downstream, re-firing alerts on every frame.)
-    """
 
     def __init__(self):
         self.tracks: list[Track] = []
 
     def update(self, detections: list[dict]) -> list[dict]:
-        """
-        Process new frame detections.
-        Returns enriched detections with track_id, motion data, and the track's
-        smoothed bbox.
-        """
         for track in self.tracks:
             track.age += 1
 
@@ -329,10 +248,6 @@ class ByteTracker:
         return enriched
 
     def _associate(self, tracks: list, detections: list[dict]):
-        """
-        Match detections to tracks using IoU + Hungarian algorithm.
-        Returns matched pairs and unmatched indices.
-        """
         if not tracks or not detections:
             return [], [], list(range(len(tracks))), list(range(len(detections)))
 
@@ -361,7 +276,6 @@ class ByteTracker:
         return matched_tracks, matched_dets, list(unmatched_tracks), list(unmatched_dets)
 
     def _cleanup(self):
-        """Remove dead tracks."""
         before = len(self.tracks)
         self.tracks = [t for t in self.tracks if not t.is_dead()]
         removed = before - len(self.tracks)
@@ -381,7 +295,6 @@ def _bbox_center(bbox: list) -> tuple:
 
 
 def _compute_iou(bbox1: list, bbox2: list) -> float:
-    """Compute Intersection over Union between two bounding boxes."""
     x1 = max(bbox1[0], bbox2[0])
     y1 = max(bbox1[1], bbox2[1])
     x2 = min(bbox1[2], bbox2[2])
@@ -401,12 +314,10 @@ def _compute_iou(bbox1: list, bbox2: list) -> float:
 
 
 def get_tracker(user_id: str) -> ByteTracker:
-    """Get or create ByteTracker for a user."""
     if user_id not in _user_trackers:
         _user_trackers[user_id] = ByteTracker()
     return _user_trackers[user_id]
 
 
 def clear_tracker(user_id: str):
-    """Clear tracking history for a user."""
     _user_trackers.pop(user_id, None)

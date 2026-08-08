@@ -53,8 +53,7 @@ async def lifespan(app: FastAPI):
     migrate_admin_levels()
     from services.perf_history import backfill_recording_start
     backfill_recording_start()
-    # Before the model, so the very first WebSocket connect already sees the
-    # stored values rather than falling back to defaults for one session.
+
     from services.stream_config_service import load_stream_config
     load_stream_config()
     app.state.model = load_model(MODEL_PATH, mode=MODEL_MODE)
@@ -108,10 +107,6 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """
-    Lightweight health check for client to verify connectivity.
-    Client pings this endpoint — if no response within timeout, switch to offline mode.
-    """
     return {
         "status": "healthy",
         "model_mode": MODEL_MODE,
@@ -124,33 +119,13 @@ def get_system_status(
     email: str | None = None,
     current_user: dict = Depends(verify_admin),
 ):
-    """
-    Admin only — server performance metrics, aggregated over all recorded history.
-
-    No email → totals across every user, since recording began.
-    email=<user email> → that user's own totals, since their first recorded frame.
-
-    Always the full history rather than a selectable window: the persisted
-    per-minute buckets already cover the whole retention period, so a lookback
-    parameter only ever narrowed what was shown.
-
-    Deliberately a sync `def` (FastAPI runs it in the threadpool): everything it
-    does — flush_now's writes and the unbounded find() over every bucket — is
-    BLOCKING pymongo. As `async def` that ran on the event loop, so one admin poll
-    stalled the whole server, including the streaming WebSocket a user is walking
-    with. Measured locally: find() over 50k buckets = ~1.1s, and the admin page
-    polls this every 3s.
-    """
     from services import perf_history
     from services.user_service import get_user_by_email
 
     if not email:
         data = perf_history.query_range(None, None)
         live = tracker.get_status()
-        # The response is the PERSISTED aggregate, with live-only fields copied over
-        # one by one. Anything measured solely by the live tracker and not persisted
-        # into the minute buckets MUST be added to this list or it silently never
-        # reaches the dashboard — it will read as "no data" rather than as an error.
+
         data["rtt_history"] = live.get("rtt_history", [])
         data["client_stage_latency"] = live.get("client_stage_latency", {})
         data["input_size"] = live.get("input_size")
@@ -176,9 +151,7 @@ def get_system_status(
         raise HTTPException(status_code=404, detail="No user with that email")
 
     data = perf_history.query_range(None, None, user_id=user["user_id"])
-    # Blanked, not copied: these live metrics are process-wide and carry no per-user
-    # attribution, so showing them inside a single user's view would misattribute
-    # everyone else's traffic to them.
+
     data["rtt_history"] = []
     data["client_stage_latency"] = {}
     data["db_writer"] = {}
@@ -196,18 +169,6 @@ def reset_system_status(
     email: str | None = None,
     current_user: dict = Depends(verify_super_admin),
 ):
-    """
-    Super admin (level 2) only. Irreversible.
-
-    No email → wipe everything: the live in-memory metrics and every user's
-        persisted history.
-    email=<user> → wipe only that user's persisted history.
-
-    A scoped reset deliberately does NOT touch the live tracker: it is
-    process-wide (capacity, RTT chart, client stages are not attributed per
-    user), so clearing it would destroy every other user's live metrics as a
-    side effect of resetting one person.
-    """
     from services import perf_history
     from services.user_service import get_user_by_email
 
@@ -239,14 +200,6 @@ if SERVE_FRONTEND:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str):
-        """
-        Serve the SPA shell for any path the API didn't claim.
-
-        React Router owns /login, /admin/status and the rest; those paths exist
-        only in the browser, so a refresh or a shared link on one of them lands
-        here and would otherwise 404. Real files (favicon, manifest) are still
-        served directly when they exist.
-        """
         candidate = (FRONTEND_DIST / full_path).resolve()
         if (
             full_path

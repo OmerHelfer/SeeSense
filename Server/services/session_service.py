@@ -22,19 +22,16 @@ _ALERT_STATE_TTL = 5.0
 
 
 def get_cached_state(user_id: str) -> dict:
-    """Get cached session state for a user."""
     return _user_cache.get(user_id, {})
 
 
 def update_cache(user_id: str, **kwargs):
-    """Update cache for a user. Called by pause/resume/settings endpoints."""
     if user_id not in _user_cache:
         _user_cache[user_id] = {}
     _user_cache[user_id].update(kwargs)
 
 
 def clear_cache(user_id: str):
-    """Clear cache when user disconnects. Also stamps last_seen for admin views."""
     _user_cache.pop(user_id, None)
     _track_alert_state.pop(user_id, None)
     _ws_tracked.pop(user_id, None)
@@ -50,7 +47,6 @@ def clear_cache(user_id: str):
 
 
 def get_online_user_ids() -> set:
-    """Set of user_ids currently connected via the streaming WebSocket."""
     return set(_user_cache.keys())
 
 
@@ -60,12 +56,6 @@ def is_user_online(user_id: str) -> bool:
 
 
 def get_or_create_session(user_id: str) -> str:
-    """
-    Returns an active session_id for the user.
-    - If an active session exists → return it.
-    - If a recent stopped session exists (within 15 min) → resume it.
-    - Otherwise → create a new session.
-    """
     sessions = _sessions()
 
     existing = sessions.find_one({"user_id": user_id, "status": "active"})
@@ -103,7 +93,6 @@ def get_or_create_session(user_id: str) -> str:
 
 
 def stop_session(session_id: str):
-    """Mark a session as stopped."""
     _sessions().update_one(
         {"session_id": session_id, "status": "active"},
         {"$set": {"status": "stopped", "stopped_at": datetime.now().isoformat()}}
@@ -112,7 +101,6 @@ def stop_session(session_id: str):
 
 
 def get_active_session(user_id: str) -> dict | None:
-    """Return the active session document for a user, or None."""
     return _sessions().find_one({"user_id": user_id, "status": "active"})
 
 
@@ -125,22 +113,6 @@ _ws_had_engaged = {}
 
 
 def evaluate_presence(user_id: str, objects: list[dict]) -> dict:
-    """
-    Decide what to SAY about the objects in front of the user, based on whether
-    they are still THERE — not on whether they are currently alerting.
-
-    The bug this replaces: "נתיב פנוי" was announced the moment the alert level
-    fell to "none". But a watched object that stops moving also scores "none", so
-    standing still in front of a stationary person announced that the path was
-    clear while the user was on a collision course with them. For someone who
-    cannot look up and check, that is the most dangerous sentence the app can say.
-
-    Two outputs:
-      danger_cleared — true only when every object we had engaged with has
-                       actually left the frame (aged out of the tracker).
-      static_notice  — a watched object that is present, close enough to matter
-                       and confirmed motionless, announced once per still episode.
-    """
     now = time.monotonic()
     tracks = _ws_tracked.setdefault(user_id, {})
     notice = None
@@ -196,22 +168,6 @@ def evaluate_presence(user_id: str, objects: list[dict]) -> dict:
 
 
 def has_new_alert(user_id: str, objects: list[dict]) -> bool:
-    """
-    Alert dedup — returns True only if some object's danger level has ESCALATED
-    since we last saw it (keyed by its track_id), e.g. a parked car sitting at
-    "low" every frame won't keep re-triggering TTS/haptic, but a genuine
-    none→low or low→high transition will.
-
-    Escalation only, deliberately: an earlier version fired on any change, which
-    also matched high→low. Combined with an object oscillating across the
-    approach threshold, that alerted in BOTH directions and produced a continuous
-    stream of voice/haptic for a single stationary object. A de-escalation still
-    updates the HUD; it just doesn't interrupt the user.
-
-    Detections with no owning track (track_id -1) are skipped entirely. They have
-    no stable identity, so they all collided on one key, overwrote each other's
-    state, and re-fired on every frame.
-    """
     now = time.monotonic()
     state = _track_alert_state.setdefault(user_id, {})
     is_new = False
@@ -238,15 +194,5 @@ def has_new_alert(user_id: str, objects: list[dict]) -> bool:
 
 
 def save_frame_count_background(session_id: str, frame_count: int):
-    """
-    DEPRECATED — routes to the batch writer.
-
-    This used to spawn a fresh thread per call, and the frame loop called it once
-    per frame: at 40 FPS that was 40 threads and 40 writes a second, all targeting
-    the SAME session document, so MongoDB serialised them. Kept as a thin shim so
-    any other caller keeps working, but the streaming path now goes straight to
-    services.db_writer, which keeps only the latest value and writes it once a
-    second.
-    """
     from services import db_writer
     db_writer.note_frame_count(session_id, frame_count)

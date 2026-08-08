@@ -47,10 +47,7 @@ export class VisionStream {
     this._reconnectTimer    = null;
 
     this._sendTimes         = [];
-    // Parallel to _sendTimes, holding each in-flight frame's capture timestamp.
-    // Kept in lockstep with it (same pushes, same shifts, same pruning) so that
-    // when a result arrives, _captureTimes[0] belongs to the same frame as
-    // _sendTimes[0]. Used for the end-to-end clock, which starts earlier than RTT.
+
     this._captureTimes      = [];
 
     this._rttBuffer         = [];
@@ -58,9 +55,7 @@ export class VisionStream {
     this._lastRtt           = null;
     this._rttStats          = { avg: 0, min: 0, max: 0 };
 
-    // End-to-end latency: capture → encode → upload → server → download → render
-    // → speech/haptics. _pendingE2EStart carries the matched frame's capture time
-    // from the result arriving until the UI finishes reacting to it.
+
     this._e2eBuffer         = [];
     this._pendingE2EStart   = null;
     this._e2eStats          = { avg: 0, min: 0, max: 0 };
@@ -135,8 +130,7 @@ export class VisionStream {
     if (this.isOpen) {
       const now = performance.now();
       this._sendTimes.push(now);
-      // Fall back to `now` when the caller has no capture stamp: the E2E figure
-      // then simply misses the capture+encode prefix rather than going unmeasured.
+
       this._captureTimes.push(captureT0 ?? now);
       if (this._sendTimes.length > MAX_PENDING_RTT) {
         this._sendTimes.shift();
@@ -152,7 +146,7 @@ export class VisionStream {
   _open() {
     if (!this._active) return;
 
-    // input_size is only a hint — the server's global config overrides it.
+
     const url    = `${WS_BASE}/stream/ws?token=${encodeURIComponent(this._token)}&input_size=${getInputSize()}`;
     const socket = new WebSocket(url);
     socket.binaryType = 'blob';
@@ -232,14 +226,7 @@ export class VisionStream {
     this._updateRttStats();
   }
 
-  /**
-   * Close the end-to-end clock for the result currently being handled.
-   *
-   * Call this once the UI has fully reacted — after the boxes are drawn and after
-   * the speech/haptic feedback has been issued — because that, not the arrival of
-   * the WebSocket message, is the moment the user actually perceives the alert.
-   * Safe to call when nothing is pending; it just no-ops.
-   */
+  
   completeE2E() {
     const started = this._pendingE2EStart;
     this._pendingE2EStart = null;

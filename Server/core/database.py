@@ -1,7 +1,3 @@
-"""
-MongoDB connection module.
-Provides a single shared database client for the entire application.
-"""
 import logging
 from pymongo import MongoClient
 
@@ -14,7 +10,6 @@ _db = None
 
 
 def _ensure_indexes(db):
-    """Create TTL indexes for collections that need automatic expiry."""
     from core.config import JWT_EXPIRATION_HOURS
 
     db["blacklisted_tokens"].create_index(
@@ -31,7 +26,6 @@ def _ensure_indexes(db):
 
 
 def connect():
-    """Connect to MongoDB. Called once on server startup."""
     global _client, _db
     try:
         _client = MongoClient(MONGODB_URI)
@@ -45,7 +39,6 @@ def connect():
 
 
 def disconnect():
-    """Close MongoDB connection. Called on server shutdown."""
     global _client
     if _client:
         _client.close()
@@ -53,7 +46,6 @@ def disconnect():
 
 
 def get_db():
-    """Get the database instance."""
     if _db is None:
         connect()
     return _db

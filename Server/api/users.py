@@ -75,22 +75,16 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 limiter = Limiter(key_func=get_remote_address)
 
-
 def _send_email_background(func, *args):
-    """Send email in a background thread — doesn't block the response."""
     import threading
     threading.Thread(target=func, args=args, daemon=True).start()
-
 
 def _reset_codes_col():
     from core.database import get_db
     return get_db()["reset_codes"]
 
-
-
 @router.post("/register")
 def register(user: UserCreate):
-    """Create a new user account. Returns profile + JWT token."""
     try:
         profile = create_user(user.model_dump())
         token = create_token(profile["user_id"], profile["email"])
@@ -99,11 +93,9 @@ def register(user: UserCreate):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.post("/login")
 @limiter.limit("10/minute")
 def login(request: Request, login_data: LoginRequest):
-    """Authenticate user. Returns profile + JWT token."""
     profile = authenticate_user(login_data.email, login_data.password)
     if not profile:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -114,25 +106,17 @@ def login(request: Request, login_data: LoginRequest):
     mark_active(profile["user_id"])
     return {"status": "success", "message": "Logged in successfully", "user": profile, "token": token}
 
-
 @router.post("/heartbeat")
 def heartbeat(current_user: dict = Depends(verify_token)):
-    """Lightweight presence ping — the client calls this periodically while the app
-    is open so the user reads as 'online' even when not actively scanning.
-    (verify_token already stamps presence.)"""
     return {"status": "ok"}
-
 
 @router.post("/logout")
 def logout(current_user: dict = Depends(verify_token)):
-    """Logout — invalidates the current token."""
     blacklist_token(current_user["token"])
     return {"status": "success", "message": "Logged out successfully"}
 
 @router.delete("/account")
 def delete_account(current_user: dict = Depends(verify_token)):
-    """Permanently delete your OWN account and all associated data.
-    Admins cannot self-delete — a super admin must demote them first."""
     user_id = current_user["user_id"]
     profile = get_user(user_id)
     if not profile:
@@ -165,13 +149,11 @@ def delete_account(current_user: dict = Depends(verify_token)):
 
     return {"status": "success", "message": "Account and all data permanently deleted"}
 
-
 @router.post("/change_password")
 def change_password_endpoint(
     request: ChangePasswordRequest,
     current_user: dict = Depends(verify_token)
 ):
-    """Change password for authenticated user."""
     if len(request.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
@@ -183,11 +165,9 @@ def change_password_endpoint(
     _send_email_background(send_password_changed_email, profile["email"], profile["name"])
     return {"status": "success", "message": "Password changed successfully"}
 
-
 @router.post("/forgot_password")
 @limiter.limit("3/minute")
 def forgot_password(request: Request, req: ForgotPasswordRequest):
-    """Send password reset code to email. No auth required."""
     profile = get_user_by_email(req.email)
     if not profile:
         return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
@@ -203,10 +183,8 @@ def forgot_password(request: Request, req: ForgotPasswordRequest):
     _send_email_background(send_password_reset_email, email, profile["name"], code)
     return {"status": "success", "message": "If this email is registered, a reset code has been sent"}
 
-
 @router.post("/reset_password")
 def reset_password(request: ResetPasswordRequest):
-    """Reset password using the code sent to email. No auth required."""
     if len(request.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
@@ -228,11 +206,8 @@ def reset_password(request: ResetPasswordRequest):
     _send_email_background(send_password_changed_email, email, profile["name"])
     return {"status": "success", "message": "Password reset successfully"}
 
-
-
 @router.get("/profile")
 def get_profile(current_user: dict = Depends(verify_token)):
-    """Retrieve user profile with emergency contacts summary."""
     profile = get_user(current_user["user_id"])
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
@@ -247,10 +222,8 @@ def get_profile(current_user: dict = Depends(verify_token)):
 
     return {"status": "success", "user": profile}
 
-
 @router.post("/profile/update")
 def update_profile(updates: UpdateProfileRequest, current_user: dict = Depends(verify_token)):
-    """Update user profile fields. Requires authentication."""
     user_id = current_user["user_id"]
     profile = update_user(user_id, updates.model_dump(exclude_none=True))
     if not profile:
@@ -258,38 +231,28 @@ def update_profile(updates: UpdateProfileRequest, current_user: dict = Depends(v
     _send_email_background(send_profile_updated_email, profile["email"], profile["name"])
     return {"status": "success", "message": "Profile updated successfully", "user": profile}
 
-
-
 @router.get("/history")
 def user_history(limit: int = 50, period: str = "all", session_id: str = None, current_user: dict = Depends(verify_token)):
-    """Retrieve detection history. Filter by period and/or session_id."""
     if period not in VALID_PERIODS:
         raise HTTPException(status_code=400, detail=f"Invalid period. Choose from: {sorted(VALID_PERIODS)}")
     user_id = current_user["user_id"]
     history = get_user_history(user_id, limit, period, session_id)
     return {"status": "success", "user_id": user_id, "total_records": len(history), "period": period, "session_id": session_id, "history": history}
 
-
 @router.delete("/history/{record_id}")
 def delete_history_record(record_id: str, current_user: dict = Depends(verify_token)):
-    """Delete a single detection record by ID."""
     success = delete_detection_record(current_user["user_id"], record_id)
     if not success:
         raise HTTPException(status_code=404, detail="Record not found")
     return {"status": "success", "message": "Record deleted"}
 
-
 @router.delete("/history")
 def clear_history(current_user: dict = Depends(verify_token)):
-    """Delete all detection history for the user."""
     count = clear_user_history(current_user["user_id"])
     return {"status": "success", "message": f"Cleared {count} records"}
 
-
-
 @router.post("/feedback/quick")
 def quick_feedback(feedback: QuickFeedback, current_user: dict = Depends(verify_token)):
-    """Quick feedback during walk."""
     try:
         user_id = current_user["user_id"]
         feedback_id = create_quick_feedback(user_id, feedback.feedback_type, feedback.record_id)
@@ -297,10 +260,8 @@ def quick_feedback(feedback: QuickFeedback, current_user: dict = Depends(verify_
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.post("/feedback/from_history")
 def feedback_from_history(feedback: FeedbackFromHistory, current_user: dict = Depends(verify_token)):
-    """Companion creates feedback from a specific history record."""
     try:
         user_id = current_user["user_id"]
         feedback_id = create_feedback_from_history(user_id, feedback.record_id, feedback.feedback_type, feedback.notes)
@@ -310,37 +271,24 @@ def feedback_from_history(feedback: FeedbackFromHistory, current_user: dict = De
 
 @router.post("/feedback/general")
 def standalone_feedback(feedback: StandaloneFeedback, current_user: dict = Depends(verify_token)):
-    """
-    Standalone feedback — not linked to any specific detection.
-    General report about system behavior.
-    """
     user_id = current_user["user_id"]
     feedback_id = create_standalone_feedback(user_id, feedback.feedback_type, feedback.notes)
     return {"status": "success", "message": "Feedback recorded", "feedback_id": feedback_id}
 
-
 @router.get("/feedback/pending")
 def get_pending(current_user: dict = Depends(verify_token)):
-    """Get all pending feedback waiting for companion review."""
     user_id = current_user["user_id"]
     pending = get_pending_feedback(user_id)
     return {"status": "success", "total": len(pending), "feedback": pending}
 
-
 @router.get("/feedback/all")
 def get_all(current_user: dict = Depends(verify_token)):
-    """Get all feedback — pending and submitted."""
     user_id = current_user["user_id"]
     all_fb = get_all_feedback(user_id)
     return {"status": "success", "total": len(all_fb), "feedback": all_fb}
 
-
 @router.post("/feedback/{feedback_id}/update")
 def update_feedback_endpoint(feedback_id: str, update: FeedbackUpdate, current_user: dict = Depends(verify_token)):
-    """
-    Companion adds notes to a pending feedback.
-    Automatically marks as submitted. Blocked once an admin is handling it.
-    """
     try:
         result = update_feedback(current_user["user_id"], feedback_id, update.notes, update.feedback_type)
     except ValueError as e:
@@ -349,45 +297,31 @@ def update_feedback_endpoint(feedback_id: str, update: FeedbackUpdate, current_u
         raise HTTPException(status_code=404, detail="Feedback not found")
     return {"status": "success", "message": "Feedback updated and submitted", "feedback": result}
 
-
 @router.get("/feedback/responses/unseen_count")
 def unseen_responses_count(current_user: dict = Depends(verify_token)):
-    """How many resolved-feedback responses the user hasn't seen yet (badge count)."""
     return {"status": "success", "count": count_unseen_responses(current_user["user_id"])}
-
 
 @router.post("/feedback/responses/seen")
 def mark_responses_seen_endpoint(current_user: dict = Depends(verify_token)):
-    """Mark all of the user's team responses as seen (clears the notification badge)."""
     updated = mark_responses_seen(current_user["user_id"])
     return {"status": "success", "updated": updated}
 
-
 @router.post("/feedback/{feedback_id}/submit")
 def submit_feedback_endpoint(feedback_id: str, current_user: dict = Depends(verify_token)):
-    """Submit a pending feedback as-is without adding notes."""
     success = submit_feedback(current_user["user_id"], feedback_id)
     if not success:
         raise HTTPException(status_code=404, detail="Feedback not found or already submitted")
     return {"status": "success", "message": "Feedback submitted"}
 
-
 @router.delete("/feedback/{feedback_id}")
 def delete_feedback_endpoint(feedback_id: str, current_user: dict = Depends(verify_token)):
-    """Delete a feedback entry."""
     success = delete_feedback(current_user["user_id"], feedback_id)
     if not success:
         raise HTTPException(status_code=404, detail="Feedback not found")
     return {"status": "success", "message": "Feedback deleted"}
 
-
-
 @router.post("/contacts/add")
 def add_contact(request: AddEmergencyContactRequest, current_user: dict = Depends(verify_token)):
-    """
-    Add an emergency contact. Sends verification code to their email.
-    Contact stays pending until they confirm with the code. Max 5 contacts.
-    """
     try:
         user_id = current_user["user_id"]
         profile = get_user(user_id)
@@ -403,10 +337,8 @@ def add_contact(request: AddEmergencyContactRequest, current_user: dict = Depend
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.post("/contacts/verify")
 def verify_contact(request: VerifyEmergencyContactRequest, current_user: dict = Depends(verify_token)):
-    """Verify emergency contact using the code they received via email."""
     try:
         user_id = current_user["user_id"]
         profile = get_user(user_id)
@@ -419,10 +351,8 @@ def verify_contact(request: VerifyEmergencyContactRequest, current_user: dict = 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.post("/contacts/resend_code")
 def resend_code(request: ResendContactCodeRequest, current_user: dict = Depends(verify_token)):
-    """Resend verification code to a pending contact."""
     try:
         user_id = current_user["user_id"]
         profile = get_user(user_id)
@@ -442,10 +372,8 @@ def resend_code(request: ResendContactCodeRequest, current_user: dict = Depends(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.delete("/contacts/remove")
 def remove_contact(request: RemoveEmergencyContactRequest, current_user: dict = Depends(verify_token)):
-    """Remove an emergency contact (pending or verified)."""
     user_id = current_user["user_id"]
     profile = get_user(user_id)
 
@@ -464,10 +392,8 @@ def remove_contact(request: RemoveEmergencyContactRequest, current_user: dict = 
 
     return {"status": "success", "message": "Contact removed"}
 
-
 @router.get("/contacts")
 def list_contacts(current_user: dict = Depends(verify_token)):
-    """Get all emergency contacts with their status."""
     user_id = current_user["user_id"]
     contacts = get_emergency_contacts(user_id)
     return {
@@ -477,11 +403,8 @@ def list_contacts(current_user: dict = Depends(verify_token)):
         "contacts": contacts
     }
 
-
-
 @router.post("/emergency_alert")
 def emergency_alert(alert: EmergencyAlertRequest, current_user: dict = Depends(verify_token)):
-    """Send emergency signal with GPS location."""
     try:
         result = trigger_emergency(
             user_id=current_user["user_id"],
@@ -492,10 +415,8 @@ def emergency_alert(alert: EmergencyAlertRequest, current_user: dict = Depends(v
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.get("/emergency_alerts")
 def list_emergency_alerts(current_user: dict = Depends(verify_token)):
-    """Get the user's SOS alert history (newest first, max 50)."""
     user_id = current_user["user_id"]
     alerts = get_emergency_alert_history(user_id)
     return {"status": "success", "alerts": alerts, "count": len(alerts)}
