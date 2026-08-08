@@ -156,6 +156,8 @@ def get_system_status(
         data["input_size"] = live.get("input_size")
         data["stream_config"] = live.get("stream_config")
         data["frame_bytes"] = live.get("frame_bytes", {})
+        from services import db_writer
+        data["db_writer"] = {"last_flush_records": db_writer.last_flush_records()}
         data["client_rtt"] = {
             **data.get("client_rtt", {}),
             "base_ms": live.get("client_rtt", {}).get("base_ms", 0.0),
@@ -179,6 +181,7 @@ def get_system_status(
     # everyone else's traffic to them.
     data["rtt_history"] = []
     data["client_stage_latency"] = {}
+    data["db_writer"] = {}
     data["user"] = {
         "user_id": user["user_id"],
         "email": user.get("email"),

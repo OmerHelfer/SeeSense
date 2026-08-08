@@ -255,6 +255,12 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 stage_times["db_write"] = db_writer.last_amortized_ms()
                 tracker.record_stage("db_write", stage_times["db_write"])
 
+                # The same DB cost undivided: the whole round trip of one batch flush.
+                # Reported for visibility into database health only — like db_write it
+                # is off the frame's critical path, so neither belongs in the frame total.
+                stage_times["db_flush"] = db_writer.last_flush_ms()
+                tracker.record_stage("db_flush", stage_times["db_flush"])
+
                 t4 = time.perf_counter()
 
                 from services.user_service import build_detection_entry

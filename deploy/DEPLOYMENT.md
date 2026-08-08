@@ -156,9 +156,12 @@ credit.
 - Server-side inference: genuinely GPU-accelerated now (was silently running
   on CPU earlier today due to the torch bug above — ~200ms/frame on CPU vs.
   ~20-30ms on GPU once fixed).
-- `decode_quality` / `tracking` / `danger_logic` / `db_write` are all
-  CPU-bound, unaffected by the GPU — their speed depends on CPU clock speed,
-  not GPU choice.
+- `decode_quality` / `tracking` / `danger_logic` are all CPU-bound, unaffected
+  by the GPU — their speed depends on CPU clock speed, not GPU choice.
+- `db_flush` / `db_write` are neither: they are the batch writer's round trip to
+  Atlas (Ireland) — `db_flush` whole, `db_write` divided by the records in the
+  batch. Both are off the frame's critical path and bounded by network distance
+  to the database, so no amount of CPU or GPU changes them.
 - RTT average ~130ms; ~90-100ms of that is network distance
   (Warsaw↔Tel Aviv), not compute — this is the cost of not being in
   `me-west1` yet. Note this is the *wire* round trip (`socket.send` → result

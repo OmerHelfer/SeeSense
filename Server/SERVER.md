@@ -397,11 +397,24 @@ Also `{"type":"result","status":"paused","frame":N}` when detection is paused, a
 | `inference` | YOLO forward pass, run via `asyncio.to_thread` so it never blocks the event loop, wrapped in a **global `threading.Lock`** so only one inference executes at a time. |
 | `tracking` | Per-user `ByteTracker.update()` assigns/updates track IDs and computes motion. |
 | `danger_logic` | `assess_danger()` with the user's cached sensitivity + high-risk class list. |
-| `db_write` | `build_detection_entry()` only — builds the document with a **pre-generated `ObjectId`**. No I/O. |
+| `response` | `build_detection_entry()` (document built with a **pre-generated `ObjectId`**, no I/O) and the verdict sent. |
+| `db_write` | **Not timed here — read from the batch writer.** `db_writer.last_amortized_ms()`: the last flush's duration divided by the records in it, i.e. per-record cost. |
+| `db_flush` | **Also read, not timed.** `db_writer.last_flush_ms()`: the same flush *undivided* — the whole MongoDB round trip (one `insert_many` + one `bulk_write`, to a cluster ~4,000 km away). |
 
-After the JSON response is sent, two **daemon threads** fire off the actual writes:
-`insert_detection_entry(entry)` and `save_frame_count_background(session_id, frame_count)`.
-Neither can stall the stream, and a failed write can't crash it.
+> ⚠️ **`db_write` and `db_flush` are reported, not incurred.** Only the five stages above them are
+> on the frame's critical path and sum to `server_latency`. The frame loop merely *queues* the
+> document (`db_writer.queue_detection`) **after** `end_timer` and after the reply is already on the
+> wire; the write itself happens on the writer thread, up to a second later. Both DB rows exist for
+> database-health visibility and neither may be added into a frame's total.
+>
+> They are two views of one number: `db_write = db_flush / records_in_flush`. Watch `db_flush`
+> climbing while the record count stays flat — that means the database or the link to it degraded,
+> not that the frame rate changed. `last_flush_records` is surfaced alongside so the figure is
+> readable: 150 ms for 40 records and 150 ms for 1 record are very different situations.
+>
+> Because the value is read once per frame but only changes once per flush, its average is
+> frame-weighted (one flush's cost is sampled by every frame that arrived during the next flush
+> interval). Min/max still show the true range of flush durations.
 
 ### Why the event loop matters
 Inference runs in a worker thread on purpose. If it ran inline, a ~40 ms forward pass would
@@ -664,7 +677,8 @@ A single global instance with sliding windows (`deque(maxlen=100)`):
 > 🔴 **Adding a live-only metric? It will not reach the dashboard by itself.**
 > `/get_system_status` returns the **persisted** aggregate from `perf_history.query_range()` and then
 > copies live-only fields across **one by one** (`rtt_history`, `client_stage_latency`, `input_size`,
-> `stream_config`, `frame_bytes`, `client_rtt.base_ms`, the three live FPS numbers). A new field on
+> `stream_config`, `frame_bytes`, `db_writer`, `client_rtt.base_ms`, the three live FPS numbers).
+> A new field on
 > `PerformanceTracker.get_status()` that is not added to that list silently never arrives, and the UI
 > reads it as *"no data yet"* rather than as an error — a genuinely confusing failure, since it looks
 > like a broken sensor. Either persist the metric into the minute buckets or add it to the copy list;

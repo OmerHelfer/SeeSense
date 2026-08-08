@@ -95,9 +95,10 @@ const STAGE_LABELS = {
   tracking:       'מעקב תנועה (Tracking)',
   danger_logic:   'לוגיקת סכנה',
   response:       'בניית תשובה ושליחה',
-  db_write:       'כתיבה ל-DB',
+  db_write:       'כתיבה ל-DB (לרשומה)',
+  db_flush:       'כתיבה ל-DB (צרור שלם)',
 };
-const STAGE_ORDER = ['decode_quality', 'inference', 'tracking', 'danger_logic', 'response', 'db_write'];
+const STAGE_ORDER = ['decode_quality', 'inference', 'tracking', 'danger_logic', 'response', 'db_write', 'db_flush'];
 
 const CLIENT_STAGE_LABELS = {
   capture:  'צילום פריים',
@@ -670,9 +671,18 @@ const AdminStatus = () => {
               )}
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
                 * נמדד רק על פריימים שעברו את כל השלבים בהצלחה (לא כולל פריימים שנדחו בבדיקת איכות).
-                חמשת השלבים הראשונים מרכיבים יחד את &quot;שרת בלבד&quot;. הכתיבה ל-DB היא היוצאת
-                מן הכלל — היא רצה בצרורות ברקע פעם בשנייה, ולכן מוצג כאן המחיר הממוצע לרשומה
-                והוא לא נספר בתוך זמן הפריים.
+                חמשת השלבים הראשונים מרכיבים יחד את &quot;שרת בלבד&quot;. שתי שורות ה-DB הן היוצאות
+                מן הכלל — הכתיבה רצה בצרורות ברקע פעם בשנייה, ולכן <strong>אף אחת מהן לא נספרת
+                בתוך זמן הפריים</strong>.
+                <br />
+                <strong>צרור שלם</strong> = כמה זמן לקח כל הסבב מול MongoDB (insert_many אחד +
+                bulk_write אחד, למסד שנמצא ~4,000 ק&quot;מ משם). <strong>לרשומה</strong> = אותו מספר
+                חלקי מספר הרשומות בצרור
+                {data.db_writer?.last_flush_records > 0 && (
+                  <> (בצרור האחרון: <strong dir="ltr">{data.db_writer.last_flush_records}</strong> רשומות)</>
+                )}.
+                אם ה&quot;צרור שלם&quot; עולה בלי שמספר הרשומות עולה — הבעיה במסד או בקו אליו,
+                לא בקצב הפריימים.
               </p>
             </div>
           )}

@@ -38,6 +38,8 @@ _lock = threading.Lock()
 _pending_detections = deque()
 _pending_frame_counts = {}
 _last_amortized_ms = 0.0
+_last_flush_ms = 0.0
+_last_flush_records = 0
 _dropped = 0
 
 _thread = None
@@ -77,6 +79,29 @@ def last_amortized_ms() -> float:
     0.0ms no matter how badly the writes were actually doing.
     """
     return _last_amortized_ms
+
+
+def last_flush_ms() -> float:
+    """
+    Duration of the most recent batch flush, in ms — the whole round trip to
+    MongoDB, BEFORE being divided by the number of records in it.
+
+    This is the raw cost of talking to the database: one insert_many plus one
+    bulk_write, against a cluster ~4,000 km away. last_amortized_ms above is this
+    number divided by last_flush_records; both are off the frame's critical path
+    (the flush runs on the writer thread, a second behind the frames it persists).
+
+    Watch it for database health: batching is what makes a figure of this size
+    affordable at all, and if it climbs while the record count stays flat, the
+    problem is the database or the link to it, not the frame rate.
+    """
+    return _last_flush_ms
+
+
+def last_flush_records() -> int:
+    """How many records the most recent flush wrote. Makes last_flush_ms readable:
+    150ms for 40 records and 150ms for 1 record are very different situations."""
+    return _last_flush_records
 
 
 def start():
@@ -121,7 +146,7 @@ def _run():
 
 
 def _flush():
-    global _last_amortized_ms
+    global _last_amortized_ms, _last_flush_ms, _last_flush_records
 
     with _lock:
         detections = list(_pending_detections)
@@ -158,6 +183,8 @@ def _flush():
 
     elapsed_ms = (time.perf_counter() - started) * 1000
     if written:
+        _last_flush_ms = elapsed_ms
+        _last_flush_records = written
         _last_amortized_ms = elapsed_ms / written
         if elapsed_ms > 500:
             logger.warning(
