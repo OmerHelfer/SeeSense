@@ -1,13 +1,13 @@
 const DEFAULTS = {
   inputSize:          640,
   compressionPercent: 75,
-  maxInflight:        6,
+  maxInflight:        5,
 };
 
 const LIMITS = {
   inputSize:          { min: 160, max: 640 },
-  compressionPercent: { min: 0,   max: 95  },
-  maxInflight:        { min: 1,   max: 16  },
+  compressionPercent: { min: 0,   max: 90  },
+  maxInflight:        { min: 1,   max: 8  },
 };
 
 let _current = { ...DEFAULTS };
