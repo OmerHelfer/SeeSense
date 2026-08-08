@@ -13,8 +13,8 @@ import { recordClientStage } from '../services/clientMetrics';
 
 
 const ALERT_LABELS = {
-  high: '⚠ סכנה קרובה',
-  low:  '! שים לב',
+  high: 'סכנה קרובה ⚠',
+  low:  'שים לב !',
 };
 
 const DANGER_REPEAT_MS = 2000;
