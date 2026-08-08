@@ -8,7 +8,7 @@ import threading
 from core.auth import verify_token
 from core.config import MODEL_MODE, TARGET_SIZE, MIN_INPUT_SIZE, MAX_INPUT_SIZE
 from services.stream_config_service import get_stream_config
-from services.vision_service import decode_image, process_image
+from services.vision_service import decode_image
 from services.logic_service import assess_danger
 from services import db_writer
 from services.motion_tracker import get_tracker as get_motion_tracker, clear_tracker

@@ -89,7 +89,10 @@ def run_inference(model, img_input, imgsz: int = TARGET_SIZE) -> list[dict]:
 
     For mock: returns empty list
     For ultralytics: passes raw image, ultralytics handles preprocessing
-    For custom PyTorch: expects preprocessed tensor from process_image()
+    For custom PyTorch: expects an already-preprocessed tensor. Note that
+        load_model("custom") still returns a YOLO instance, so in the deployed
+        configuration this branch is unreachable and the ultralytics path above
+        always wins.
 
     imgsz is the square inference size — the main inference-speed lever.
     Detections are always returned in the input image's coordinate space, so the
