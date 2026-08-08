@@ -113,7 +113,7 @@ def _require_can_manage(actor: dict, target: dict):
 
 
 @router.get("/stream-config")
-async def stream_config_get(current_user: dict = Depends(verify_admin)):
+def stream_config_get(current_user: dict = Depends(verify_admin)):
     """Current global streaming parameters + UI ranges + defaults. (level 1+, read-only)"""
     return {
         "status":   "success",
@@ -124,7 +124,7 @@ async def stream_config_get(current_user: dict = Depends(verify_admin)):
 
 
 @router.put("/stream-config")
-async def stream_config_update(
+def stream_config_update(
     req: StreamConfigRequest,
     current_user: dict = Depends(verify_super_admin),
 ):
@@ -139,7 +139,7 @@ async def stream_config_update(
 
 
 @router.delete("/stream-config")
-async def stream_config_reset(current_user: dict = Depends(verify_super_admin)):
+def stream_config_reset(current_user: dict = Depends(verify_super_admin)):
     """Discard overrides and return to the code defaults. (level 2 only)"""
     config = reset_stream_config()
     logger.info(f"Stream config reset by {current_user['user_id']}")
@@ -147,28 +147,28 @@ async def stream_config_reset(current_user: dict = Depends(verify_super_admin)):
 
 
 @router.get("/overview")
-async def overview(current_user: dict = Depends(verify_admin)):
+def overview(current_user: dict = Depends(verify_admin)):
     """User counts: total / online / offline / admins, plus the caller's own admin
     level so the UI can gate actions. (admin level 1+)"""
     return {"status": "success", "actor_level": current_user["admin_level"], **get_users_overview()}
 
 
 @router.get("/admins")
-async def admins_list(current_user: dict = Depends(verify_admin)):
+def admins_list(current_user: dict = Depends(verify_admin)):
     """All admin accounts (level 1+) with presence + last_seen, for the admin-status
     modal. Any admin (level 1 or 2) may view. (level 1+)"""
     return {"status": "success", "admins": list_admins(), "actor_level": current_user["admin_level"]}
 
 
 @router.get("/user")
-async def get_user_info(email: EmailStr = Query(...), current_user: dict = Depends(verify_admin)):
+def get_user_info(email: EmailStr = Query(...), current_user: dict = Depends(verify_admin)):
     """Full info about one user by email, incl. online status + last_seen. (level 1+)"""
     target = _load_target(email)
     return {"status": "success", "user": target, "actor_level": current_user["admin_level"]}
 
 
 @router.post("/user/set_password")
-async def set_password(req: SetPasswordRequest, current_user: dict = Depends(verify_admin)):
+def set_password(req: SetPasswordRequest, current_user: dict = Depends(verify_admin)):
     """Change a user's password by email. L1 → regular users only; L2 → anyone."""
     if len(req.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
@@ -179,7 +179,7 @@ async def set_password(req: SetPasswordRequest, current_user: dict = Depends(ver
 
 
 @router.post("/user/update")
-async def update_user_endpoint(req: UpdateUserRequest, current_user: dict = Depends(verify_admin)):
+def update_user_endpoint(req: UpdateUserRequest, current_user: dict = Depends(verify_admin)):
     """Edit a user's profile fields. L1 → regular users only; L2 → anyone."""
     target = _load_target(req.email)
     _require_can_manage(current_user, target)
@@ -192,7 +192,7 @@ async def update_user_endpoint(req: UpdateUserRequest, current_user: dict = Depe
 
 
 @router.post("/user/set_level")
-async def set_level(req: SetLevelRequest, current_user: dict = Depends(verify_super_admin)):
+def set_level(req: SetLevelRequest, current_user: dict = Depends(verify_super_admin)):
     """Grant/revoke admin level (0/1/2). Super admin (level 2) only."""
     target = _load_target(req.email)
     if target["user_id"] == current_user["user_id"] and req.admin_level < 2:
@@ -205,7 +205,7 @@ async def set_level(req: SetLevelRequest, current_user: dict = Depends(verify_su
 
 
 @router.delete("/user")
-async def delete_user_endpoint(req: DeleteUserRequest, current_user: dict = Depends(verify_super_admin)):
+def delete_user_endpoint(req: DeleteUserRequest, current_user: dict = Depends(verify_super_admin)):
     """Delete a user by email. Super admin (level 2) only. Cannot delete yourself here."""
     target = _load_target(req.email)
     if target["user_id"] == current_user["user_id"]:
@@ -221,7 +221,7 @@ async def delete_user_endpoint(req: DeleteUserRequest, current_user: dict = Depe
 
 
 @router.get("/feedback")
-async def feedback_list(
+def feedback_list(
     handling_status: Optional[str] = Query(None),
     current_user: dict = Depends(verify_admin),
 ):
@@ -236,7 +236,7 @@ async def feedback_list(
 
 
 @router.post("/feedback/{feedback_id}/take")
-async def feedback_take(feedback_id: str, current_user: dict = Depends(verify_admin)):
+def feedback_take(feedback_id: str, current_user: dict = Depends(verify_admin)):
     """Take a pending feedback for yourself → moves it to 'in progress'. (level 1+)"""
     try:
         result = admin_take_feedback(feedback_id, current_user["user_id"])
@@ -248,7 +248,7 @@ async def feedback_take(feedback_id: str, current_user: dict = Depends(verify_ad
 
 
 @router.post("/feedback/{feedback_id}/resolve")
-async def feedback_resolve(feedback_id: str, req: ResolveFeedbackRequest,
+def feedback_resolve(feedback_id: str, req: ResolveFeedbackRequest,
                            current_user: dict = Depends(verify_admin)):
     """Mark a feedback resolved with a required note on what was done. Only the handling
     admin or a super admin may resolve. (level 1+, ownership-gated)"""
@@ -266,7 +266,7 @@ async def feedback_resolve(feedback_id: str, req: ResolveFeedbackRequest,
 
 
 @router.post("/feedback/{feedback_id}/assign")
-async def feedback_assign(feedback_id: str, req: AssignFeedbackRequest,
+def feedback_assign(feedback_id: str, req: AssignFeedbackRequest,
                           current_user: dict = Depends(verify_super_admin)):
     """Assign a feedback to a specific admin who will handle it → in progress under
     them. Super admin (level 2) only."""

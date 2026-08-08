@@ -40,8 +40,43 @@ def _run_inference_locked(model, img_input, imgsz):
 
 
 
+# --- Blocking pymongo, kept off the event loop -------------------------------
+#
+# The three functions below are synchronous pymongo. That matters more here than
+# almost anywhere else in the codebase: this handler is `async def`, so it runs ON
+# the single event loop that is simultaneously serving every other connected
+# phone's frames. A synchronous call made directly from an `async def` yields to
+# nothing — asyncio can only switch at an `await` — so each round trip to Atlas
+# (~25-40ms, and the cluster is in another country) freezes frame delivery for
+# EVERY user, not just the one connecting.
+#
+# HTTP endpoints do not have this problem: their DB work sits behind
+# `Depends(verify_token)` and in sync `def` routes, both of which FastAPI already
+# runs in a threadpool. WebSockets take no `Depends`, so nothing was doing it for
+# us and the calls have to be handed off explicitly — the same treatment
+# `_run_inference_locked` gets, and for the same reason.
+#
+# Grouped rather than awaited one at a time so a connect costs one hop off the
+# loop instead of three.
+
+
+def _load_connect_state(user_id: str) -> tuple[str, dict]:
+    """Both connect-time DB reads, in a single hop off the event loop."""
+    return get_or_create_session(user_id), get_user_settings(user_id)
+
+
+def _teardown_state(user_id: str, session_id: str):
+    """Both disconnect-time DB writes, in a single hop off the event loop."""
+    clear_cache(user_id)
+    stop_session(session_id)
+
+
 def _authenticate_ws(token: str) -> dict | None:
-    """Verify JWT token for WebSocket connection (no Depends available)."""
+    """Verify JWT token for WebSocket connection (no Depends available).
+
+    Hits MongoDB (the token blacklist), so callers on the event loop must run this
+    via asyncio.to_thread — see the note above.
+    """
     import jwt
     from core.config import JWT_SECRET_KEY, JWT_ALGORITHM
     from core.auth import is_blacklisted
@@ -58,8 +93,14 @@ def _authenticate_ws(token: str) -> dict | None:
 
 
 @router.get("/session_status")
-async def session_status(current_user: dict = Depends(verify_token)):
-    """Returns current session status — active/paused, frame count, duration."""
+def session_status(current_user: dict = Depends(verify_token)):
+    """Returns current session status — active/paused, frame count, duration.
+
+    A sync `def` on purpose: `get_active_session` is blocking pymongo, and FastAPI
+    runs non-async routes in a threadpool. As `async def` this ran the query on the
+    event loop and stalled every streaming WebSocket for the duration — the same
+    defect fixed in the WS handler below and in /get_system_status.
+    """
     user_id = current_user["user_id"]
     session = get_active_session(user_id)
 
@@ -97,7 +138,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
         await websocket.close(code=4001, reason="Missing token. Connect with ?token=JWT")
         return
 
-    user = _authenticate_ws(token)
+    user = await asyncio.to_thread(_authenticate_ws, token)
     if not user:
         await websocket.close(code=4003, reason="Invalid or expired token")
         return
@@ -125,9 +166,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
     tracker.record_input_size(frame_size)
     tracker.record_stream_config(stream_cfg)
 
-    session_id = get_or_create_session(user_id)
-
-    settings = get_user_settings(user_id)
+    session_id, settings = await asyncio.to_thread(_load_connect_state, user_id)
     update_cache(user_id, paused=False, session_id=session_id, settings=settings)
 
     await websocket.send_json({
@@ -330,6 +369,29 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
         logger.error(f"WebSocket unexpected error: {e}", exc_info=True)
 
     finally:
-        clear_cache(user_id)
         clear_tracker(user_id)
-        stop_session(session_id)
+        # Two more DB round trips, and they were blocking the loop just as the
+        # connect-time reads were: a disconnect froze every other user's frames too.
+        #
+        # The fallback is not optional. `await` here is a suspension point, so on a
+        # cancelled task — uvicorn cancels live connections during shutdown, and
+        # CancelledError is a BaseException so the handlers above never caught it —
+        # this raises before _teardown_state runs at all, leaving the session row
+        # `active` forever. A synchronous call cannot be interrupted that way, which
+        # is exactly what the pre-threading version relied on without saying so.
+        # So: off the loop normally, inline when the loop is already going away
+        # (nothing is left to stall at that point).
+        try:
+            await asyncio.to_thread(_teardown_state, user_id, session_id)
+        except asyncio.CancelledError:
+            try:
+                _teardown_state(user_id, session_id)
+            except Exception:
+                # Uvicorn cancels connections before lifespan shutdown closes the
+                # Mongo client, so this normally succeeds — but if the DB is
+                # unreachable it must be logged, not allowed to mask the cancellation.
+                logger.warning(
+                    f"session teardown skipped during shutdown: user={user_id}, "
+                    f"session={session_id} left active", exc_info=True
+                )
+            raise

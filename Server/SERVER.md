@@ -416,7 +416,63 @@ Also `{"type":"result","status":"paused","frame":N}` when detection is paused, a
 > frame-weighted (one flush's cost is sampled by every frame that arrived during the next flush
 > interval). Min/max still show the true range of flush durations.
 
-### Why the event loop matters
+### 🔴 The event-loop rule: never call pymongo from an `async def`
+
+**This is the single easiest way to break streaming for every connected user at once.**
+
+The whole server runs one asyncio event loop. It is what delivers frames to every
+connected phone. `pymongo` is **synchronous**, and asyncio can only switch tasks at an
+`await` — so a blocking DB call made *directly* inside an `async def` yields to nothing and
+freezes the loop until it returns. With Atlas in Ireland (~25–40 ms per round trip) a single
+handler doing three queries stalls **everyone's** frames for ~100 ms.
+
+There are exactly two correct shapes:
+
+| Shape | Who runs the DB work | Use for |
+|---|---|---|
+| `def` (no `async`) | FastAPI's threadpool, automatically | any HTTP route that touches the DB |
+| `async def` + `await asyncio.to_thread(fn, ...)` | an explicit worker thread | WebSocket handlers, which cannot be sync |
+
+`async def` is only correct for a handler that genuinely `await`s something — or that
+touches no I/O at all (`/health`, `/`), where staying on the loop is *cheaper* than
+occupying a threadpool slot.
+
+**Sync dependencies are already safe.** `Depends(verify_token)` hits the token blacklist,
+but FastAPI runs non-async dependencies in the threadpool, so it never blocked the loop.
+This is why the bug hid for so long: the auth path was fine, the route bodies were not.
+
+**WebSockets get no `Depends`**, so nothing does the hand-off for them. `stream.py` therefore
+calls its three connect/disconnect DB operations through `asyncio.to_thread`, grouped into
+one hop each (`_load_connect_state`, `_teardown_state`) rather than one per query.
+
+> Every route in `api/` is now either sync `def` or explicitly threads its DB work. If you
+> add an `async def` route, it must contain a real `await` — and if it queries Mongo, that
+> `await` has to be an `asyncio.to_thread`. A grep for `async def` in `api/` should only ever
+> return the WebSocket handler.
+
+#### ⚠️ The cancellation trap when threading cleanup
+
+Moving a blocking call out of a `finally` block and behind `await` is **not** a free swap. `await`
+is a suspension point, and uvicorn **cancels** live connection tasks during shutdown:
+`CancelledError` derives from `BaseException`, so `except Exception` never catches it, the `finally`
+still runs — and the first `await` inside it raises immediately, skipping the work entirely.
+
+A synchronous call cannot be interrupted that way. The WS teardown depended on that property
+without ever stating it, and threading it silently broke session cleanup on every graceful restart
+(sessions left `status: "active"` forever). The handler therefore keeps a synchronous fallback:
+
+```python
+try:
+    await asyncio.to_thread(_teardown_state, user_id, session_id)
+except asyncio.CancelledError:
+    _teardown_state(user_id, session_id)   # loop is going away; nothing left to stall
+    raise                                   # preserve cancellation semantics
+```
+
+`asyncio.shield` does **not** solve this — the outer `await` still raises. Any cleanup converted
+from sync to `await` inside a `finally` needs this pattern.
+
+### Why inference is also off the loop
 Inference runs in a worker thread on purpose. If it ran inline, a ~40 ms forward pass would
 block the async loop, which would stall the `/health` pings — and the client's connection
 watchdog would falsely report the connection as unstable and go RED. The same reasoning drove

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/inference", tags=["Inference"])
 
 @router.get("/get_supported_objects")
-async def get_supported_objects():
+def get_supported_objects():
     """Lists all object classes the system can detect."""
     return {
         "status": "success",
@@ -21,7 +21,7 @@ async def get_supported_objects():
 
 
 @router.post("/pause_detection")
-async def pause_detection(current_user: dict = Depends(verify_token)):
+def pause_detection(current_user: dict = Depends(verify_token)):
     """Temporarily halt detection."""
     user_id = current_user["user_id"]
     sessions = get_db()["sessions"]
@@ -36,7 +36,7 @@ async def pause_detection(current_user: dict = Depends(verify_token)):
 
 
 @router.post("/resume_detection")
-async def resume_detection(current_user: dict = Depends(verify_token)):
+def resume_detection(current_user: dict = Depends(verify_token)):
     """Resume paused detection."""
     user_id = current_user["user_id"]
     sessions = get_db()["sessions"]
