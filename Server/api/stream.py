@@ -142,10 +142,6 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
     model = websocket.app.state.model
     frame_count = 0
 
-    # Arrival time (server clock) of an `upload_probe` marker awaiting its frame.
-    # See the uplink-timing note below. None means no probe is outstanding.
-    probe_at = None
-
     try:
         while True:
             message = await websocket.receive()
@@ -154,28 +150,8 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                 raise WebSocketDisconnect(message.get("code", 1000))
 
             if "text" in message:
-                # Stamp arrival before any parsing, so the probe measures the wire
-                # and not our own JSON handling.
-                text_at = time.perf_counter()
                 try:
                     data = json.loads(message["text"])
-                    if data.get("type") == "upload_probe":
-                        # A tiny marker the client sends immediately before a frame,
-                        # on the same TCP connection. Both messages queue together,
-                        # so the gap between their ARRIVALS — measured entirely on
-                        # this server's clock, no client clock involved and therefore
-                        # no clock-skew problem — is the time the frame's bytes took
-                        # to cross the uplink bottleneck. That is the transmission
-                        # term, the only part of the upload that payload size can
-                        # move, which makes it the honest number to watch when
-                        # changing JPEG compression or input size.
-                        probe_at = text_at
-                        continue
-                    # Any other text message invalidates a pending probe: the gap
-                    # would no longer be frame-only. Cannot normally happen (the
-                    # client sends probe and frame back-to-back in one tick) but
-                    # this is untrusted input and ordering must not be assumed.
-                    probe_at = None
                     if data.get("type") == "rtt_report" and "rtt_ms" in data:
                         rtt = float(data["rtt_ms"])
                         if 0 < rtt < 30000:
@@ -199,10 +175,6 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                                 e_max = None
                             tracker.record_client_e2e(e2e, e_min, e_max)
                             perf_history.record_e2e(e2e, user_id=user_id)
-                    elif data.get("type") == "dl_wire_report" and "dl_ms" in data:
-                        dl = float(data["dl_ms"])
-                        if 0 <= dl < 5000:
-                            tracker.record_download_wire(dl)
                     elif data.get("type") == "fps_report" and "fps" in data:
                         fps = float(data["fps"])
                         if 0 < fps < 100:
@@ -221,17 +193,6 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
             image_bytes = message.get("bytes")
             if not image_bytes:
                 continue
-
-            # Close the uplink transmission measurement opened by the probe marker.
-            # Clamped: a multi-second gap means the connection stalled or the client
-            # paused between the two sends, which is not a bandwidth reading.
-            probe_this_frame = False
-            if probe_at is not None:
-                wire_ms = (time.perf_counter() - probe_at) * 1000
-                probe_at = None
-                if 0 <= wire_ms < 5000:
-                    tracker.record_upload_wire(wire_ms, len(image_bytes))
-                    probe_this_frame = True
 
             mark_active(user_id)
             tracker.record_frame_bytes(len(image_bytes))
@@ -301,19 +262,6 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
 
                 processing_ms = (t4 - start) * 1000
 
-                # Downlink mirror of the uplink probe: a tiny marker sent immediately
-                # BEFORE the result, so the client can time the gap between their two
-                # arrivals on its own clock alone. It must come first, not after —
-                # a trailing marker would sit in the browser's event queue behind the
-                # result handler's rendering and speech work, and would measure that
-                # instead of the wire. Its own send cost is measured and excluded from
-                # the `response` stage below, so probed frames are not penalised.
-                probe_cost = 0.0
-                if probe_this_frame:
-                    tp = time.perf_counter()
-                    await websocket.send_json({"type": "dl_probe"})
-                    probe_cost = time.perf_counter() - tp
-
                 await websocket.send_json({
                     "type": "result",
                     "status": "success",
@@ -330,7 +278,7 @@ async def websocket_stream(websocket: WebSocket, token: str = None, input_size: 
                     "objects": result["objects"]
                 })
 
-                stage_times["response"] = ((time.perf_counter() - t4) - probe_cost) * 1000
+                stage_times["response"] = (time.perf_counter() - t4) * 1000
                 tracker.record_stage("response", stage_times["response"])
 
                 latency = tracker.end_timer(start, success=True)

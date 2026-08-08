@@ -4,7 +4,6 @@ import { ArrowRight, Activity, Server, Wifi, Clock, Zap, Gauge, CheckCircle, Rot
 import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../api/client';
 import { getOverview } from '../services/adminService';
-import { UPLOAD_PROBE_EVERY_N } from '../services/visionService';
 
 const pageVariants = {
   hidden:  { opacity: 0, x: 40 },
@@ -386,53 +385,31 @@ const AdminStatus = () => {
     return { success, reject, error, unclassified, lost, sent };
   }, [data]);
 
-  // Splitting the network time into an outbound and a return leg used to be pure
-  // assumption: half the small health ping was called "return" and whatever was left
-  // was called "outbound". It is now mostly measured. Each leg is transmission +
-  // propagation; the transmission halves are measured directly by probe markers
-  // (single-clock, no skew), leaving only propagation — which is size-independent
-  // and genuinely unmeasurable one-way without synchronised clocks — to be split
-  // evenly. That is a far weaker assumption than the old one, because the asymmetric
-  // part (payload size: ~30KB up vs ~1KB down) is no longer inside the guess.
   const netLegs = useMemo(() => {
-    const rtt   = data?.client_rtt?.avg_ms ?? 0;
-    const srv   = data?.server_latency?.avg_ms ?? 0;
-    const kb    = data?.frame_bytes?.avg_kb ?? 0;
-    const upW   = data?.wire?.up?.avg_ms ?? 0;
-    const downW = data?.wire?.down?.avg_ms ?? 0;
-    const upN   = data?.wire?.up?.n ?? 0;
-    const kbps  = data?.wire?.uplink_kb_per_sec ?? 0;
+    const rtt  = data?.client_rtt?.avg_ms ?? 0;
+    const srv  = data?.server_latency?.avg_ms ?? 0;
+    const base = data?.client_rtt?.base_ms ?? 0;
+    const kb   = data?.frame_bytes?.avg_kb ?? 0;
     if (!(rtt > 0 && srv > 0)) return null;
 
+    const net = rtt - srv;
     const kbR = Math.round(kb * 10) / 10;
 
-    if (!(upN > 0)) {
-      return { kb: kbR, unavailable: 'אין עדיין דגימות שידור — הפיצול המדוד לשני הכיוונים יופיע ברגע שמישהו יתחיל לסרוק.' };
+    if (!(base > 0)) {
+      return { kb: kbR, unavailable: 'אין עדיין דגימת פינג חיה מהשרת הנוכחי — הפיצול לשני הכיוונים יופיע ברגע שמישהו יתחיל לסרוק.' };
     }
 
-    const prop = rtt - srv - upW - downW;
-    if (!(prop > 0)) {
-      return {
-        kb: kbR, upWire: upW, downWire: downW, kbps,
-        unavailable: 'זמני השידור המדודים כבר מכסים את כל ה-RTT, כך שלא נותר זמן התפשטות לחלק — כנראה חלונות מדידה לא חופפים. השידור המדוד עצמו עדיין תקף.',
-      };
+    const down = base / 2;
+    const up   = net - down;
+    if (!(net > 0) || !(up > 0)) {
+      return { kb: kbR, unavailable: 'הפינג החי גדול מזמן הרשת הממוצע, כך שההלוך יוצא שלילי — כלומר הרשת כרגע איטית מהממוצע ההיסטורי, ואי אפשר לפצל אותה בכנות.' };
     }
 
-    const halfProp = prop / 2;
-    // Independent cross-check: the tiny /health ping carries almost nothing, so half
-    // of it is nearly pure one-way propagation, arrived at by a completely different
-    // route than the residual above. If the two disagree badly, the model is wrong.
-    const base = data?.client_rtt?.base_ms ?? 0;
     return {
-      up:       Math.round(upW + halfProp),
-      down:     Math.round(downW + halfProp),
-      upWire:   Math.round(upW * 10) / 10,
-      downWire: Math.round(downW * 10) / 10,
-      prop:     Math.round(halfProp),
-      propCheck: base > 0 ? Math.round(base / 2) : null,
-      kbps,
-      kb: kbR,
-      perKb: kb > 0 ? Math.round((upW / kb) * 100) / 100 : null,
+      up:   Math.round(up),
+      down: Math.round(down),
+      kb:   kbR,
+      perKb: kb > 0 ? Math.round((up / kb) * 10) / 10 : null,
     };
   }, [data]);
 
@@ -630,33 +607,20 @@ const AdminStatus = () => {
                     <span>{netLegs.unavailable}</span>
                   ) : (
                     <>
-                      <span>הלוך (העלאת הפריים) {netLegs.up}ms</span>
-                      <span>חזור (התוצאה) {netLegs.down}ms</span>
+                      <span>הלוך (העלאת הפריים) {netLegs.up}ms~</span>
+                      <span>חזור (התוצאה) {netLegs.down}ms~</span>
                     </>
                   )}
-                  {netLegs.upWire != null && (
-                    <span><strong>שידור מדוד: הלוך {netLegs.upWire}ms · חזור {netLegs.downWire}ms</strong></span>
-                  )}
-                  {netLegs.kbps > 0 && <span>רוחב פס עלייה {netLegs.kbps} KB/s (מדוד)</span>}
                   {netLegs.kb > 0 && <span>{netLegs.kb}KB לפריים</span>}
-                  {netLegs.perKb != null && <span>{netLegs.perKb}ms שידור לכל KB</span>}
+                  {netLegs.perKb != null && <span>{netLegs.perKb}ms~ לכל KB</span>}
                 </div>
                 {!netLegs.unavailable && (
                   <p className="admin-network-legs-note">
-                    * כל כיוון = <strong>שידור</strong> (כמה זמן הבייטים עוברים) + <strong>התפשטות</strong> (מרחק).
-                    זמני השידור <strong>נמדדים באמת</strong>: הלקוח שולח סמן זעיר מיד לפני הפריים,
-                    והשרת מודד את הפער בין הגעת השניים — שתי המדידות בשעון אחד, בלי תלות בסנכרון שעונים.
-                    אותו דבר בכיוון ההפוך עבור התשובה. ההתפשטות ({netLegs.prop}ms לכל כיוון) היא מה שנשאר
-                    מ-RTT פחות השרת פחות שני זמני השידור, ומחולקת שווה בשווה — זה החלק היחיד שנותר הערכה,
-                    כי זמן חד-כיווני אי אפשר למדוד בלי שעונים מסונכרנים.
-                    <br />
-                    <strong>לניסויי דחיסה:</strong> שינוי דחיסה או גודל קלט אמור להזיז את <em>השידור המדוד</em> בלבד.
-                    רוחב הפס אמור להישאר קבוע — אם גם הוא זז, צוואר הבקבוק אינו רוחב פס.
-                    דגימה: פריים אחד מכל {UPLOAD_PROBE_EVERY_N}, {data.wire?.up?.n ?? 0} דגימות בחלון.
-                    {netLegs.propCheck != null && (
-                      <> בדיקה עצמאית: חצי מהפינג הקטן = {netLegs.propCheck}ms, שאמור להיות
-                      קרוב לזמן ההתפשטות שחושב ({netLegs.prop}ms) — פער גדול מרמז שהמודל לא מדויק.</>
-                    )}
+                    * החזור נאמד מחצי מזמן הפינג הקטן ({Math.round(data.client_rtt.base_ms)}ms),
+                    שכמעט ואין לו מה להעביר — ולכן הוא בעצם זמן ההגעה לכיוון אחד.
+                    ההלוך הוא כל השאר, כלומר הזמן שבו הפריים הדחוס עצמו עולה.
+                    הקטנת הדחיסה אמורה להזיז את ההלוך ולהשאיר את החזור כמעט זהה.
+                    הפינג נמדד חי ואילו שאר המספרים הם ממוצע כל ההיסטוריה, ולכן הפיצול הוא הערכה בלבד.
                   </p>
                 )}
               </>

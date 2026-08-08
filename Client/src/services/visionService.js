@@ -22,13 +22,6 @@ const MAX_RESULT_TIMES = 120;
 
 const FPS_MIN_SPAN_MS = 400;
 
-// Wire-timing probes are sampled, not sent on every frame: one extra tiny message
-// each way per sampled frame is cheap, but doing it 50 times a second would add
-// avoidable work to both event loops. Every 10th frame still yields ~5 samples a
-// second, far more than the 100-sample window needs to settle.
-// Exported because the admin page states the sampling rate in its explanatory note.
-export const UPLOAD_PROBE_EVERY_N = 10;
-
 const _rateWithin = (times) => {
   const now    = performance.now();
   const cutoff = now - FPS_WINDOW_MS;
@@ -72,14 +65,6 @@ export class VisionStream {
     this._pendingE2EStart   = null;
     this._e2eStats          = { avg: 0, min: 0, max: 0 };
 
-    // Downlink wire timing: `_dlProbeAt` is when a `dl_probe` marker arrived, and
-    // the next `result` closes the gap. Both stamps are taken at the very top of
-    // onmessage, before any parsing or handling, so the value is wire time and not
-    // our own rendering.
-    this._framesSinceProbe  = 0;
-    this._dlProbeAt         = null;
-    this._dlWireBuffer      = [];
-
     this._frameSendTimes    = [];
     this._resultTimes       = [];
 
@@ -98,8 +83,6 @@ export class VisionStream {
     this._rttBuffer         = [];
     this._e2eBuffer         = [];
     this._pendingE2EStart   = null;
-    this._dlWireBuffer      = [];
-    this._dlProbeAt         = null;
     this._resultTimes       = [];
     this._open();
   }
@@ -151,17 +134,6 @@ export class VisionStream {
   sendFrame(blob, captureT0 = null) {
     if (this.isOpen) {
       const now = performance.now();
-
-      // Uplink wire probe. Sent immediately before the frame and in the same tick,
-      // so both messages enter the socket buffer together and travel back-to-back:
-      // the gap the server sees between their arrivals is the frame's own
-      // transmission time. Nothing here depends on the two machines' clocks
-      // agreeing, which is what makes it a measurement rather than an estimate.
-      if (++this._framesSinceProbe >= UPLOAD_PROBE_EVERY_N) {
-        this._framesSinceProbe = 0;
-        try { this._socket.send(JSON.stringify({ type: 'upload_probe' })); } catch {  }
-      }
-
       this._sendTimes.push(now);
       // Fall back to `now` when the caller has no capture stamp: the E2E figure
       // then simply misses the capture+encode prefix rather than going unmeasured.
@@ -192,25 +164,15 @@ export class VisionStream {
     };
 
     socket.onmessage = (event) => {
-      // Stamped first, before JSON.parse and before any handler runs: the downlink
-      // measurement below is only honest if both of its endpoints are "the moment
-      // the message surfaced", not "the moment we finished dealing with it".
-      const tArrive = performance.now();
       try {
         const msg = JSON.parse(event.data);
-        if (msg.type === 'dl_probe') {
-          this._dlProbeAt = tArrive;
-          return;
-        }
         if (msg.type === 'connected') {
           applyStreamConfig(msg);
           this._onConnected(msg);
         } else if (msg.type === 'result') {
-          this._recordDownWire(tArrive);
           this._recordRtt();
           this._onResult(msg);
         } else if (msg.type === 'error') {
-          this._dlProbeAt = null;
           this._recordRtt();
           this._onError(new Error(msg.detail ?? 'Server processing error'));
         }
@@ -230,8 +192,6 @@ export class VisionStream {
       this._sendTimes = [];
       this._captureTimes = [];
       this._pendingE2EStart = null;
-      this._dlProbeAt = null;
-      this._framesSinceProbe = 0;
 
       if (event.code === 4001 || event.code === 4003) {
         this._active = false;
@@ -253,17 +213,6 @@ export class VisionStream {
     }
     this._reconnectAttempts++;
     this._reconnectTimer = setTimeout(() => this._open(), RECONNECT_DELAY_MS);
-  }
-
-  /** Close the downlink transmission measurement opened by a `dl_probe` marker. */
-  _recordDownWire(tArrive) {
-    const probed = this._dlProbeAt;
-    this._dlProbeAt = null;
-    if (probed == null) return;
-    const dl = tArrive - probed;
-    if (!(dl >= 0) || dl > 5000) return;
-    this._dlWireBuffer.push(Math.round(dl * 100) / 100);
-    if (this._dlWireBuffer.length > 50) this._dlWireBuffer.shift();
   }
 
   _recordRtt() {
@@ -345,16 +294,6 @@ export class VisionStream {
             e2e_ms:     Math.round((sum / this._e2eBuffer.length) * 10) / 10,
             e2e_min_ms: Math.round(Math.min(...this._e2eBuffer) * 10) / 10,
             e2e_max_ms: Math.round(Math.max(...this._e2eBuffer) * 10) / 10,
-          }));
-        } catch {  }
-      }
-
-      if (this._dlWireBuffer.length > 0) {
-        const sum = this._dlWireBuffer.reduce((a, b) => a + b, 0);
-        try {
-          this._socket.send(JSON.stringify({
-            type: 'dl_wire_report',
-            dl_ms: Math.round((sum / this._dlWireBuffer.length) * 100) / 100,
           }));
         } catch {  }
       }

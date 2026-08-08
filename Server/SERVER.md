@@ -358,16 +358,6 @@ ws://host/stream/ws?token=<JWT>&input_size=512
     speech/haptics issued (validated `0 < x < 60000`). This is the figure the user actually
     perceives, and it strictly contains the RTT. `e2e_ms` is the client's rolling average;
     the min/max are that window's true per-frame extremes.
-  - `{"type":"upload_probe"}` — a **tiny marker sent immediately before a binary frame**, in the
-    same tick, so both queue into the socket together. The server timestamps the marker's arrival
-    and the frame's arrival **with its own clock only** and records the gap as that frame's uplink
-    transmission time. That is the whole point: a one-way delay cannot be measured with
-    unsynchronised clocks, but the *size-dependent* part of it can be, because a difference of two
-    stamps from the same clock carries no skew term. Sampled every 10th frame; any other text
-    message arriving while a probe is pending invalidates it.
-  - `{"type":"dl_wire_report","dl_ms":2.1}` — the downlink mirror: the client's measured gap between
-    a server-sent `dl_probe` marker and the `result` that followed it, on the client's clock alone
-    (validated `0 ≤ dl < 5000`).
   - `{"type":"fps_report","fps":21.4}` — actual client capture rate (validated `0 < fps < 100`).
   - `{"type":"client_stage_report","stages":{...}}` — client-side per-stage timings
     (capture/encode/render/feedback), already aggregated to avg/min/max.
@@ -378,12 +368,6 @@ ws://host/stream/ws?token=<JWT>&input_size=512
     the client's 3s in-flight timeout.
 
 **Server → client**
-- `{"type":"dl_probe"}` — the downlink timing marker, sent immediately **before** the result on
-  sampled frames. It must precede the result, never follow it: a trailing marker would sit in the
-  browser's event queue behind the result handler's rendering and speech work and would measure
-  that instead of the wire. Its own send cost is timed and subtracted from the `response` stage so
-  probed frames are not charged for it.
-
 ```json
 {
   "type": "result", "status": "success", "frame": 128,
@@ -665,8 +649,6 @@ A single global instance with sliding windows (`deque(maxlen=100)`):
 - Server-side per-frame latency (avg/min/max)
 - Client-reported **RTT** (avg/min/max) + a 60-point timestamped history for the live chart
 - Client-reported **E2E latency** (avg + true per-frame min/max)
-- **Wire transmission time per direction** (`wire.up` / `wire.down`) plus derived effective uplink
-  goodput `wire.uplink_kb_per_sec` — see "Measuring one network leg" below
 
   > ⚠️ RTT and E2E are different spans and must not be confused. **RTT** is the wire round trip
   > only — `socket.send` → result received — so camera capture, JPEG encode, rendering and
@@ -679,56 +661,14 @@ A single global instance with sliding windows (`deque(maxlen=100)`):
   > running true extremes, so they describe real frames rather than the spread of averages
   > (which is all RTT's min/max can offer).
 
-#### Measuring one network leg (and why part of it is unmeasurable)
-
-Splitting the round trip into an outbound and a return leg looks like it should be a measurement
-and mostly is not. **A one-way delay cannot be measured with two unsynchronised clocks**:
-`server_receive_time − client_send_time` mixes in an unknown clock offset, and the NTP-style
-exchange that would estimate that offset *itself assumes* the two directions are symmetric — the
-very thing being asked. This is a fundamental identifiability limit, not a missing feature.
-
-What *is* measurable is the decomposition of each leg into two terms:
-
-```
-leg = transmission (bytes ÷ bottleneck bandwidth)  +  propagation (distance)
-       └── size-dependent, MEASURED                   └── size-independent, estimated
-```
-
-**Transmission is measured with one clock.** The client sends a tiny `upload_probe` marker
-immediately before the frame, in the same tick, so both enter the socket buffer together and travel
-back-to-back. The server stamps both arrivals **with its own clock**, and the gap is the time the
-frame's bytes took to cross the uplink — no client clock involved, so no skew term. The downlink
-mirrors it with a `dl_probe` sent before the result and timed on the client's clock.
-
-**Propagation is then the measured residual**, split evenly:
-
-```
-propagation_total = RTT − server_latency − wire.up − wire.down     (all measured)
-outbound leg      = wire.up   + propagation_total / 2
-return leg        = wire.down + propagation_total / 2
-```
-
-The remaining even-split assumption is far weaker than the one it replaced, because the asymmetric
-part — ~30 KB up versus ~1 KB down — is no longer inside the guess. The tiny `/health` ping
-(`base_rtt_ms`) is retained purely as an **independent cross-check**: half of it should land near
-the computed propagation, having been arrived at by a completely different route.
-
-**This is the instrument for compression and input-size experiments.** Changing either knob should
-move `wire.up` and leave `uplink_kb_per_sec` flat; if both move, the bottleneck is not bandwidth.
-Sampled one frame in ten (`UPLOAD_PROBE_EVERY_N`), which is ~5 samples/second at 50 FPS.
-
-> ⚠️ Both server-side stamps are taken when the event loop resumes with a completed message, so a
-> loop busy serving other connections inflates the gap. Under light load this is transmission;
-> under heavy load it is transmission plus scheduling delay. Compare readings at similar load.
-
 > 🔴 **Adding a live-only metric? It will not reach the dashboard by itself.**
 > `/get_system_status` returns the **persisted** aggregate from `perf_history.query_range()` and then
 > copies live-only fields across **one by one** (`rtt_history`, `client_stage_latency`, `input_size`,
-> `stream_config`, `frame_bytes`, `wire`, `client_rtt.base_ms`, the three live FPS numbers). A new
-> field on `PerformanceTracker.get_status()` that is not added to that list silently never arrives,
-> and the UI reads it as *"no data yet"* rather than as an error — which is precisely how `wire`
-> failed on its first run while `frame_bytes` beside it worked. Either persist the metric into the
-> minute buckets or add it to the copy list; there is no third option.
+> `stream_config`, `frame_bytes`, `client_rtt.base_ms`, the three live FPS numbers). A new field on
+> `PerformanceTracker.get_status()` that is not added to that list silently never arrives, and the UI
+> reads it as *"no data yet"* rather than as an error — a genuinely confusing failure, since it looks
+> like a broken sensor. Either persist the metric into the minute buckets or add it to the copy list;
+> there is no third option.
 > In the `email=` (per-user) branch, process-wide live metrics are deliberately **blanked** instead
 > of copied, since they carry no per-user attribution.
 - Frame arrival timestamps → real server FPS

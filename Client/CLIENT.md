@@ -293,9 +293,9 @@ the incoming result. Both `result` **and** `error` messages record an RTT — an
 that frame is done, and its FIFO entry must be cleared. A rolling 50-sample buffer feeds
 `{avg, min, max}` stats exposed via `rttStats`.
 
-RTT is deliberately the **wire round trip only**: the clock starts at `socket.send` and stops when
-the result arrives, so it excludes the on-device work either side of it. That is a legitimate
-number, but it is *not* what the user experiences — see below.
+RTT is deliberately the **round trip only**: the clock starts at `socket.send` and stops when the
+result arrives, so it excludes the on-device work either side of it. That is a legitimate number,
+but it is *not* what the user experiences — see below.
 
 ### End-to-End (E2E) latency measurement ⭐
 The figure the user actually perceives: **camera capture → JPEG encode → upload → server →
@@ -321,43 +321,15 @@ A rolling 50-sample buffer feeds `{avg, min, max}` via `e2eStats`.
 > immediately. This is the same boundary the existing `feedback` client stage already measures,
 > so the two are consistent — but neither includes the utterance's own duration.
 
-### Wire-transmission probes ⭐
-Splitting the network time into an outbound and a return leg was pure assumption until these
-existed. The constraint is real: **a one-way delay cannot be measured with two unsynchronised
-clocks**, and the NTP-style offset estimate that would fix it assumes path symmetry — the very
-thing being measured. But each leg is `transmission (bytes ÷ bandwidth) + propagation (distance)`,
-and *transmission* can be measured with a single clock.
-
-**Uplink.** `sendFrame` sends a tiny `{type:'upload_probe'}` immediately before the blob, in the
-same tick, so both enter the socket buffer together and travel back-to-back. The server stamps both
-arrivals with its own clock; the gap is that frame's transmission time. No client clock
-participates, so there is no skew term to cancel.
-
-**Downlink.** The mirror: on sampled frames the server sends `{type:'dl_probe'}` **before** the
-result, and `onmessage` stamps arrivals at its very top — before `JSON.parse`, before any handler —
-so the gap is wire time and not our own rendering. This ordering is mandatory: a marker sent
-*after* the result would sit in the event queue behind `handleResult`'s render and speech work and
-would measure that instead.
-
-Sampled every `UPLOAD_PROBE_EVERY_N = 10` frames (~5/s at 50 FPS) — one extra tiny message each way
-per sampled frame is cheap; doing it 50 times a second would not be. The constant is exported
-because the admin page states the sampling rate in its note.
-
-> This is the instrument for compression / input-size experiments: those knobs should move the
-> measured transmission time and leave the derived `uplink_kb_per_sec` flat. If both move, the
-> bottleneck is not bandwidth.
-
 ### Periodic reporting (every 5 s)
-Five small text messages, none of them on the frame hot path:
-- `rtt_report` — average RTT (plus `base_rtt_ms`, the `/health` ping, kept as an independent
-  cross-check on the propagation estimate)
+Four small text messages, none of them on the frame hot path:
+- `rtt_report` — average RTT (plus `base_rtt_ms`, the `/health` ping floor, when available)
 - `e2e_report` — average E2E **plus the window's true min/max**, so the server can keep real
   per-frame extremes rather than extremes of averages
-- `dl_wire_report` — average measured downlink transmission time
 - `fps_report` — actual capture FPS, from the last 30 send timestamps
 - `client_stage_report` — the aggregated client stage breakdown from `clientMetrics`
 
-All five are wrapped in `try/catch` in case the socket closed mid-send.
+All four are wrapped in `try/catch` in case the socket closed mid-send.
 
 ### Reconnection policy
 - Close code **1000** (clean/intentional) → no reconnect.
@@ -370,7 +342,6 @@ All five are wrapped in `try/catch` in case the socket closed mid-send.
 ### Module-level active-stream reference
 `setActiveStream()` / `disconnectStream()` / `getActiveStreamRtt()` / `getActiveStreamE2E()` let
 AuthContext tear the socket down on logout or session expiry without holding a React ref.
-`UPLOAD_PROBE_EVERY_N` is also exported, for the admin page's sampling-rate note.
 
 ---
 
