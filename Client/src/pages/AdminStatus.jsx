@@ -188,8 +188,8 @@ const RttChart = ({ history }) => {
       ctx.textAlign = 'left';
       ctx.fillText(label, w - pad.right - 40, y - 4);
     };
-    drawThreshold(100, 'rgba(234,179,8,0.5)',  '100ms');
-    drawThreshold(150, 'rgba(249,115,22,0.5)', '150ms');
+    drawThreshold(130, 'rgba(234,179,8,0.5)',  '130ms');
+    drawThreshold(170, 'rgba(249,115,22,0.5)', '170ms');
     drawThreshold(200, 'rgba(239,68,68,0.5)',  '200ms');
 
     ctx.beginPath();
