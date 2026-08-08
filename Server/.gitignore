@@ -30,5 +30,8 @@ Thumbs.db
 /tests
 *.log
 
+# Dev-only tooling, not part of the shipped product
+/dev_tools
+
 # Logs
 /logs
