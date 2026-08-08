@@ -147,11 +147,16 @@ def get_system_status(
     if not email:
         data = perf_history.query_range(None, None)
         live = tracker.get_status()
+        # The response is the PERSISTED aggregate, with live-only fields copied over
+        # one by one. Anything measured solely by the live tracker and not persisted
+        # into the minute buckets MUST be added to this list or it silently never
+        # reaches the dashboard — it will read as "no data" rather than as an error.
         data["rtt_history"] = live.get("rtt_history", [])
         data["client_stage_latency"] = live.get("client_stage_latency", {})
         data["input_size"] = live.get("input_size")
         data["stream_config"] = live.get("stream_config")
         data["frame_bytes"] = live.get("frame_bytes", {})
+        data["wire"] = live.get("wire", {})
         data["client_rtt"] = {
             **data.get("client_rtt", {}),
             "base_ms": live.get("client_rtt", {}).get("base_ms", 0.0),
@@ -170,8 +175,12 @@ def get_system_status(
         raise HTTPException(status_code=404, detail="No user with that email")
 
     data = perf_history.query_range(None, None, user_id=user["user_id"])
+    # Blanked, not copied: these live metrics are process-wide and carry no per-user
+    # attribution, so showing them inside a single user's view would misattribute
+    # everyone else's traffic to them.
     data["rtt_history"] = []
     data["client_stage_latency"] = {}
+    data["wire"] = {}
     data["user"] = {
         "user_id": user["user_id"],
         "email": user.get("email"),

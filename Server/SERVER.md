@@ -720,6 +720,17 @@ Sampled one frame in ten (`UPLOAD_PROBE_EVERY_N`), which is ~5 samples/second at
 > ⚠️ Both server-side stamps are taken when the event loop resumes with a completed message, so a
 > loop busy serving other connections inflates the gap. Under light load this is transmission;
 > under heavy load it is transmission plus scheduling delay. Compare readings at similar load.
+
+> 🔴 **Adding a live-only metric? It will not reach the dashboard by itself.**
+> `/get_system_status` returns the **persisted** aggregate from `perf_history.query_range()` and then
+> copies live-only fields across **one by one** (`rtt_history`, `client_stage_latency`, `input_size`,
+> `stream_config`, `frame_bytes`, `wire`, `client_rtt.base_ms`, the three live FPS numbers). A new
+> field on `PerformanceTracker.get_status()` that is not added to that list silently never arrives,
+> and the UI reads it as *"no data yet"* rather than as an error — which is precisely how `wire`
+> failed on its first run while `frame_bytes` beside it worked. Either persist the metric into the
+> minute buckets or add it to the copy list; there is no third option.
+> In the `email=` (per-user) branch, process-wide live metrics are deliberately **blanked** instead
+> of copied, since they carry no per-user attribution.
 - Frame arrival timestamps → real server FPS
 - Client-reported capture FPS
 - **Throughput** — completion timestamps of *successful* frames over a rolling 10-second
