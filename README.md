@@ -7,6 +7,7 @@ SeeSense is a mobile-first web application that transforms a smartphone into a r
 **🌐 Language:** Hebrew (RTL interface)  
 **🚀 Deployment:** GCP Compute Engine VM (GPU-backed)
 
+
 ---
 
 ## Key Features
