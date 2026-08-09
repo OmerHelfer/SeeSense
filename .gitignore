@@ -2,3 +2,6 @@
 certs/
 *.pem
 *.key
+
+# Deployment scripts and docs — kept out of the codebase.
+deploy/
