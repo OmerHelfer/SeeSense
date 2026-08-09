@@ -112,7 +112,7 @@ deployed server.
 
 Both `.env.production` and `.env.gcp` set `VITE_API_URL=` (**empty on purpose**): the deployed
 server serves this bundle from its own origin, so no host is baked in and the same build works
-over any IP or hostname. `.env.gcp` is what `deploy/update.sh` uses
+over any IP or hostname. `.env.gcp` is what the GCP build uses
 (`npm run build -- --mode gcp`); `.env.production` matches it so a plain `npm run build` can't
 produce a bundle pointing somewhere wrong.
 

@@ -25,7 +25,7 @@ The backend is a **FastAPI** application that:
   email verification, an SOS alert flow, and a full performance-metrics subsystem with
   persistent per-minute history.
 - Persists everything in **MongoDB Atlas**, sends mail through **Gmail SMTP**, and runs on a
-  **GCP Compute Engine VM** (systemd + uvicorn, GPU-backed) — see `DEPLOYMENT.md`.
+  **GCP Compute Engine VM** (systemd + uvicorn, GPU-backed).
 
 ---
 
@@ -1013,10 +1013,10 @@ so an injected `$PORT` is expanded at runtime.
 > measured **82ms → 330ms, exactly 3 extra round trips**, on roughly half of all pings, and on every
 > session's first ping. It also pushed readings past the watchdog's 200ms red threshold, causing
 > false "connection lost" alarms. Set on **both** entrypoints — this Dockerfile and the systemd unit
-> in `deploy/setup-vm.sh`.
+> on the VM.
 >
-> Note `deploy/update.sh` does **not** regenerate the systemd unit, so an existing VM needs the flag
-> applied by hand (or a `setup-vm.sh` re-run) — pulling new code alone will not pick it up.
+> Note that pulling new code does **not** regenerate the systemd unit, so an existing VM needs the
+> flag applied by hand — a code update alone will not pick it up.
 
 ### Environment variables
 | Variable | Purpose |

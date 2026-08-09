@@ -150,7 +150,7 @@ cd Server
 pip install -r requirements.txt
 
 # Create .env file with your secrets
-# (see Server/DEPLOYMENT.md for required variables)
+# (see Server/SERVER.md for required variables)
 
 # Run the server
 python main.py
@@ -173,7 +173,7 @@ npm run dev
 npm run build
 ```
 
-**⚠️ GPU availability:** Local inference uses GPU if available; Railway and GCP deployments differ. See `Server/DEPLOYMENT.md` for environment-specific configuration.
+**⚠️ GPU availability:** Local inference uses GPU if available; Railway and GCP deployments differ.
 
 ### Running Both Together
 1. Start the server (separate terminal): `cd Server && python main.py`
@@ -187,11 +187,6 @@ npm run build
 
 ### Production: GCP Compute Engine
 
-**One-command deploy from your machine:**
-```bash
-bash deploy/remote-update.sh
-```
-
 **Manual operations on the VM (via SSH):**
 ```bash
 # Check status
@@ -200,11 +195,11 @@ sudo systemctl status seesense --no-pager -l
 # Live logs
 sudo journalctl -u seesense -f
 
-# Update & restart
-cd ~/SeeSense && bash deploy/update.sh
+# Restart after an update
+sudo systemctl restart seesense
 ```
 
-**Setup details** (see `Server/DEPLOYMENT.md`):
+**Setup details:**
 - **Region:** `europe-central2-c` (Warsaw) — closest to Israel with available T4 GPU capacity
 - **Machine:** `n1-standard-1` (1 vCPU, 3.75GB) + 1× T4 GPU
 - **Domain:** `34-116-162-196.nip.io` (auto-resolves external IP; free HTTPS via Let's Encrypt)
@@ -287,12 +282,6 @@ SeeSense-main/
 │   ├── requirements.txt
     └── SERVER.md                  Backend documentation
 │
-├── deploy/
-│   ├── setup-vm.sh                Full VM setup (run once)
-│   ├── update.sh                  Fast pull + conditional rebuild
-│   ├── remote-update.sh           Deploy from your machine via SSH
-│   └── DEPLOYMENT.md              Detailed deployment guide
-│
 └── README.md                       This file
 ```
 
@@ -300,7 +289,6 @@ SeeSense-main/
 
 ## Documentation
 
-- **`Server/DEPLOYMENT.md`** — How to set up and manage the GCP deployment, costs, troubleshooting
 - **`Server/SERVER.md`** — Complete backend reference (API endpoints, pipeline details, schema, known issues)
 - **`Client/CLIENT.md`** — Complete frontend reference (routing, components, services, accessibility)
 
@@ -407,7 +395,6 @@ This project is an academic final-year submission. Reuse by explicit permission 
 
 For questions or issues with this project:
 - **Team email:** seesense.noreply@gmail.com
-- **Deployment issues:** See `Server/DEPLOYMENT.md`
 - **API details:** See `Server/SERVER.md`
 - **Frontend issues:** See `Client/CLIENT.md`
 
